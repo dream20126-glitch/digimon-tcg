@@ -547,6 +547,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
   // 効果2以降の効果発動ポップアップの表示テキスト（効果1とは別に、その効果に進むときに出す）
   if (a.valueMode) out.value_mode = a.valueMode;
+  if (a.orSelf) out.or_self = true;
   if (a.tokenCount && a.tokenCount > 1) out.token_count = a.tokenCount;
   if (a.evolveInto === 'self_card') out.evolve_into = 'self_card';
   if (a.byCause) { out.by_cause = a.byCause; if (a.byCauseSubject) out.by_cause_subject = a.byCauseSubject; }
@@ -1970,6 +1971,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   else if (b.counter) step.counter = true;
   if (b.perCostCard) step.per_cost_card = true;
   if (b.valueMode) step.value_mode = b.valueMode;
+  if (b.orSelf) step.or_self = true;
   if (b.tokenCount && b.tokenCount > 1) step.token_count = b.tokenCount;
   if (b.evolveInto === 'self_card') step.evolve_into = 'self_card';
   if (b.byCause) { step.by_cause = b.byCause; if (b.byCauseSubject) step.by_cause_subject = b.byCauseSubject; }
@@ -2533,6 +2535,7 @@ function stepObjectToAltAction(step: any): AltAction {
     displayText: step?.display_text ? String(step.display_text) : undefined,
     displaySame: step?.display_same ? true : undefined,
     valueMode: parseValueMode(step),
+    orSelf: step?.or_self === true ? true : undefined,
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
     evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
     byCause: step?.by_cause ? String(step.by_cause) : undefined,
@@ -2860,6 +2863,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     per_cost_card: true,
     value_up_to: true,
     value_mode: true,
+    or_self: true,
     token_count: true,
     evolve_into: true,
     by_cause: true,
@@ -3008,6 +3012,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     counter: step?.counter === true ? true : step?.also_counter === true ? 'also' : undefined,
     perCostCard: step?.per_cost_card === true ? true : undefined,
     valueMode: parseValueMode(step),
+    orSelf: step?.or_self === true ? true : undefined,
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
     evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
     byCause: step?.by_cause ? String(step.by_cause) : undefined,
@@ -3182,6 +3187,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             displayText: a?.display_text ? String(a.display_text) : undefined,
             displaySame: a?.display_same ? true : undefined,
             valueMode: parseValueMode(a),
+            orSelf: a?.or_self === true ? true : undefined,
             tokenCount: Number(a?.token_count) > 1 ? Number(a.token_count) : undefined,
             evolveInto: a?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
             byCause: a?.by_cause ? String(a.by_cause) : undefined,

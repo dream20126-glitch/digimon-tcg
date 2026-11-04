@@ -115,6 +115,9 @@ export interface EffectBlock {
   // アクションの値の数え方（対象数と同じ）: 'all'=全て / 'exact'=完全一致 / 'up_to'=〜まで / 'until'=〜になるまで。
   // 未指定=指定なし。JSONでは step.value_mode（旧 value_up_to:true は 'up_to' として読む）。⚠ エンジン未実装
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
+  // 対象に「このデジモン」も加える（「このデジモン/テイマー」＝このデジモンか自分のテイマー。P-153）。
+  // target は残りの候補（own_tamer:1 等）。JSONでは step.or_self:true。⚠ エンジン未実装
+  orSelf?: boolean;
   // トークンを登場させる体数（summon_token 用。JSONでは token_count。1体なら省略）
   tokenCount?: number;
   // 進化/ジョグレス進化の「進化先」を手札のこのカードにする（ブラスト〇〇等。JSONでは evolve_into:'self_card'）
@@ -522,6 +525,8 @@ export interface AltAction {
   displayText?: string;
   // アクションの値の数え方（EffectBlock.valueMode と同じ）。JSONでは value_mode。⚠ エンジン未実装
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
+  // 対象に「このデジモン」も加える（EffectBlock.orSelf と同じ）。JSONでは or_self
+  orSelf?: boolean;
   // トークンを登場させる体数（EffectBlock.tokenCount と同じ）。JSONでは token_count
   tokenCount?: number;
   // 進化先＝このカード（EffectBlock.evolveInto と同じ）。JSONでは evolve_into

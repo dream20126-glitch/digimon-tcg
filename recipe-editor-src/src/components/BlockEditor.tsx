@@ -9035,6 +9035,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {['own', 'opp', 'other_own', 'both', 'both_other'].includes(curTgt.l1) && ['digimon', 'card', 'tamer'].includes(curTgt.l2) && (
                   <BreedAreaToggle options={effectOptions} onChange={(next) => updateEffect({ options: next })} />
                 )}
+                {/* 「このデジモン/テイマー」＝このデジモンか（自分の）テイマー（P-153）。自分＞テイマー1体 ＋ このチェックで設定する */}
+                {['own', 'opp', 'other_own', 'both'].includes(curTgt.l1) && ['digimon', 'card', 'tamer'].includes(curTgt.l2) && (
+                  <label style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={!!block.orSelf} onChange={(e) => onChange({ ...block, orSelf: e.target.checked || undefined })} style={{ margin: 0 }} />
+                    このデジモンも選べる（例:「このデジモン/テイマー」）
+                    {block.orSelf && <span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>}
+                  </label>
+                )}
                 {isUnimplemented && (
                   <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
                     ⚠ {(isOrMode || isAndMode) ? '複数対象（OR/AND）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）

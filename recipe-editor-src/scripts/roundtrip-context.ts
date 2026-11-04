@@ -120,6 +120,7 @@ const cases: Case[] = [
   { name: 'P-148: このデジモンが特徴に「NSp」を持つなら（特徴＋対象このデジモン）', blocks: [base({ trigger: 'on_attack', action: 'draw', value: 1, conditions: [{ base: 'cond_feature', value: 'NSp', subject: 'self' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_feature:NSp@self') },
   { name: '対象の条件: 2色以上のデジモン（色の数・以上）', blocks: [base({ action: 'destroy', target: 'opponent:1', value: undefined, targetFilter: [{ base: 'cond_color_count_ge', value: '2' }] })], check: ['0.targetFilter'], raw: (r: any) => J(r).includes('"color_count_ge":2') },
   { name: 'ルール: 黄/黒を含む2色以上のカード1枚を手札に（色の数・以上）', blocks: [base({ action: 'security_open', value: undefined, rules: [{ action: 'add_to_hand', value: 1, optional: true, conditions: [{ base: 'cond_color', value: '黄,黒' }, { base: 'cond_color_count_ge', value: '2' }] }] })], check: ['0.rules'], raw: (r: any) => J(r).includes('"color_count_ge":2') },
+  { name: 'P-153: このデジモン/テイマーをアクティブ（自分のテイマー1体＋このデジモンも選べる）', blocks: [base({ trigger: 'on_attack_end', action: 'unsuspend', target: 'own_tamer:1', value: undefined, orSelf: true }), base({ action: 'unsuspend', target: 'own_tamer:1', value: undefined, altActions: [{ action: 'unsuspend', target: 'own_tamer:1', orSelf: true }] })], check: ['0.orSelf', '1.altActions.0.orSelf'], raw: (r: any) => J(r).split('"or_self":true').length === 3 },
 ];
 
 let ng = 0;

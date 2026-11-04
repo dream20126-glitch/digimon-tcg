@@ -797,6 +797,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_color_not':        f.color_not = c.value; break;
       // 「1色の〜」: カードの色の数（LM-023）
       case 'cond_color_count':      { const n = num(c.value); if (n !== undefined) f.color_count = n; break; }
+      // 「2色以上の〜」「1色以下の〜」: 色の数の以上/以下
+      case 'cond_color_count_ge':   { const n = num(c.value); if (n !== undefined) f.color_count_ge = n; break; }
+      case 'cond_color_count_le':   { const n = num(c.value); if (n !== undefined) f.color_count_le = n; break; }
       // 【ブロッカー】等のキーワードを持つ（複数はOR。LM-014）。値はキーワードコード
       case 'cond_has_keyword': {
         const kws = String(c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -928,6 +931,8 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
   if (f.color_not)        out.push({ base: 'cond_color_not',        value: String(f.color_not) });
   if (f.color_count !== undefined) out.push({ base: 'cond_color_count', value: String(f.color_count) });
+  if (f.color_count_ge !== undefined) out.push({ base: 'cond_color_count_ge', value: String(f.color_count_ge) });
+  if (f.color_count_le !== undefined) out.push({ base: 'cond_color_count_le', value: String(f.color_count_le) });
   if (f.keyword) out.push({ base: 'cond_has_keyword', value: Array.isArray(f.keyword) ? f.keyword.join(',') : String(f.keyword) });
   if (f.dp_sum_le !== undefined) out.push({ base: 'cond_dp_sum_le', value: String(f.dp_sum_le) });
   if (Array.isArray(f.type_in) && f.type_in.length > 0) {

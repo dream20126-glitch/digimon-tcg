@@ -11080,7 +11080,7 @@ function swapOpts(cur: string[] | undefined, group: string[], v: string): string
 }
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
-  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct' || base === 'cond_color_count') return 'color';
+  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct' || base === 'cond_color_count' || base === 'cond_color_count_ge' || base === 'cond_color_count_le') return 'color';
   if (base === 'cond_has_keyword') return 'keyword';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
@@ -11173,7 +11173,7 @@ function ConditionsHybridEditor({
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_color_not', 'cond_type', 'cond_feature_contains', 'cond_feature',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le', 'cond_lv_same',
-    'cond_dp_ge', 'cond_dp_le', 'cond_dp', 'cond_dp_sum_le', 'cond_color_count', 'cond_has_keyword',
+    'cond_dp_ge', 'cond_dp_le', 'cond_dp', 'cond_dp_sum_le', 'cond_color_count', 'cond_color_count_ge', 'cond_color_count_le', 'cond_has_keyword',
     'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest', 'cond_cost_sum_le',
@@ -11528,8 +11528,8 @@ function ConditionsHybridEditor({
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                       <ButtonGroup
                         options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
-                        value={c.base}
-                        onChange={(v) => updateAt(i, { base: v })}
+                        value={/^cond_color_count_(ge|le)$/.test(c.base) ? 'cond_color_count' : c.base}
+                        onChange={(v) => { if (v === 'cond_color_count' && /^cond_color_count/.test(c.base)) return; updateAt(i, { base: v }); }}
                         accentColor={colors.accent}
                       />
                       {/* Lv: 「参照」＝数値の代わりに Lv（そのデジモン/このカード）・手札/セキュリティの枚数・直前の効果/コストで処理したカードと比べる */}
@@ -11626,8 +11626,15 @@ function ConditionsHybridEditor({
                           <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>複数入れると OR（どれか1つを持っていれば OK）</div>
                         </div>
                       );
-                    })() : c.base === 'cond_color_count' ? (
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    })() : /^cond_color_count(_ge|_le)?$/.test(c.base) ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* 「2色以上の〜」: 完全一致/以上/以下 */}
+                        <ButtonGroup
+                          options={[{ code: 'cond_color_count', label: '完全一致' }, { code: 'cond_color_count_ge', label: '以上' }, { code: 'cond_color_count_le', label: '以下' }]}
+                          value={c.base}
+                          onChange={(v) => { if (v) updateAt(i, { base: v }); }}
+                          accentColor={colors.accent}
+                        />
                         <input
                           type="number"
                           min={1}
@@ -11635,7 +11642,7 @@ function ConditionsHybridEditor({
                           onChange={(e) => updateAt(i, { value: e.target.value })}
                           style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 60, boxSizing: 'border-box' }}
                         />
-                        <span style={{ fontSize: 11, color: '#555' }}>色のカード（例: 1 = 1色）</span>
+                        <span style={{ fontSize: 11, color: '#555' }}>色のカード（例: 1 = 1色、以上で 2 = 2色以上）</span>
                       </div>
                     ) : cat.code === 'ref' && refZoneOf(c) === 'state' ? (
                       /* 状態: 対数（枚数/体数）ではなく「参照対象と表示形式(レスト/アクティブ)が

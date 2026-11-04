@@ -53,6 +53,8 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       }
       // カードの色の数（「1色の〜」）
       case 'cond_color_count':      { const n = num(v); if (n !== undefined) f.color_count = n; break; }
+      case 'cond_color_count_ge':   { const n = num(v); if (n !== undefined) f.color_count_ge = n; break; }
+      case 'cond_color_count_le':   { const n = num(v); if (n !== undefined) f.color_count_le = n; break; }
       // 完全一致（カンマ区切りで複数指定可・OR）。cardMatchesFilterのfilter.featureは配列時のみ
       // 複数OR判定になるため、カンマ区切り文字列のまま渡さずここで配列化する
       case 'cond_feature': {
@@ -89,7 +91,7 @@ const FILTER_COND_CODES = new Set([
   'cond_dp', 'cond_dp_le', 'cond_dp_ge',
   'cond_cost', 'cond_cost_le', 'cond_cost_ge',
   'cond_name', 'cond_name_contains', 'cond_name_not', 'cond_description_contains', 'cond_color_not',
-  'cond_has_keyword', 'cond_color_count',
+  'cond_has_keyword', 'cond_color_count', 'cond_color_count_ge', 'cond_color_count_le',
 ]);
 
 // ConditionPair[] を「filter畳み可能 / 文脈条件」に分割
@@ -432,6 +434,8 @@ function filterToConds(f: any): ConditionPair[] | null {
   if (f.color_not !== undefined) out.push({ base: 'cond_color_not', value: String(take('color_not')) });
   if (f.keyword !== undefined) { const v = take('keyword'); out.push({ base: 'cond_has_keyword', value: Array.isArray(v) ? v.join(',') : String(v) }); }
   if (f.color_count !== undefined) out.push({ base: 'cond_color_count', value: String(take('color_count')) });
+  if (f.color_count_ge !== undefined) out.push({ base: 'cond_color_count_ge', value: String(take('color_count_ge')) });
+  if (f.color_count_le !== undefined) out.push({ base: 'cond_color_count_le', value: String(take('color_count_le')) });
   if (f.cost_kind === 'play' || f.cost_kind === 'use') {
     const ck = take('cost_kind');
     out.forEach((p) => { if (/^cond_cost/.test(p.base)) p.costKind = ck; });

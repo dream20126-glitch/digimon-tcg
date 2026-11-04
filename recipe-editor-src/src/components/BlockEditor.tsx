@@ -12292,6 +12292,19 @@ function ConditionsHybridEditor({
                     />
                     以外
                   </label>
+                ) : c.base === 'cond_same_as_picked' ? (
+                  /* 「選んだカードと同じ」: どの属性が同じか（名前/色/…）を複数選ぶ（値は 'color' / 'name,color' 等） */
+                  (() => {
+                    const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+                    return (
+                      <MultiButtonGroup
+                        options={SAME_AS_PICKED_FIELDS}
+                        values={sel}
+                        onToggle={(code, on) => updateAt(i, { value: (on ? Array.from(new Set([...sel, code])) : sel.filter((x) => x !== code)).join(',') })}
+                        accentColor={colors.accent}
+                      />
+                    );
+                  })()
                 ) : COMMON_CONDS.find((d) => d.code === c.base && d.input === 'select') ? (
                   /* 選択肢が決まっている条件（「選んだ/オープンしたカードのカテゴリー」→ デジモン/…/宣言したカテゴリー 等）はボタンで選ぶ */
                   <ButtonGroup

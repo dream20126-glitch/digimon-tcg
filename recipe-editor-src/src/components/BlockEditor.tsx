@@ -4046,6 +4046,10 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
 // （トグル操作で自動的にこのコードへ切り替わる）が、保存済みレシピの読み込み時に
 // PERREF_L2_CODES/perRefToL1 が認識できるようにしておく
 const PERREF_COMBO_ONLY_CODES = ['own_digimon_tamer', 'opp_digimon_tamer', 'both_digimon_tamer'];
+// 「自分のデジモンの進化元1枚ごとに」: デジモンを選んだときの〔本体〕／〔進化元〕の進化元側（自分/相手/両方のデジモン全ての進化元の合計枚数）。
+// ボタンは〔デジモン〕の下に出す。⚠ エンジン未実装
+const PERREF_EVO_SOURCE_CODES: Record<string, string> = { own: 'own_evo_source', opp: 'opp_evo_source', both: 'both_evo_source' };
+PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_EVO_SOURCE_CODES));
 // デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
 // （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
 const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
@@ -4792,7 +4796,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const tamerCode = curL1 === 'own' ? 'own_tamer' : curL1 === 'opp' ? 'opp_tamer' : curL1 === 'both' ? 'both_tamer' : '';
                   const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : curL1 === 'both' ? 'both_digimon_tamer' : '';
                   const hasDigiTamer = curL1 === 'own' || curL1 === 'opp' || curL1 === 'both';
-                  const digimonChecked = refSubject === digimonCode || refSubject === comboCode;
+                  const evoCode = PERREF_EVO_SOURCE_CODES[curL1] || '';
+                  const digimonChecked = refSubject === digimonCode || refSubject === comboCode || (!!evoCode && refSubject === evoCode);
                   const tamerChecked = refSubject === tamerCode || refSubject === comboCode;
                   const applyDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
                     if (nextDigimon && nextTamer) setSubject(comboCode);
@@ -4800,7 +4805,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     else if (nextTamer) setSubject(tamerCode);
                     else setSubject('');
                   };
-                  const exclusiveL2Options = l2Options.filter((o) => o.code !== digimonCode && o.code !== tamerCode && o.code !== comboCode);
+                  const exclusiveL2Options = l2Options.filter((o) => o.code !== digimonCode && o.code !== tamerCode && o.code !== comboCode && o.code !== evoCode);
                   const toggleBtnStyle = (active: boolean) => ({
                     padding: '3px 9px', borderRadius: 5,
                     border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
@@ -4818,6 +4823,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <button type="button" onClick={() => applyDigiTamer(digimonChecked, !tamerChecked)} style={toggleBtnStyle(tamerChecked)}>テイマー</button>
                           {exclusiveL2Options.length > 0 && (
                             <ButtonGroup options={exclusiveL2Options} value={!digimonChecked && !tamerChecked ? refSubject : ''} onChange={setSubject} accentColor="#1a4f8a" />
+                          )}
+                        </div>
+                      )}
+                      {/* デジモンだけを選んでいるとき: 本体（デジモンの数）か進化元（デジモンの進化元の枚数）か */}
+                      {hasDigiTamer && evoCode && (refSubject === digimonCode || refSubject === evoCode) && (
+                        <div style={{ marginTop: 4 }}>
+                          <ButtonGroup
+                            options={[{ code: digimonCode, label: '本体' }, { code: evoCode, label: '進化元' }]}
+                            value={refSubject}
+                            onChange={setSubject}
+                            accentColor="#1a4f8a"
+                          />
+                          {refSubject === evoCode && (
+                            <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ デジモンの進化元を数えるのはエンジン未実装です（保存はできますが動作しません）</div>
                           )}
                         </div>
                       )}

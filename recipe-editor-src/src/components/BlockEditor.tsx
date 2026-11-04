@@ -3938,6 +3938,11 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
+// 「移動」の📍移動先（移動元は移動先で決まる: バトルエリアへ＝育成エリアから、育成エリアへ＝バトルエリアから）
+const MOVE_AREA_ACTIONS: { action: string; label: string }[] = [
+  { action: 'battle_area_make', label: 'バトルエリア' },
+  { action: 'move_to_breed', label: '育成エリア' },
+];
 // 「〜の下に置く」（進化元/テイマー/このカードの下）: 🎯対象＝置き先（どのデジモン/テイマーの下か）、📥取得元＝置くカード。
 // それ以外（セキュリティ/デッキ/バトルエリア）: 📍置き場所で置き先を選び、🎯対象＝置くカード（このカード・相手のデジモン等）
 const UNDER_PLACE_ACTIONS = new Set(['place_under_digimon', 'place_under_tamer', 'place_under_self']);
@@ -6662,6 +6667,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // - suffix 付き: 自動グループ化なら代表 code（autoGroupBases）、フラグ付き base なら base コード
           const normalizedActionValue = (() => {
             if (effectAction === 'choose_effect') return 'negate';
+            // 移動（育成エリアへ）は「移動」（battle_area_make）の📍移動先の切り替えなので、プルダウンは「移動」のまま
+            if (effectAction === 'move_to_breed') return 'battle_area_make';
             if (isFlaggedBaseDirect) return effectAction;
             if (curVariant && flaggedBases.has(curVariant.base)) return curVariant.base;
             if (curVariant && autoGroupBases.has(curVariant.base)) return curVariant.base + '_top'; // 代表
@@ -7361,6 +7368,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   );
                 })()}
+                {/* 📍 移動先: 「移動」は移動先だけ選ぶ（バトルエリアへ＝育成エリアから、育成エリアへ＝バトルエリアから）。
+                    バトルエリア→ battle_area_make、育成エリア→ move_to_breed */}
+                {MOVE_AREA_ACTIONS.some((m) => m.action === effectAction) && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 移動先</div>
+                    <ButtonGroup
+                      options={MOVE_AREA_ACTIONS.map((m) => ({ code: m.action, label: m.label }))}
+                      value={effectAction}
+                      onChange={(code) => { if (code && code !== effectAction) updateEffect({ action: code }); }}
+                      accentColor="#1976d2"
+                    />
+                    <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                      {effectAction === 'move_to_breed' ? 'バトルエリアのデジモンを育成エリアに移動します' : '育成エリアのデジモンをバトルエリアに移動します'}
+                    </div>
+                    {effectAction === 'move_to_breed' && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応（育成エリアへの移動はまだ動きません）</div>
+                    )}
+                  </div>
+                )}
                 {/* 置き場所は対象欄（🎯アクションの対象/対象数の隣）の選択だけで決まる
                     （対象を変えると action が自動でplace_under_tamer/place_under_digimon/
                     place_on_security_top/place_in_battle_areaへ切り替わる。remapPlaceActionForTarget参照）。

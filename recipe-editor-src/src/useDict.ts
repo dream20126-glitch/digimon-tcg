@@ -57,6 +57,10 @@ const REQUIRED_KEYWORDS: DictEntry[] = [
   { code: 'alt_use_color', kind: 'keyword', label: '〇色でも色条件を満たせる' },
 ];
 
+// スプシの表示名より優先する表示名。battle_area_make（育成エリア→バトルエリア）は「移動」1つにまとめ、
+// 移動先（バトルエリア／育成エリア）はアクション欄の📍移動先で選ぶ（育成エリアへは move_to_breed）
+const LABEL_OVERRIDES: Record<string, string> = { battle_area_make: '移動' };
+
 function ensureRequired(list: DictEntry[], required: DictEntry[]): DictEntry[] {
   const codes = new Set(list.map((e) => e.code));
   const missing = required.filter((r) => !codes.has(r.code));
@@ -74,7 +78,7 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
     const code = String(r['コード'] || '').trim();
     if (!code) continue;
     const kind = String(r['種類'] || '').trim();
-    const label = String(r['表示名'] || '').trim() || code;
+    const label = LABEL_OVERRIDES[code] || String(r['表示名'] || '').trim() || code;
     const entry: DictEntry = {
       code,
       kind,

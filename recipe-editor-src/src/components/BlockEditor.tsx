@@ -11427,11 +11427,11 @@ function ConditionsHybridEditor({
             if (mode === 'contains') {
               if (containsRow) { if (!containsTags.includes(v)) updateAt(containsRow.i, { value: [...containsTags, v].join(',') }); }
               else if (emptyOther) updateAt(emptyOther.i, { base: 'cond_feature_contains', value: v });
-              else onChange([...conditions, { base: 'cond_feature_contains', value: v, subject: defaultSubject || undefined }]);
+              else onChange([...conditions, { base: 'cond_feature_contains', value: v, subject: (containsRow || exactRow)?.c.subject || defaultSubject || undefined }]);
             } else {
               if (exactRow) { if (!exactTags.includes(v)) updateAt(exactRow.i, { value: [...exactTags, v].join(',') }); }
               else if (emptyOther) updateAt(emptyOther.i, { base: 'cond_feature', value: v });
-              else onChange([...conditions, { base: 'cond_feature', value: v, subject: defaultSubject || undefined }]);
+              else onChange([...conditions, { base: 'cond_feature', value: v, subject: (containsRow || exactRow)?.c.subject || defaultSubject || undefined }]);
             }
           };
           return (
@@ -11443,6 +11443,34 @@ function ConditionsHybridEditor({
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <FeatureTagsCombined combined={combined} onAdd={addTag} onRemove={removeTag} accentColor={colors.accent} />
                 </div>
+                {/* 対象（発動条件の「このデジモンが特徴『NSp』を持つなら」等）: 含む/完全一致の行どちらにも同じ対象を付ける */}
+                {showSubjectSelector && (() => {
+                  const featRows = [containsRow, exactRow].filter(Boolean) as { c: ConditionPair; i: number }[];
+                  const curSub = COND_SUBJECT_CODE_TO_L1L2[splitStackSuffix(featRows[0]?.c.subject || '').base] || { l1: '', l2: '' };
+                  const setSub = (subject: string | undefined) => onChange(conditions.map((cc, k) => featRows.some((r) => r.i === k) ? { ...cc, subject } : cc));
+                  const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                  return (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                      <ButtonGroup
+                        options={COND_SUBJECT_L1}
+                        value={curSub.l1}
+                        onChange={(l1) => setSub(l1 ? (COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + (curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon')] || l1) : undefined)}
+                        accentColor={colors.accent}
+                      />
+                      {l2Options.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <ButtonGroup
+                            options={l2Options}
+                            value={curSub.l2}
+                            onChange={(l2) => setSub(COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] || curSub.l1)}
+                            accentColor={colors.accent}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           );

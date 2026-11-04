@@ -117,6 +117,7 @@ const cases: Case[] = [
   { name: '移動: バトルエリアのこのデジモンを育成エリアに移動（move_to_breed）', blocks: [base({ action: 'move_to_breed', target: 'self', value: undefined })], check: ['0.action', '0.target'], raw: (r: any) => J(r).includes('"action":"move_to_breed"') },
   { name: '移動: 育成エリアのLv.3以上のデジモンをバトルエリアに（battle_area_make・任意）', blocks: [base({ action: 'battle_area_make', target: 'own:1', value: undefined, optional: true })], check: ['0.action', '0.optional'], raw: (r: any) => J(r).includes('"action":"battle_area_make"') },
   { name: 'P-144: 進化元に「ゴツモン」「X抗体」がない（進化元 完全一致0＋属性・OR）', blocks: [base({ trigger: 'during_own_turn', action: 'cant_attack', target: 'self', value: undefined, conditions: [{ base: 'cond_has_evo_eq', value: '0', subject: 'self' }, { base: 'cond_name', value: 'ゴツモン', subject: '__ref_exists_filter__' }, { base: 'cond_name_contains', value: 'X抗体', subject: '__ref_exists_filter__' }, { base: 'cond_attr_or', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_evo_match_eq:0') },
+  { name: 'P-148: このデジモンが特徴に「NSp」を持つなら（特徴＋対象このデジモン）', blocks: [base({ trigger: 'on_attack', action: 'draw', value: 1, conditions: [{ base: 'cond_feature', value: 'NSp', subject: 'self' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_feature:NSp@self') },
 ];
 
 let ng = 0;

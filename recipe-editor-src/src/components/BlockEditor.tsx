@@ -1676,12 +1676,12 @@ function CostListEditor({
         const cTgtSuffix = (c.target || '').substring(cTgtRaw.length);
         const { base: cTgtBase, pos: cTgtStackPos } = splitStackSuffix(cTgtRaw);
         const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
-        // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外。
+        // コストの対象では「プレイヤー/セキュリティ」を選択肢から除外（オプションは「バトルエリアのオプションを破棄することで」等で使う）。
         // 「最も多いプレイヤー」は専用の「何が多いか」選択肢(MOST_PLAYER_METRICS)を使う
         const cTgtL2Options = cCurTgt.l1 === 'most'
           ? MOST_PLAYER_METRICS
           : [
-            ...(TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code)),
+            ...(TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['player', 'security'].includes(o.code)),
             // 破棄: 「自分のデッキを1枚破棄することで」等、場所そのものを対象にする（手札/デッキ）
             ...(isDiscardActive ? (TARGET_SEL_L2_FROM_ZONES[cCurTgt.l1] || []).filter((o) => (COST_DISCARD_TGT_ZONES[cCurTgt.l1] || []).includes(o.code)) : []),
           ];
@@ -2415,7 +2415,8 @@ function CostListEditor({
                   両方満たされるアクション（place_on_security_top等）では二重表示になって
                   しまうため、isPlaceActive中はこちらを出さない */}
               {(() => {
-                if (isPlaceActive || (!costActionHasFlag('hasFromZones') && c.action !== 'evolve' && c.action !== 'summon')) return null;
+                // 破棄は専用の「📥 場所（どこから破棄するか）」で設定するので出さない（二重表示になる）
+                if (isPlaceActive || isDiscardActive || (!costActionHasFlag('hasFromZones') && c.action !== 'evolve' && c.action !== 'summon')) return null;
                 const zones = c.fromZones || [];
                 const op = c.fromZonesOp || 'or';
                 const toggleZone = (code: string) => {
@@ -3878,6 +3879,8 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   // （対象＝自分/相手→セキュリティを選んだときに表示される位置ボタン）で設定する
   { code: 'security', label: 'セキュリティ', action: 'security_trash_select' },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
+  // バトルエリア: 場のカード（ディレイオプション等）を破棄する。汎用の「破棄する」＋from:"battle_area"（対象は🎯対象で選ぶ）
+  { code: 'battle_area', label: 'バトルエリア', action: 'discard', fromZone: 'battle_area' },
   // リンクカード: このカード自身がリンクしているカードを破棄する（unlinkアクションを流用）
   { code: 'linked', label: 'リンクカード', action: 'unlink', warn: '⚠ エンジン未対応: 現状は対象を選べず、リンクしている先頭のカードから自動で破棄されます（指定/絞り込みは未反映）' },
 ];
@@ -3886,7 +3889,8 @@ const COST_DISCARD_TGT_ZONES: Record<string, string[]> = { own: ['hand', 'deck']
 const COST_DISCARD_ZONE_OF_TARGET: Record<string, string> = {
   own_hand: 'hand', opponent_hand: 'hand', both_hand: 'hand', own_deck: 'deck', both_deck: 'deck',
 };
-const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
+// 汎用の discard（バトルエリア）は含めない（効果側の「その他」一覧から消さないため）
+const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action).filter((a) => a !== 'discard'));
 // 「デッキに戻す」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
 const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'return_deck', label: 'デッキに戻す' },

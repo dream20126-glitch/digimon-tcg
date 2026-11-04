@@ -142,7 +142,7 @@ export function RecipeEditor({
   }
 
   // カードテキストに「としても扱う」ルールがあれば、カード全体のルール欄を最初から目立たせる
-  const textMentionsAlias = [card.effectText, card.evoText, card.securityText].some((t) => /としても扱う/.test(t || ''));
+  const textMentionsAlias = [card.effectText, card.evoText, card.securityText].some((t) => /としても扱う|名称[^＞]*として扱う/.test(t || ''));
   const aliasNames = cardLevel.aliasNames || [];
 
   const hasText =
@@ -191,11 +191,11 @@ export function RecipeEditor({
             onChange={(e) => {
               setShowCardLevel(e.target.checked);
               // ✅を外したら入力も消す（出力JSONを元の形に戻す）
-              if (!e.target.checked) setCardLevel({ ...cardLevel, aliasNames: undefined });
+              if (!e.target.checked) setCardLevel({ ...cardLevel, aliasNames: undefined, aliasMatch: undefined });
             }}
           />
           <b>📛 カード全体のルール</b>
-          <span style={{ fontSize: 10, color: '#666' }}>（＜ルール：名称「〇〇」としても扱う＞ など）</span>
+          <span style={{ fontSize: 10, color: '#666' }}>（＜ルール：名称「〇〇」としても扱う／を含むものとして扱う＞ など）</span>
           {textMentionsAlias && aliasNames.length === 0 && (
             <span style={{ fontSize: 10, color: '#8e24aa', fontWeight: 'bold' }}>← このカードのテキストに「としても扱う」があります</span>
           )}
@@ -203,7 +203,21 @@ export function RecipeEditor({
         {(showCardLevel || aliasNames.length > 0) && (
           <div style={{ marginTop: 6 }}>
             <div style={{ fontSize: 11, color: '#6a1b9a', marginBottom: 4 }}>
-              名称「〇〇」としても扱う（追加の名称・複数可）
+              名称「〇〇」として扱う（追加の名称・複数可）
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+              {([['', '完全一致（名称「〇〇」としても扱う）'], ['include', '含む（名称「〇〇」を含むものとして扱う）']] as const).map(([code, label]) => {
+                const active = (cardLevel.aliasMatch || '') === code;
+                return (
+                  <button key={code || 'exact'} type="button"
+                    onClick={() => setCardLevel({ ...cardLevel, aliasMatch: code === 'include' ? 'include' : undefined })}
+                    style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                      border: active ? '2px solid #8e24aa' : '1px solid #bbb', background: active ? '#8e24aa' : '#f5f5f5',
+                      color: active ? '#fff' : '#333', fontWeight: active ? 'bold' : 'normal' }}>
+                    {label}
+                  </button>
+                );
+              })}
             </div>
             <MultiTextTags
               values={aliasNames}
@@ -211,9 +225,11 @@ export function RecipeEditor({
               placeholder="例: マメモン"
               accentColor="#8e24aa"
             />
-            <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
-              ⚠ エンジン未実装です（保存はできますが、名称参照の判定にはまだ使われません）
-            </div>
+            {cardLevel.aliasMatch === 'include' && (
+              <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+                ⚠ エンジンは「含む」をまだ区別しません（今は完全一致と同じく、名称が「〇〇」のカードとしても扱われます）
+              </div>
+            )}
           </div>
         )}
       </div>

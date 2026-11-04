@@ -2154,7 +2154,7 @@ function normalizeKeywordAliasesDeep(v: any): any {
 // 既存レシピ JSON から EffectBlock[] へ復元
 // カード全体のルール（CardLevelSettings）として recipe のトップレベルに置くキー。
 // 値が配列のため、recipeToBlocks がトリガーキーと誤認して効果ブロックを作らないよう除外する
-export const CARD_LEVEL_KEYS = new Set(['alias_names']);
+export const CARD_LEVEL_KEYS = new Set(['alias_names', 'alias_match']);
 
 // recipe トップレベルから CardLevelSettings を取り出す（recipeToBlocks と対で使う）
 export function parseCardLevelSettings(rawRecipe: any): CardLevelSettings {
@@ -2167,6 +2167,7 @@ export function parseCardLevelSettings(rawRecipe: any): CardLevelSettings {
   } else if (typeof an === 'string' && an.trim()) {
     out.aliasNames = [an.trim()];
   }
+  if (out.aliasNames && rawRecipe.alias_match === 'include') out.aliasMatch = 'include';
   return out;
 }
 
@@ -2175,7 +2176,10 @@ export function parseCardLevelSettings(rawRecipe: any): CardLevelSettings {
 export function applyCardLevelSettings(recipe: Record<string, any>, settings: CardLevelSettings | undefined): Record<string, any> {
   if (!settings) return recipe;
   const names = (settings.aliasNames || []).map((n) => String(n).trim()).filter(Boolean);
-  if (names.length > 0) recipe.alias_names = names;
+  if (names.length > 0) {
+    recipe.alias_names = names;
+    if (settings.aliasMatch === 'include') recipe.alias_match = 'include';
+  }
   return recipe;
 }
 

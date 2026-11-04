@@ -923,8 +923,12 @@ export interface VisualTypeEntry {
 // 効果ブロック(EffectBlock)には属さないため、RecipeEditor が blocks とは別に保持する
 export interface CardLevelSettings {
   // ＜ルール：名称「マメモン」としても扱う＞（EX12-041 サンダーボールモン）の追加名称。
-  // JSON では recipe.alias_names（文字列配列）。⚠ エンジン未実装
+  // JSON では recipe.alias_names（文字列配列）
   aliasNames?: string[];
+  // 追加名称の扱い方。'include'＝名称「〇〇」を含むものとして扱う（＜ルール：名称「マメモン」「ティラノモン」を
+  // 含むものとして扱う＞ マメティラモン P-141。名称が「〇〇」のカードとしては扱わない。公式ルール 2-3-4-4-1）。
+  // 未指定＝完全一致（名称「〇〇」としても扱う）。JSON では recipe.alias_match:"include"
+  aliasMatch?: 'include';
 }
 
 // 「効果を発揮」(negate) で対象にできるタイミング

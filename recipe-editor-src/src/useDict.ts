@@ -48,6 +48,8 @@ const REQUIRED_ACTIONS: DictEntry[] = [
 // スプシに無くても必ず表示する条件
 const REQUIRED_CONDITIONS: DictEntry[] = [
   { code: 'cond_picked_type', kind: 'condition', label: '選んだ/オープンしたカードのカテゴリー（宣言したカテゴリー含む）' },
+  // 「選んだテイマーと同じ色の〜」等（直前に選んだカードと属性が同じ。属性は行のチェックボックスで選ぶ）
+  { code: 'cond_same_as_picked', kind: 'condition', label: '選んだカードと同じ（属性指定）' },
 ];
 // スプシに無くても必ず表示するキーワード
 const REQUIRED_KEYWORDS: DictEntry[] = [

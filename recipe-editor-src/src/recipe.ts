@@ -2077,7 +2077,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         getDesignatedGroups(entry).length === 0
         && (entry.value === undefined || entry.value === '' || entry.value === null);
       const isInteractivePickTarget = /^(own|opponent):(?!all\b)/.test(String(b.target || ''));
-      if (entries.every(isSimpleEntry) && !isInteractivePickTarget) {
+      // ちょうど1体選択（own:1/opponent:1）もまとめる: エンジンは1つ目のキーワードで選んだデジモンに2つ目以降も付与する
+      // （__kwPicked）。分けて保存すると一緒に選んだ効果（DP+2000 等）が分けた数だけコピーされ、開き直すと別の効果になっていた（P-159）
+      const isSinglePick = /^(own|opponent):1$/.test(String(b.target || ''));
+      if (entries.every(isSimpleEntry) && (!isInteractivePickTarget || isSinglePick)) {
         step.keyword = entries.map((entry) => entry.keyword).join(',');
       } else {
         // 「N体まで/2体等」の複数対象選択は _lastPickedCard が最後の1体しか
@@ -2086,6 +2089,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         const isSinglePickTarget = /^(own|opponent):1$/.test(String(b.target || ''));
         entries.slice(1).forEach((entry) => {
           const extraStep: any = { ...step, keyword: entry.keyword };
+          // 一緒に行う効果（alt_actions）は1つ目の step だけが持つ（コピーすると DP+ 等がキーワードの数だけ重なる）
+          delete extraStep.alt_actions;
+          delete extraStep.alt_actions_op;
           delete extraStep.designated;
           delete extraStep.designated_groups;
           delete extraStep.designated_common;
@@ -2470,9 +2476,29 @@ function stepToBlockWithTiming(
 // 吸収し、独立したブロックにはしない（blocksToRecipeの「その後」出力の逆変換）。
 // そのstep自身がさらに alt_actions を持つ場合（AND/ORでもう1件以上束ねている場合）は、
 // 同じセグメントの後続項目（thenBreakなし）としてそのまま続けて吸収する
+// 以前の保存形（1体選択の複数キーワードを「2つ目以降は same_target の別 step」に分けたもの）を、読込時に1つの step（カンマ区切り）へ戻す。
+// 対象の絞り込み・値が無い単純なキーワードで、キーワード・対象以外が同じ step だけ（P-159「再起動」＋「ブロッカー」＋DP+2000）
+function mergeSplitKeywordSteps(arr: any[]): any[] {
+  const isKw = (x: any) => x && (x.action === 'grant_keyword' || x.action === 'grant_keyword_to');
+  const isSimple = (x: any) => !x.designated && !x.designated_groups && !x.designated_common && (x.value === undefined || x.value === '' || x.value === null);
+  const rest = (x: any) => { const { keyword: _k, target: _t, ...o } = x; return JSON.stringify(o); };
+  const out: any[] = [];
+  arr.forEach((step) => {
+    const prev = out[out.length - 1];
+    if (prev && isKw(step) && isKw(prev) && step.action === prev.action && step.target === 'same_target'
+      && /^(own|opponent):1$/.test(String(prev.target || '')) && isSimple(step) && isSimple(prev)
+      && step.keyword && prev.keyword && rest(step) === rest(prev)) {
+      out[out.length - 1] = { ...prev, keyword: prev.keyword + ',' + step.keyword };
+      return;
+    }
+    out.push(step);
+  });
+  return out;
+}
+
 function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link', triggerKey: string, arr: any[]): EffectBlock[] {
   const blocks: EffectBlock[] = [];
-  arr.forEach((step0: any) => {
+  mergeSplitKeywordSteps(arr).forEach((step0: any) => {
     const step = normalizeChoiceStep(step0);
     const isChainStep = Array.isArray(step?.options) && step.options.includes('continue_on_fail');
     if (isChainStep && blocks.length > 0) {

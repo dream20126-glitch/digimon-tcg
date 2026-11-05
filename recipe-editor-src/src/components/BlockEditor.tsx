@@ -6842,7 +6842,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // ===== 効果1の複数選択（ボタンを複数押す／その他のアクションで追加する） =====
           // 1つめ＝効果1のアクション、2つめ以降＝効果1にまとめる効果（bundle。AND の alt_actions）。
           // 「できない」にできるアクションだけを選んでいるときは従来どおり「できない」の複数選択
-          const bundleAlts = isEditingAlt ? [] : altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && a.bundle);
+          // 効果1が「できない」以外（例: キーワード付与）のときは、同じ対象の「できない」（bundle なしで保存されたもの）も
+          // 効果1にまとめた効果として扱う（P-135: キーワード付与＋アタックできない。開き直すとどこにも出なかった）
+          const _primaryIsCant = !!CANT_TO_DOABLE_LIVE[block.action || ''] || block.action === 'cant_attack_block' || block.action === CANT_BE_ATTACKED;
+          const bundleAlts = isEditingAlt ? [] : altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && (a.bundle || !_primaryIsCant));
+          // まとめた効果のアクションがボタン code に当たるか（「できない」形もそのボタン）
+          const bundleMatches = (a: AltAction, code: string) => a.action === code || CANT_TO_DOABLE_LIVE[a.action || ''] === code;
           const bundleBlocked = !isEditingAlt && altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
           function addBundleAction(code: string) {
             const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
@@ -6852,7 +6857,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 処理したら true（false なら従来の単一選択/できないの処理に任せる）
           function toggleMultiAction(code: string): boolean {
             if (isEditingAlt || !block.action) return false;
-            const inB = bundleAlts.find((x) => x.a.action === code);
+            const inB = bundleAlts.find((x) => bundleMatches(x.a, code));
             if (inB) { removeAltAction(inB.i); return true; }
             if (block.action === code) {
               if (bundleAlts.length > 0) {
@@ -7086,6 +7091,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       のみ対象にし、いなければ何もしない（「相手のデジモンにアタックできる」）。
                       プレイヤー＝常にセキュリティを対象にし、無ければ何もしない
                       （「相手プレイヤーにアタックできる」） */}
+                  {/* アタック〔できない〕（cant_attack）: アタック対象をデジモンにすると「デジモンにアタックできない」
+                      （プレイヤーにはできる）。P-135「自分のデジモンにアタックできない」 */}
+                  {effectAction === 'cant_attack' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
+                      <ButtonGroup
+                        options={[{ code: 'digimon', label: 'デジモン' }, { code: 'player', label: 'プレイヤー' }, { code: '', label: '指定なし' }]}
+                        value={effectOptions.includes('digimon_only') ? 'digimon' : effectOptions.includes('player_only') ? 'player' : ''}
+                        onChange={(v) => updateEffect({ options: swapOpts(effectOptions, ['digimon_only', 'player_only'], v === 'digimon' ? 'digimon_only' : v === 'player' ? 'player_only' : '') })}
+                        accentColor="#1976d2"
+                      />
+                      {(effectOptions.includes('digimon_only') || effectOptions.includes('player_only')) && (
+                        <span style={{ fontSize: 10, color: '#c62828' }}>「{effectOptions.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」⚠ エンジン未実装</span>
+                      )}
+                    </div>
+                  )}
                   {effectAction === 'attack' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {/* レストせず: 即時アタックを実行せず、対象に「アタックしてもレストしない」
@@ -7264,7 +7285,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const active = (isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code)
                       || (a.code === 'evolve' && effectAction === 'appear_or_evolve')
                       || (a.code === 'deck_open' && OPEN_ACTION_CODES.has(effectAction))
-                      || bundleAlts.some((x) => x.a.action === a.code);
+                      || bundleAlts.some((x) => bundleMatches(x.a, a.code));
                     return (
                       <button
                         key={a.code}
@@ -7616,6 +7637,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     ⚠ 複数選択中のため「できない」になります（同時に「する」ことはできないため）
                   </div>
                 )}
+                {/* 効果1にまとめた効果（例: キーワード付与＋アタック）のうち「できない」にできるもの:
+                    それぞれ する/できない を選ぶ。アタックはアタック対象（デジモン/プレイヤー）も */}
+                {bundleAlts.filter((x) => DOABLE_TO_CANT_LIVE[x.a.action || ''] || CANT_TO_DOABLE_LIVE[x.a.action || '']).map((x) => {
+                  const doable = DOABLE_TO_CANT_LIVE[x.a.action || ''] ? (x.a.action || '') : CANT_TO_DOABLE_LIVE[x.a.action || ''];
+                  const isCant = !DOABLE_TO_CANT_LIVE[x.a.action || ''];
+                  const opts = x.a.options || [];
+                  const lab = COMMON_ACTIONS.find((c) => c.code === doable)?.label || findActionEntry(doable)?.label || doable;
+                  return (
+                    <div key={'bc' + x.i} style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, color: '#555' }}>{lab}:</span>
+                      <ButtonGroup
+                        options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' }]}
+                        value={isCant ? 'cant' : 'do'}
+                        onChange={(v) => updateAltAction(x.i, { action: v === 'cant' ? DOABLE_TO_CANT_LIVE[doable] : doable, value: v === 'cant' ? undefined : x.a.value })}
+                        accentColor="#1976d2"
+                      />
+                      {doable === 'attack' && (
+                        <>
+                          <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
+                          <ButtonGroup
+                            options={[{ code: 'digimon', label: 'デジモン' }, { code: 'player', label: 'プレイヤー' }, { code: '', label: '指定なし' }]}
+                            value={opts.includes('digimon_only') ? 'digimon' : opts.includes('player_only') ? 'player' : ''}
+                            onChange={(v) => updateAltAction(x.i, { options: swapOpts(opts, ['digimon_only', 'player_only'], v === 'digimon' ? 'digimon_only' : v === 'player' ? 'player_only' : '') })}
+                            accentColor="#1976d2"
+                          />
+                          {isCant && (opts.includes('digimon_only') || opts.includes('player_only')) && (
+                            <span style={{ fontSize: 10, color: '#c62828' }}>「{opts.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」⚠ エンジン未実装</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
                 <div style={{ marginTop: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input

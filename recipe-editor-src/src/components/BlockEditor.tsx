@@ -442,12 +442,13 @@ export function MultiTextTags({ values, onChange, placeholder, accentColor, valu
 // 選んでから追加する。含む=cond_feature_contains・完全一致=cond_featureの別々の
 // ConditionPairへ振り分けるのは呼び出し側(onAdd/onRemove)の責務）
 function FeatureTagsCombined({
-  combined, onAdd, onRemove, accentColor,
+  combined, onAdd, onRemove, accentColor, placeholder,
 }: {
   combined: { v: string; mode: 'contains' | 'exact' }[];
   onAdd: (v: string, mode: 'contains' | 'exact') => void;
   onRemove: (v: string, mode: 'contains' | 'exact') => void;
   accentColor?: string;
+  placeholder?: string;
 }) {
   const [draft, setDraft] = useState('');
   const [mode, setMode] = useState<'contains' | 'exact'>('contains');
@@ -481,7 +482,7 @@ function FeatureTagsCombined({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          placeholder="例: サイボーグ型"
+          placeholder={placeholder || "例: サイボーグ型"}
           style={{ flex: 1, minWidth: 120, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
         />
         <button type="button" onClick={add} style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${accent}`, background: '#fff', color: accent, cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}>+ 追加</button>
@@ -539,20 +540,12 @@ function RefExistsAttributeFilterPanel({
   const types = (typeVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
-  // 名称（完全一致・複数はOR。「自分の『トレッドミル・トレーニング』がない間」等）
-  // 「含む」= cond_name_contains（「名称に『〇〇』を含む」）。どちらか一方だけを持つ
+  // 名称の属性があるか（含む・完全一致のどちらか）
   const nameVal = getAttr('cond_name') || getAttr('cond_name_contains');
-  const nameMode = nameVal?.base === 'cond_name_contains' ? 'cond_name_contains' : 'cond_name';
-  const names = (nameVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
-  // 名称をまだ入れていないときに選んだ「含む/完全一致」（入力した時点でその条件で保存する）
-  const [nameModePending, setNameModePending] = useState<string>('cond_name');
-  // 「含む」と「完全一致」を両方使う（P-160「名称に『ティラノモン』を含むカードか『X抗体』」）: それぞれ別の条件
-  // （cond_name_contains と cond_name）にして、属性どうしを OR にする
+  // 名称: 含む（cond_name_contains）と完全一致（cond_name）。両方持てる（P-160）
   const nameContainsVal = getAttr('cond_name_contains');
   const nameExactVal = getAttr('cond_name');
-  const [nameBothPending, setNameBothPending] = useState(false);
-  const nameBoth = (!!nameContainsVal && !!nameExactVal) || nameBothPending;
   const [activeSub, setActiveSub] = useState<Set<string>>(() => {
     const s = new Set<string>();
     if (colorVal) s.add('color');
@@ -572,7 +565,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
-      else if (key === 'name') { setNameBothPending(false); onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each')))); }
+      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each' || cc.base === 'cond_attr_or'))));
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -629,7 +622,7 @@ function RefExistsAttributeFilterPanel({
             })}
           </div>
           {/* 属性を2つ以上選んだとき: 全部に合う（AND）か、どれか1つに合えばよい（OR。「名称に『〇〇』を含むか、特徴『〇〇』を持つ」）か */}
-          {marker === REF_EXISTS_FILTER_MARKER && (activeSub.size >= 2 || (activeSub.has('name') && nameBoth)) && (
+          {marker === REF_EXISTS_FILTER_MARKER && (activeSub.size >= 2 || (activeSub.has('name') && !!nameContainsVal && !!nameExactVal)) && (
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>属性どうし:</span>
               {/* 小さいボタン: 押すたびに AND ⇔ OR を切り替える */}
@@ -734,97 +727,56 @@ function RefExistsAttributeFilterPanel({
               {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
             </div>
           )}
-          {activeSub.has('name') && nameBoth && (() => {
-            const listOf = (v?: ConditionPair) => (v?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-            const setList = (base: string, next: string[]) => setAttr(base, next.length > 0 ? next.join(',') : undefined);
-            const toggleMode = (base: string, on: boolean) => {
-              if (on) return;
-              // 片方を外す → 残った方だけの名称（従来の1行）に戻す
-              const keep = base === 'cond_name' ? 'cond_name_contains' : 'cond_name';
-              setNameBothPending(false);
-              setNameModePending(keep);
-              onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === base || cc.base === 'cond_name_each'))));
+          {activeSub.has('name') && (() => {
+            // 名称: 〔含む〕を選んで追加＝cond_name_contains、〔完全一致〕を選んで追加＝cond_name（特徴の条件と同じ操作）。
+            // 両方あるときは「名称に『ティラノモン』を含むカードか『X抗体』」（P-160）＝属性どうし OR
+            const listOf = (v?: ConditionPair) => (v?.value || '').split(',').map((x) => x.trim()).filter(Boolean);
+            const containsList = listOf(nameContainsVal);
+            const exactList = listOf(nameExactVal);
+            const combined = [...containsList.map((v) => ({ v, mode: 'contains' as const })), ...exactList.map((v) => ({ v, mode: 'exact' as const }))];
+            const write = (nextContains: string[], nextExact: string[]) => {
+              let next = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains')));
+              if (nextContains.length > 0) next.push({ base: 'cond_name_contains', value: nextContains.join(','), subject: marker });
+              if (nextExact.length > 0) next.push({ base: 'cond_name', value: nextExact.join(','), subject: marker });
+              const both = nextContains.length > 0 && nextExact.length > 0;
+              // 両方になったとき、ほかの属性が無ければ「どちらか」（OR）にする
+              if (both && !attrOr && activeSub.size === 1) next.push({ base: 'cond_attr_or', subject: marker });
+              // 「全員いる」は片方だけで2つ以上のときの設定
+              if (both || nextContains.length + nextExact.length < 2) next = next.filter((cc) => !(cc.subject === marker && cc.base === 'cond_name_each'));
+              onChange(next);
             };
+            const both = containsList.length > 0 && exactList.length > 0;
             return (
               <div style={{ marginBottom: 4 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-                  <span style={{ fontSize: 10, color: '#666' }}>名称:</span>
-                  <MultiButtonGroup
-                    options={[{ code: 'cond_name_contains', label: '含む' }, { code: 'cond_name', label: '完全一致' }]}
-                    values={['cond_name_contains', 'cond_name']}
-                    onToggle={(code, on) => toggleMode(code, on)}
-                    accentColor="#946200"
-                  />
-                </div>
-                {[{ base: 'cond_name_contains', label: '含む', v: nameContainsVal, ph: '例: ティラノモン' }, { base: 'cond_name', label: '完全一致', v: nameExactVal, ph: '例: X抗体' }].map((r) => (
-                  <div key={r.base} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 2 }}>
-                    <span style={{ fontSize: 10, color: '#946200', fontWeight: 'bold', minWidth: 48, paddingTop: 4 }}>{r.label}:</span>
-                    <div style={{ flex: 1 }}>
-                      <MultiTextTags values={listOf(r.v)} onChange={(next) => setList(r.base, next)} placeholder={r.ph} accentColor="#946200" />
-                    </div>
+                <div style={{ fontSize: 10, color: '#666', marginBottom: 2 }}>名称:</div>
+                <FeatureTagsCombined
+                  combined={combined}
+                  placeholder="例: トレッドミル・トレーニング"
+                  onAdd={(v, m) => {
+                    if (m === 'contains') { if (!containsList.includes(v)) write([...containsList, v], exactList); }
+                    else if (!exactList.includes(v)) write(containsList, [...exactList, v]);
+                  }}
+                  onRemove={(v, m) => (m === 'contains' ? write(containsList.filter((x) => x !== v), exactList) : write(containsList, exactList.filter((x) => x !== v)))}
+                  accentColor="#946200"
+                />
+                {both && !attrOr && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 属性どうしが AND です。「含む」か「完全一致」のどちらかに合えばよいなら、上の〔AND〕を押して OR にしてください</div>
+                )}
+                {/* 名称が2つ以上（片方のモードだけ）: どれか1つ（OR）か、全員いる（AND。「自分の『本宮大輔』と『一条寺賢』がいるとき」）か。
+                    全員いる = cond_name_each（値なしの印。名称ごとに「いる」を判定する） */}
+                {!both && combined.length >= 2 && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+                    <ButtonGroup
+                      options={[{ code: '', label: 'どれか（OR）' }, { code: 'each', label: '全員いる（AND）' }]}
+                      value={getAttr('cond_name_each') ? 'each' : ''}
+                      onChange={(v) => setAttr('cond_name_each', v === 'each' ? '1' : undefined)}
+                      accentColor="#946200"
+                    />
                   </div>
-                ))}
-                {!attrOr && (
-                  <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 属性どうしが AND です。「含む」か「完全一致」のどちらかに合えばよいなら、上の〔AND〕を押して OR にしてください</div>
                 )}
               </div>
             );
           })()}
-          {activeSub.has('name') && !nameBoth && (
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-                <span style={{ fontSize: 10, color: '#666' }}>名称:</span>
-                <ButtonGroup
-                  options={[{ code: 'cond_name_contains', label: '含む' }, { code: 'cond_name', label: '完全一致' }]}
-                  value={nameVal ? nameMode : nameModePending}
-                  onChange={(v) => {
-                    if (!v || v === (nameVal ? nameMode : nameModePending)) return;
-                    const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains')));
-                    onChange(names.length > 0 ? [...rest, { base: v, value: names.join(','), subject: marker }] : rest);
-                    setNameModePending(v);
-                  }}
-                  accentColor="#946200"
-                />
-                {marker === REF_EXISTS_FILTER_MARKER && (
-                  <button
-                    type="button"
-                    title="「名称に『〇〇』を含むカードか『△△』」のように、含むと完全一致を両方使う（どちらかに合えばよい）"
-                    onClick={() => {
-                      setNameBothPending(true);
-                      // ほかの属性が無ければ、含む・完全一致の「どちらか」になるよう属性どうしを OR にする
-                      if (!attrOr && activeSub.size === 1) onChange([...conditions, { base: 'cond_attr_or', subject: marker }]);
-                    }}
-                    style={{ padding: '1px 8px', borderRadius: 4, border: '1px dashed #946200', background: '#fffaf0', color: '#946200', cursor: 'pointer', fontSize: 10 }}
-                  >
-                    ＋ 含む・完全一致を両方使う
-                  </button>
-                )}
-              </div>
-              <MultiTextTags
-                values={names}
-                onChange={(next) => {
-                  // 名称が1つになったら「全員いる」は意味が無いので外す
-                  const mode = nameVal ? nameMode : nameModePending;
-                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === mode || (next.length < 2 && cc.base === 'cond_name_each'))));
-                  onChange(next.length > 0 ? [...rest, { base: mode, value: next.join(','), subject: marker }] : rest);
-                }}
-                placeholder="例: トレッドミル・トレーニング"
-                accentColor="#946200"
-              />
-              {/* 名称が2つ以上: どれか1つ（OR）か、全員いる（AND。「自分の『本宮大輔』と『一条寺賢』がいるとき」）か。
-                  全員いる = cond_name_each（値なしの印。名称ごとに「いる」を判定する） */}
-              {names.length >= 2 && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
-                  <ButtonGroup
-                    options={[{ code: '', label: 'どれか（OR）' }, { code: 'each', label: '全員いる（AND）' }]}
-                    value={getAttr('cond_name_each') ? 'each' : ''}
-                    onChange={(v) => setAttr('cond_name_each', v === 'each' ? '1' : undefined)}
-                    accentColor="#946200"
-                  />
-                </div>
-              )}
-            </div>
-          )}
           {activeSub.has('evo') && (
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>進化元の枚数:</span>

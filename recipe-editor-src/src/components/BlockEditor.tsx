@@ -547,6 +547,12 @@ function RefExistsAttributeFilterPanel({
 
   // 名称をまだ入れていないときに選んだ「含む/完全一致」（入力した時点でその条件で保存する）
   const [nameModePending, setNameModePending] = useState<string>('cond_name');
+  // 「含む」と「完全一致」を両方使う（P-160「名称に『ティラノモン』を含むカードか『X抗体』」）: それぞれ別の条件
+  // （cond_name_contains と cond_name）にして、属性どうしを OR にする
+  const nameContainsVal = getAttr('cond_name_contains');
+  const nameExactVal = getAttr('cond_name');
+  const [nameBothPending, setNameBothPending] = useState(false);
+  const nameBoth = (!!nameContainsVal && !!nameExactVal) || nameBothPending;
   const [activeSub, setActiveSub] = useState<Set<string>>(() => {
     const s = new Set<string>();
     if (colorVal) s.add('color');
@@ -566,7 +572,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
-      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each'))));
+      else if (key === 'name') { setNameBothPending(false); onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each')))); }
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -623,7 +629,7 @@ function RefExistsAttributeFilterPanel({
             })}
           </div>
           {/* 属性を2つ以上選んだとき: 全部に合う（AND）か、どれか1つに合えばよい（OR。「名称に『〇〇』を含むか、特徴『〇〇』を持つ」）か */}
-          {marker === REF_EXISTS_FILTER_MARKER && activeSub.size >= 2 && (
+          {marker === REF_EXISTS_FILTER_MARKER && (activeSub.size >= 2 || (activeSub.has('name') && nameBoth)) && (
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>属性どうし:</span>
               {/* 小さいボタン: 押すたびに AND ⇔ OR を切り替える */}
@@ -728,7 +734,43 @@ function RefExistsAttributeFilterPanel({
               {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
             </div>
           )}
-          {activeSub.has('name') && (
+          {activeSub.has('name') && nameBoth && (() => {
+            const listOf = (v?: ConditionPair) => (v?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+            const setList = (base: string, next: string[]) => setAttr(base, next.length > 0 ? next.join(',') : undefined);
+            const toggleMode = (base: string, on: boolean) => {
+              if (on) return;
+              // 片方を外す → 残った方だけの名称（従来の1行）に戻す
+              const keep = base === 'cond_name' ? 'cond_name_contains' : 'cond_name';
+              setNameBothPending(false);
+              setNameModePending(keep);
+              onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === base || cc.base === 'cond_name_each'))));
+            };
+            return (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
+                  <span style={{ fontSize: 10, color: '#666' }}>名称:</span>
+                  <MultiButtonGroup
+                    options={[{ code: 'cond_name_contains', label: '含む' }, { code: 'cond_name', label: '完全一致' }]}
+                    values={['cond_name_contains', 'cond_name']}
+                    onToggle={(code, on) => toggleMode(code, on)}
+                    accentColor="#946200"
+                  />
+                </div>
+                {[{ base: 'cond_name_contains', label: '含む', v: nameContainsVal, ph: '例: ティラノモン' }, { base: 'cond_name', label: '完全一致', v: nameExactVal, ph: '例: X抗体' }].map((r) => (
+                  <div key={r.base} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 2 }}>
+                    <span style={{ fontSize: 10, color: '#946200', fontWeight: 'bold', minWidth: 48, paddingTop: 4 }}>{r.label}:</span>
+                    <div style={{ flex: 1 }}>
+                      <MultiTextTags values={listOf(r.v)} onChange={(next) => setList(r.base, next)} placeholder={r.ph} accentColor="#946200" />
+                    </div>
+                  </div>
+                ))}
+                {!attrOr && (
+                  <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 属性どうしが AND です。「含む」か「完全一致」のどちらかに合えばよいなら、上の〔AND〕を押して OR にしてください</div>
+                )}
+              </div>
+            );
+          })()}
+          {activeSub.has('name') && !nameBoth && (
             <div style={{ marginBottom: 4 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
                 <span style={{ fontSize: 10, color: '#666' }}>名称:</span>
@@ -743,6 +785,20 @@ function RefExistsAttributeFilterPanel({
                   }}
                   accentColor="#946200"
                 />
+                {marker === REF_EXISTS_FILTER_MARKER && (
+                  <button
+                    type="button"
+                    title="「名称に『〇〇』を含むカードか『△△』」のように、含むと完全一致を両方使う（どちらかに合えばよい）"
+                    onClick={() => {
+                      setNameBothPending(true);
+                      // ほかの属性が無ければ、含む・完全一致の「どちらか」になるよう属性どうしを OR にする
+                      if (!attrOr && activeSub.size === 1) onChange([...conditions, { base: 'cond_attr_or', subject: marker }]);
+                    }}
+                    style={{ padding: '1px 8px', borderRadius: 4, border: '1px dashed #946200', background: '#fffaf0', color: '#946200', cursor: 'pointer', fontSize: 10 }}
+                  >
+                    ＋ 含む・完全一致を両方使う
+                  </button>
+                )}
               </div>
               <MultiTextTags
                 values={names}

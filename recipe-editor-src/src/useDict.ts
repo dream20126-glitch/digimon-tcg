@@ -36,6 +36,8 @@ const REQUIRED_TRIGGERS: DictEntry[] = [
 
 // スプシに無くても必ず表示するアクション（2026-10 LM弾の対応で追加。項目は recipe.ts ACTION_PARAM_KEYS）
 const REQUIRED_ACTIONS: DictEntry[] = [
+  // 「育成エリアに孵化できる」（P-123 ウッコモン）。エンジン実装済み（hatch）だがスプシに無く、「孵化」と文字で入れられていた
+  { code: 'hatch', kind: 'action', label: '孵化する' },
   // 「このデジモンのDP消滅効果の上限+5000」等（LM-026 メギドラモンACE）。種類は actionParams.cap_kind
   { code: 'effect_cap_modify', kind: 'action', label: '効果の上限/数値を修正', valueLabel: '増減値（+5000 等）' },
   // 「カードカテゴリー1つを宣言する」（LM-020 クオンタモン）。宣言した値は「宣言したカテゴリー」として後の効果・条件で使う

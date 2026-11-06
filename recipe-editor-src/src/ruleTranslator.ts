@@ -234,7 +234,9 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       const combinedFilter = orFilters.length > 1 ? { or: orFilters } : (orFilters[0] || {});
       // 枚数は先頭グループのcount欄を共有（未指定ならルール本体のvalue、さらに未指定なら1）
       const count = asNumberOrPass(first?.count) ?? asNumberOrPass(rule.value) ?? 1;
+      const _n0 = Array.isArray(step.selections) ? step.selections.length : 0;
       applyOneSelection(step, effectiveRule, combinedFilter, count);
+      markGroupAction(step, _n0, rule);
       return;
     }
     // 'and'（既定・従来通り）: 各グループが別々にその枚数分の選択肢を積む（加算）。
@@ -256,7 +258,9 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
             placeTarget: g.placeTarget ?? rule.placeTarget,
             options: g.options ?? rule.options,
           };
+      const _n0 = Array.isArray(step.selections) ? step.selections.length : 0;
       applyOneSelection(step, effectiveRule, gFilter, gCount);
+      markGroupAction(step, _n0, rule);
       if (_gid > 0 && Array.isArray(step.selections) && step.selections.length > 0) step.selections[step.selections.length - 1].group = _gid;
     });
     return;
@@ -464,7 +468,7 @@ function selectionToRule(sel: any, legacyKinds: RuleActionKind[] | null): MiniSt
     }
     rule.designatedGroups = groups;
     rule.groupsOp = 'or';
-    rule.groupsShareAction = true;
+    rule.groupsShareAction = sel.group_action === true ? false : true;
     if (sel.count !== undefined && groups.length > 0) groups[0].count = sel.count;
   } else if (sel.filter) {
     const conds = filterToConds(sel.filter);
@@ -495,6 +499,14 @@ function selectionToRule(sel: any, legacyKinds: RuleActionKind[] | null): MiniSt
   }
   if (sel.position === 'top' || sel.position === 'bottom' || sel.position === 'both') rule.deckPosition = sel.position;
   if (typeof sel.place_target === 'string' && sel.place_target) rule.placeTarget = sel.place_target;
+  // OR グループで「グループごとに異なる」: アクション・置き先は先頭グループ側に置く（表示はグループ側だけ）
+  if (rule.groupsOp === 'or' && rule.groupsShareAction === false && rule.designatedGroups && rule.designatedGroups.length > 0) {
+    const g0 = rule.designatedGroups[0];
+    g0.action = rule.action;
+    if (rule.deckPosition) g0.deckPosition = rule.deckPosition;
+    if (rule.options) g0.options = rule.options;
+    if (rule.placeTarget) g0.placeTarget = rule.placeTarget;
+  }
   return rule;
 }
 
@@ -505,6 +517,13 @@ function returnToToRule(v: any): MiniStep | null {
   if (v === 'deck_top_or_bottom') return { action: 'return_deck', isRemaining: true, deckPosition: 'both' };
   if (typeof v === 'string' && v.startsWith('deck_')) return { action: 'return_deck', isRemaining: true, value: v };
   return null;
+}
+
+// 「グループごとに異なる」（groupsShareAction:false）を選んだことを選択肢に残す（group_action:true。エディタの表示用・エンジンは見ない）。
+// 印が無いと、開き直したときに「共通」へ戻っていた
+function markGroupAction(step: any, before: number, rule: MiniStep) {
+  if (rule.groupsShareAction !== false || !Array.isArray(step.selections) || step.selections.length <= before) return;
+  step.selections[step.selections.length - 1].group_action = true;
 }
 
 export function rulesFromStep(mainAction: string | undefined, step: any): { rules: MiniStep[]; keys: string[] } | null {
@@ -520,16 +539,18 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
     const gid = typeof sels[i]?.group === 'number' ? sels[i].group : undefined;
     if (gid !== undefined) {
       const parts: MiniStep[] = [];
+      let partsGroupAction = false;
       let j = i;
       while (j < sels.length && sels[j]?.group === gid) {
-        const { group, ...plain } = sels[j]; void group;
+        const { group, group_action, ...plain } = sels[j]; void group;
+        if (group_action === true) partsGroupAction = true;
         const r = selectionToRule(plain, Array.isArray(legacyKindsList[j]) ? legacyKindsList[j] : null);
         if (!r) return null;
         parts.push(r);
         j++;
       }
       const first = parts[0];
-      const sameAction = parts.every((x) => x.action === first.action && x.deckPosition === first.deckPosition && x.placeTarget === first.placeTarget && JSON.stringify(x.options || []) === JSON.stringify(first.options || []));
+      const sameAction = !partsGroupAction && parts.every((x) => x.action === first.action && x.deckPosition === first.deckPosition && x.placeTarget === first.placeTarget && JSON.stringify(x.options || []) === JSON.stringify(first.options || []));
       const merged: MiniStep = {
         action: first.action,
         ...(first.deckPosition ? { deckPosition: first.deckPosition } : {}),
@@ -545,7 +566,7 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
           count: x.value,
           ...(sameAction ? {} : { action: x.action, deckPosition: x.deckPosition, options: x.options, ...(x.placeTarget ? { placeTarget: x.placeTarget } : {}) }),
         })),
-        ...(sameAction ? { groupsShareAction: true } : {}),
+        ...(sameAction ? { groupsShareAction: true } : partsGroupAction ? { groupsShareAction: false } : {}),
       };
       rules.push(merged);
       i = j - 1;

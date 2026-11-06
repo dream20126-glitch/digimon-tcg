@@ -660,12 +660,15 @@ function startAttackModeUI(slotIdx, opts) {
   opts = opts || {};
   const _fromEffect = typeof opts.onPick === 'function';
   const canHitActive = !!opts.allowActive;
-  const _noSec = !!opts.noSecurity;
+  // 「プレイヤーにアタックできない」（cant_attack_player）状態なら、セキュリティ（プレイヤー）は選べない
+  const _noSec = !!opts.noSecurity || (() => { const c = bs.player.battleArea[slotIdx]; return !!(c && Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player')); })();
   hideLongpressMenu();
   const card = bs.player.battleArea[slotIdx]; if (!card) { if (_fromEffect && opts.onCancel) opts.onCancel(); return; }
   // アタックできる相手か（効果のアタックでアクティブも可＝canHitActive／「アタックされない」／継続効果の「アクティブ状態にもアタックできる」）
   const _atkTargetOk = (def) => {
     if (!def) return false;
+    // 「デジモンにアタックできない」（cant_attack_digimon。双葉＆ジャミング P-135）
+    if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_attack_digimon')) return false;
     if (window._canAttackDigimonTarget) {
       if (window._canAttackDigimonTarget(card, def, bs, 'player')) return true;
       if (def.suspended) return false; // アタックされない

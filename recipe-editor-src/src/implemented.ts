@@ -41,6 +41,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'security_open',
   // Stage 6 追加（汎用アクション・状態操作）
   'memory', 'dp', 'hatch', 'battle_area_make',
+  // 2026-11-06: 育成エリアへ移動（P-143）
+  'move_to_breed',
   'not_active', 'prevent_unsuspend',
   'grant_effect',
   // Stage 7 追加（トークン生成）
@@ -138,6 +140,9 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_evo_exists', 'cond_name_each',
   // 2026-11-02: 色の数（「2色のカード」P-076）・Lvの同じカード（コスト P-072/P-073）
   'cond_color_count', 'cond_lv_same',
+  // 2026-11-06: 色の数の以上/以下（P-121/P-149）・進化元に〜がない等（P-144）
+  'cond_color_count_ge', 'cond_color_count_le',
+  'cond_evo_match_le', 'cond_evo_match_eq', 'cond_evo_match_gt', 'cond_evo_match_lt',
   'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
   'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt',
   // 進化元メタ条件（cond_exists の進化元版）

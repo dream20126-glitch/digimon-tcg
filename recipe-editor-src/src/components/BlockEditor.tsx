@@ -4843,9 +4843,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={setSubject}
                             accentColor="#1a4f8a"
                           />
-                          {refSubject === evoCode && (
-                            <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ デジモンの進化元を数えるのはエンジン未実装です（保存はできますが動作しません）</div>
-                          )}
                         </div>
                       )}
                       {/* このカード: 本体／進化元。何を数えるか分かるよう常に表示する */}
@@ -7111,7 +7108,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         accentColor="#1976d2"
                       />
                       {(effectOptions.includes('digimon_only') || effectOptions.includes('player_only')) && (
-                        <span style={{ fontSize: 10, color: '#c62828' }}>「{effectOptions.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」⚠ エンジン未実装</span>
+                        <span style={{ fontSize: 10, color: '#555' }}>「{effectOptions.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」</span>
                       )}
                     </div>
                   )}
@@ -7671,7 +7668,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             accentColor="#1976d2"
                           />
                           {isCant && (opts.includes('digimon_only') || opts.includes('player_only')) && (
-                            <span style={{ fontSize: 10, color: '#c62828' }}>「{opts.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」⚠ エンジン未実装</span>
+                            <span style={{ fontSize: 10, color: '#555' }}>「{opts.includes('digimon_only') ? 'デジモン' : 'プレイヤー'}にアタックできない」</span>
                           )}
                         </>
                       )}
@@ -8900,7 +8897,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const typeChecked = isAndMode ? ['digimon', 'tamer'] : typeSelOf(curTgt.l2, targetFilter);
           const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target' || tgtBase === 'target_trigger_source';
-          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode || !!block.orSelf;
+          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
 
           // デジモン＋テイマー(AND)で自動で作った効果2（テイマーへの同じアクション）だけを外した効果2以降。
           // ユーザーが作った効果2以降（その後 等）は対象を変えても消さない（以前は「デジモン」ボタン等で全部消えていた。EX12-056）

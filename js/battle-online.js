@@ -1906,8 +1906,8 @@ function onRemoteCommand(cmd) {
         renderAll();
       }
       // 状態付与演出
-      const iconMap = { 'cant_attack_block': '⚔🛡✖', 'cant_attack': '⚔✖', 'cant_block': '🛡✖' };
-      const labelMap = { 'cant_attack_block': 'アタック・ブロック不可', 'cant_attack': 'アタック不可', 'cant_block': 'ブロック不可' };
+      const iconMap = { 'cant_attack_block': '⚔🛡✖', 'cant_attack': '⚔✖', 'cant_block': '🛡✖', 'cant_attack_digimon': '⚔✖', 'cant_attack_player': '⚔✖' };
+      const labelMap = { 'cant_attack_block': 'アタック・ブロック不可', 'cant_attack': 'アタック不可', 'cant_block': 'ブロック不可', 'cant_attack_digimon': 'デジモンにアタック不可', 'cant_attack_player': 'プレイヤーにアタック不可' };
       const icon = iconMap[cmd.action] || '🔒';
       const label = (labelMap[cmd.action] || '行動制限') + '付与！';
       if (window._fxBuffStatus && myCard) {

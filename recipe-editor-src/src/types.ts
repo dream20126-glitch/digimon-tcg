@@ -337,7 +337,8 @@ export interface EffectBlock {
   fixedCost?: number | string;
   // 「このターン終了時、〜する」（例: P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。
   // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
-  atTurnEnd?: boolean;
+  // true＝お互い（次に来るターン終了時）/ 'own'＝自分のターン終了時 / 'opp'＝相手のターン終了時（JSON も "own"/"opp"）
+  atTurnEnd?: boolean | 'own' | 'opp';
   // 「その後」の効果を、効果1のコストを支払ったときだけ行う（例: P-087「このテイマーをレストさせることで、
   // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true
   requiresPrevCost?: boolean;
@@ -630,7 +631,8 @@ export interface AltAction {
   ignoreEvolveCondition?: boolean;
   // 「このターン終了時、〜する」（例: P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。
   // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
-  atTurnEnd?: boolean;
+  // true＝お互い（次に来るターン終了時）/ 'own'＝自分のターン終了時 / 'opp'＝相手のターン終了時（JSON も "own"/"opp"）
+  atTurnEnd?: boolean | 'own' | 'opp';
   // 「その後」の効果を、効果1のコストを支払ったときだけ行う（例: P-087「このテイマーをレストさせることで、
   // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true
   requiresPrevCost?: boolean;

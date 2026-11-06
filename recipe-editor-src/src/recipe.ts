@@ -263,6 +263,12 @@ function fixedCostOut(v: number | string | undefined): number | undefined {
   const n = Number(v);
   return isNaN(n) ? undefined : n;
 }
+// at_turn_end: true/"both"＝お互い、"own"/"opp"＝自分/相手のターン終了時
+function atTurnEndIn(v: any): boolean | 'own' | 'opp' | undefined {
+  if (v === 'own' || v === 'opp') return v;
+  return v ? true : undefined;
+}
+
 function fixedCostIn(v: any): number | undefined {
   if (v === undefined || v === null || v === '') return undefined;
   const n = Number(v);
@@ -580,7 +586,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
   if (a.ignoreEvolveCondition) out.ignore_evolve_condition = true;
-  if (a.atTurnEnd) out.at_turn_end = true;
+  if (a.atTurnEnd) out.at_turn_end = a.atTurnEnd === true ? true : a.atTurnEnd;
   if (a.requiresPrevCost) out.requires_prev_cost = true;
   const aFixed = fixedCostOut(a.fixedCost);
   if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
@@ -1787,7 +1793,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // evolve の「進化条件を無視して」
   if (b.ignoreEvolveCondition) step.ignore_evolve_condition = true;
   // 「このターン終了時、〜する」
-  if (b.atTurnEnd) step.at_turn_end = true;
+  if (b.atTurnEnd) step.at_turn_end = b.atTurnEnd === true ? true : b.atTurnEnd;
   // 「効果1のコストを支払ったときだけ」
   if (b.requiresPrevCost) step.requires_prev_cost = true;
   // 「進化コストNで」（コストそのものを指定）。指定中は増減の value は出さない
@@ -2647,7 +2653,7 @@ function stepObjectToAltAction(step: any): AltAction {
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
-    atTurnEnd: !!step?.at_turn_end || undefined,
+    atTurnEnd: atTurnEndIn(step?.at_turn_end),
     requiresPrevCost: !!step?.requires_prev_cost || undefined,
     skipOnPlay: !!step?.skip_on_play,
     enterSuspended: !!step?.enter_suspended || undefined,
@@ -3112,7 +3118,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
-    atTurnEnd: !!step?.at_turn_end || undefined,
+    atTurnEnd: atTurnEndIn(step?.at_turn_end),
     requiresPrevCost: !!step?.requires_prev_cost || undefined,
     skipOnPlay: !!step?.skip_on_play,
     enterSuspended: !!step?.enter_suspended || undefined,
@@ -3297,7 +3303,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             costFree: !!a?.cost_free,
             ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
             fixedCost: fixedCostIn(a?.fixed_cost),
-            atTurnEnd: !!a?.at_turn_end || undefined,
+            atTurnEnd: atTurnEndIn(a?.at_turn_end),
             requiresPrevCost: !!a?.requires_prev_cost || undefined,
             skipOnPlay: !!a?.skip_on_play,
             enterSuspended: !!a?.enter_suspended || undefined,

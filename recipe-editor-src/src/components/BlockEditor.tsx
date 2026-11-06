@@ -6957,19 +6957,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 「このターン終了時、〜する」: この効果をすぐ実行せず、このターンの終了時に実行する（at_turn_end）。
                       例: P-029「進化できる。そうしたとき、このターン終了時このデジモンを消滅させる」の消滅 */}
                   {(() => {
-                    const on = isEditingAlt ? !!editingAlt?.atTurnEnd : !!block.atTurnEnd;
+                    const cur = isEditingAlt ? editingAlt?.atTurnEnd : block.atTurnEnd;
+                    const on = !!cur;
+                    const whose = cur === 'own' || cur === 'opp' ? cur : 'both';
                     return (
-                      <label
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: on ? '#9333ea' : '#666', fontWeight: on ? 'bold' : 'normal' }}
-                        title="この効果をすぐには実行せず、このターンの終了時に実行する（テキストの「このターン終了時、〜する」）"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={(e) => updateEffect({ atTurnEnd: e.target.checked || undefined })}
-                        />
-                        🌙 このターン終了時に実行
-                      </label>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                        <label
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: on ? '#9333ea' : '#666', fontWeight: on ? 'bold' : 'normal' }}
+                          title="この効果をすぐには実行せず、ターン終了時に実行する（テキストの「このターン終了時、〜する」「相手のターン終了時、〜する」など）"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={(e) => updateEffect({ atTurnEnd: e.target.checked || undefined })}
+                          />
+                          🌙 ターン終了時に実行
+                        </label>
+                        {on && (['opp', 'own', 'both'] as const).map(w => (
+                          <button
+                            key={w}
+                            type="button"
+                            onClick={() => updateEffect({ atTurnEnd: w === 'both' ? true : w })}
+                            title={w === 'both' ? '次に来るターン終了時（このターン終了時）' : w === 'own' ? '自分のターン終了時' : '相手のターン終了時'}
+                            style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, cursor: 'pointer', border: '1px solid ' + (whose === w ? '#9333ea' : '#ccc'), background: whose === w ? '#9333ea' : '#fff', color: whose === w ? '#fff' : '#555', fontWeight: whose === w ? 'bold' : 'normal' }}
+                          >
+                            {w === 'opp' ? '相手' : w === 'own' ? '自分' : 'お互い'}
+                          </button>
+                        ))}
+                      </span>
                     );
                   })()}
                   {/* 「その後」の効果を、効果1のコストを支払ったときだけ行う（requires_prev_cost）。

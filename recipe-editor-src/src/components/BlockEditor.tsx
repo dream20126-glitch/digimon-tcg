@@ -4058,6 +4058,10 @@ const PERREF_COMBO_ONLY_CODES = ['own_digimon_tamer', 'opp_digimon_tamer', 'both
 // ボタンは〔デジモン〕の下に出す。⚠ エンジン未実装
 const PERREF_EVO_SOURCE_CODES: Record<string, string> = { own: 'own_evo_source', opp: 'opp_evo_source', both: 'both_evo_source' };
 PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_EVO_SOURCE_CODES));
+// 「レスト状態の他のデジモン1体ごとに」: デジモン（本体）を選んだときの〔他の〕＝このデジモン以外を数える。
+// 相手側にこのデジモンはいないので自分/両方だけ。⚠ エンジン未実装
+const PERREF_OTHER_DIGIMON_CODES: Record<string, string> = { own: 'own_other_digimon', both: 'both_other_digimon' };
+PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_OTHER_DIGIMON_CODES));
 // デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
 // （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
 const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
@@ -4070,6 +4074,7 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
   'own_digimon', 'own_tamer', 'own_digimon_tamer', 'own_card',
   'opp_digimon', 'opp_tamer', 'opp_digimon_tamer', 'opp_card',
   'both_digimon', 'both_tamer', 'both_digimon_tamer', 'both_card',
+  'own_other_digimon', 'both_other_digimon',
 ]);
 // メモリーはカードの枚数ではなくメモリーゲージの数値そのものを数える特殊対象。
 // 「N枚ごと」ではなく「Nごと」と表示するため、枚数系（ゾーン/カード）と区別する
@@ -4805,7 +4810,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : curL1 === 'both' ? 'both_digimon_tamer' : '';
                   const hasDigiTamer = curL1 === 'own' || curL1 === 'opp' || curL1 === 'both';
                   const evoCode = PERREF_EVO_SOURCE_CODES[curL1] || '';
-                  const digimonChecked = refSubject === digimonCode || refSubject === comboCode || (!!evoCode && refSubject === evoCode);
+                  const otherCode = PERREF_OTHER_DIGIMON_CODES[curL1] || '';
+                  const digimonChecked = refSubject === digimonCode || refSubject === comboCode || (!!evoCode && refSubject === evoCode) || (!!otherCode && refSubject === otherCode);
                   const tamerChecked = refSubject === tamerCode || refSubject === comboCode;
                   const applyDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
                     if (nextDigimon && nextTamer) setSubject(comboCode);
@@ -4813,7 +4819,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     else if (nextTamer) setSubject(tamerCode);
                     else setSubject('');
                   };
-                  const exclusiveL2Options = l2Options.filter((o) => o.code !== digimonCode && o.code !== tamerCode && o.code !== comboCode && o.code !== evoCode);
+                  const exclusiveL2Options = l2Options.filter((o) => o.code !== digimonCode && o.code !== tamerCode && o.code !== comboCode && o.code !== evoCode && o.code !== otherCode);
                   const toggleBtnStyle = (active: boolean) => ({
                     padding: '3px 9px', borderRadius: 5,
                     border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
@@ -4835,15 +4841,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </div>
                       )}
                       {/* デジモンだけを選んでいるとき: 本体（デジモンの数）か進化元（デジモンの進化元の枚数）か */}
-                      {hasDigiTamer && evoCode && (refSubject === digimonCode || refSubject === evoCode) && (
-                        <div style={{ marginTop: 4 }}>
+                      {hasDigiTamer && evoCode && (refSubject === digimonCode || refSubject === evoCode || (!!otherCode && refSubject === otherCode)) && (
+                        <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                           <ButtonGroup
                             options={[{ code: digimonCode, label: '本体' }, { code: evoCode, label: '進化元' }]}
-                            value={refSubject}
+                            value={refSubject === otherCode ? digimonCode : refSubject}
                             onChange={setSubject}
                             accentColor="#1a4f8a"
                           />
+                          {/* 「他の〜」: このデジモン以外を数える（自分/両方のデジモン本体のときだけ） */}
+                          {otherCode && refSubject !== evoCode && (
+                            <button
+                              type="button"
+                              title="このデジモン自身は数えない（テキストの「他のデジモン1体ごとに」）"
+                              onClick={() => setSubject(refSubject === otherCode ? digimonCode : otherCode)}
+                              style={toggleBtnStyle(refSubject === otherCode)}
+                            >
+                              他の（このデジモン以外）
+                            </button>
+                          )}
                         </div>
+                      )}
+                      {otherCode && refSubject === otherCode && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（このデジモン以外を数える）</div>
                       )}
                       {/* このカード: 本体／進化元。何を数えるか分かるよう常に表示する */}
                       {!hasDigiTamer && (l2Options.length > 1 || curL1 === 'self') && (

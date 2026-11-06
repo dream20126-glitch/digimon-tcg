@@ -129,6 +129,7 @@ const cases: Case[] = [
   { name: 'P-159: 自分のデジモン1体に再起動＋ブロッカー（複数キーワード）＋DP+2000（一緒に行う）が1つの効果のまま', blocks: [base({ trigger: 'main', action: 'grant_keyword', target: 'own:1', value: undefined, keywordEntries: [{ keyword: 'reboot' }, { keyword: 'blocker' }], altActions: [{ action: 'dp_plus', value: 2000, target: 'same_target', bundle: true }], altActionsOp: 'and' })], check: ['0.keywordEntries', '0.altActions.0.value'], raw: (r: any) => J(r).includes('"keyword":"reboot,blocker"') && J(r).split('dp_plus').length === 2 },
   { name: 'turn end: opp', blocks: [base({ trigger: 'main', action: 'destroy', target: 'self', atTurnEnd: 'opp' })], check: ['0.atTurnEnd'], raw: (r: any) => J(r).includes('"at_turn_end":"opp"') },
   { name: 'turn end: both', blocks: [base({ trigger: 'main', action: 'destroy', target: 'self', atTurnEnd: true })], check: ['0.atTurnEnd'], raw: (r: any) => J(r).includes('"at_turn_end":true') },
+  { name: 'per other rest digimon', blocks: [base({ trigger: 'main', action: 'evolve', target: 'self', value: -1, perCount: 1, perRef: 'both_other_digimon', perRefStateCond: { base: 'cond_self_rest' } })], check: ['0.perRef', '0.perRefStateCond'], raw: (r: any) => J(r).includes('both_other_digimon') },
 ];
 
 let ng = 0;

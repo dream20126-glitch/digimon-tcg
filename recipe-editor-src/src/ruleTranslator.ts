@@ -228,6 +228,7 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
             ...rule,
             action: first?.action || rule.action,
             deckPosition: first?.deckPosition ?? rule.deckPosition,
+            placeTarget: first?.placeTarget ?? rule.placeTarget,
             options: first?.options ?? rule.options,
           };
       const combinedFilter = orFilters.length > 1 ? { or: orFilters } : (orFilters[0] || {});
@@ -252,6 +253,7 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
             ...rule,
             action: g.action || rule.action,
             deckPosition: g.deckPosition ?? rule.deckPosition,
+            placeTarget: g.placeTarget ?? rule.placeTarget,
             options: g.options ?? rule.options,
           };
       applyOneSelection(step, effectiveRule, gFilter, gCount);
@@ -527,10 +529,11 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
         j++;
       }
       const first = parts[0];
-      const sameAction = parts.every((x) => x.action === first.action && x.deckPosition === first.deckPosition && JSON.stringify(x.options || []) === JSON.stringify(first.options || []));
+      const sameAction = parts.every((x) => x.action === first.action && x.deckPosition === first.deckPosition && x.placeTarget === first.placeTarget && JSON.stringify(x.options || []) === JSON.stringify(first.options || []));
       const merged: MiniStep = {
         action: first.action,
         ...(first.deckPosition ? { deckPosition: first.deckPosition } : {}),
+        ...(sameAction && first.placeTarget ? { placeTarget: first.placeTarget } : {}),
         ...(first.options ? { options: first.options } : {}),
         ...(first.optional ? { optional: true } : {}),
         ...(first.actionKinds ? { actionKinds: first.actionKinds } : {}),
@@ -540,7 +543,7 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
           conditions: x.conditions || [],
           conditionsOp: 'and' as const,
           count: x.value,
-          ...(sameAction ? {} : { action: x.action, deckPosition: x.deckPosition, options: x.options }),
+          ...(sameAction ? {} : { action: x.action, deckPosition: x.deckPosition, options: x.options, ...(x.placeTarget ? { placeTarget: x.placeTarget } : {}) }),
         })),
         ...(sameAction ? { groupsShareAction: true } : {}),
       };

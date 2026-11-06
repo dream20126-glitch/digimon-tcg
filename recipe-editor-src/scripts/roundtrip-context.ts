@@ -132,6 +132,7 @@ const cases: Case[] = [
   { name: 'per other rest digimon', blocks: [base({ trigger: 'main', action: 'evolve', target: 'self', value: -1, perCount: 1, perRef: 'both_other_digimon', perRefStateCond: { base: 'cond_self_rest' } })], check: ['0.perRef', '0.perRefStateCond'], raw: (r: any) => J(r).includes('both_other_digimon') },
   { name: 'deck open place under evo: own_card', blocks: [base({ action: 'deck_open', value: 3, rules: [{ action: 'place_under_digimon', target: 'own', value: 1, deckPosition: 'bottom', placeTarget: 'own_card' }, { action: 'return_deck', isRemaining: true, deckPosition: 'bottom' }] })], check: ['0.rules.0.placeTarget'], raw: (r: any) => J(r).includes('"place_target":"own_card"') },
   { name: 'deck open place under evo: self', blocks: [base({ action: 'deck_open', value: 3, rules: [{ action: 'place_under_digimon', target: 'own', value: 1, deckPosition: 'bottom', placeTarget: 'self' }] })], check: ['0.rules.0.placeTarget'], raw: (r: any) => J(r).includes('"place_target":"self"') },
+  { name: 'deck open OR groups place under evo: own_card', blocks: [base({ action: 'deck_open', value: 3, rules: [{ action: 'place_under_digimon', value: 1, groupsOp: 'or', groupsShareAction: false, designatedGroups: [{ action: 'place_under_digimon', deckPosition: 'bottom', placeTarget: 'own_card', count: 1, conditions: [{ base: 'cond_feature_contains', value: 'X' }] }, { conditions: [{ base: 'cond_feature_contains', value: 'Y' }] }] }] })], check: [], raw: (r: any) => J(r).includes('"place_target":"own_card"') },
 ];
 
 let ng = 0;

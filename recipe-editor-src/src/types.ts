@@ -705,6 +705,8 @@ export interface ConditionChainEntry {
 export interface RuleGroup extends DesignatedGroup {
   action?: string;
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 「進化元の下に置く」のどのデジモンの下か（MiniStep.placeTarget と同じ）
+  placeTarget?: string;
   options?: string[];
   // 1条件ずつAND/ORを選びながら追加する統一UI用（設定されていればconditionsより優先）。
   // 「ANDがORより優先」の標準的な積和評価で filter.or を組み立てる

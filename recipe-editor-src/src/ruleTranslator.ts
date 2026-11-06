@@ -287,6 +287,7 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
     const sel: Record<string, any> = { count, destination };
     if (Object.keys(filter).length > 0) sel.filter = filter;
     if (rule.deckPosition) sel.position = rule.deckPosition;
+    if (destination === 'evo_source' && rule.placeTarget) sel.place_target = rule.placeTarget;
     if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
     if (rule.optional) sel.optional = true;
     step.selections.push(sel);
@@ -491,6 +492,7 @@ function selectionToRule(sel: any, legacyKinds: RuleActionKind[] | null): MiniSt
     default: return null;
   }
   if (sel.position === 'top' || sel.position === 'bottom' || sel.position === 'both') rule.deckPosition = sel.position;
+  if (typeof sel.place_target === 'string' && sel.place_target) rule.placeTarget = sel.place_target;
   return rule;
 }
 

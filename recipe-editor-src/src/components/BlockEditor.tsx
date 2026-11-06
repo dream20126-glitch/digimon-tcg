@@ -10234,6 +10234,36 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   const z = PLACE_ZONE_MAP.find((zz) => zz.code === activeRulePlaceZone);
                   return z?.warn ? <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div> : null;
                 })()}
+                {/* 進化元: どのデジモン（テイマー）の下に置くか（selections[].place_target）。
+                    このデジモン / 自分の〔デジモン〕〔テイマー〕（両方押すと own_card＝デジモンかテイマー） */}
+                {activeRulePlaceZone === 'evo_source' && (() => {
+                  const pt = step.placeTarget || '';
+                  const isOwn = pt === 'own' || pt === 'own_tamer' || pt === 'own_card';
+                  const digi = pt === 'own' || pt === 'own_card';
+                  const tamer = pt === 'own_tamer' || pt === 'own_card';
+                  const setOwn = (d: boolean, t: boolean) => onChange({ placeTarget: d && t ? 'own_card' : t ? 'own_tamer' : d ? 'own' : undefined });
+                  const tg = (active: boolean) => ({
+                    padding: '3px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 11,
+                    border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                    background: active ? '#1976d2' : '#f5f5f5', color: active ? '#fff' : '#333', fontWeight: active ? 'bold' : 'normal',
+                  } as React.CSSProperties);
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={miniLbl()}>🎯 どのデジモンの進化元に置くか</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button type="button" onClick={() => onChange({ placeTarget: pt === 'self' ? undefined : 'self' })} style={tg(pt === 'self')}>このデジモン</button>
+                        <button type="button" onClick={() => setOwn(!isOwn, false)} style={tg(isOwn)}>自分の</button>
+                        {isOwn && (
+                          <>
+                            <button type="button" onClick={() => setOwn(!digi, tamer)} style={tg(digi)}>デジモン</button>
+                            <button type="button" onClick={() => setOwn(digi, !tamer)} style={tg(tamer)}>テイマー</button>
+                          </>
+                        )}
+                      </div>
+                      {isOwn && digi && tamer && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>自分のデジモンかテイマー1体の下に置く</div>}
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const z = PLACE_ZONE_MAP.find((zz) => zz.code === activeRulePlaceZone);
                   if (!z?.hasPosition) return null;

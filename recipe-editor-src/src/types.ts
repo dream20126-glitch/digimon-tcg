@@ -730,6 +730,10 @@ export interface MiniStep {
   // place_under_digimon 等のとき) 専用: 上/下/下か上。ruleTranslator が
   // selections[].position（無指定時は従来通りアクションコード自体で決定）に反映する
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 「進化元の下に置く」(place_under_digimon) 専用: どのデジモンの下に置くか。
+  // 'self'＝このデジモン / 'own'＝自分のデジモン / 'own_tamer'＝自分のテイマー / 'own_card'＝自分のデジモンかテイマー。
+  // JSON では selections[].place_target（未指定＝従来通り）
+  placeTarget?: string;
   // 1つのルールの中に「条件＋枚数」の組を複数持たせたい場合（例:「特徴TBを持つカード1枚と、
   // 緑のカード1枚」、さらにグループごとに置き先を変えて「1枚を手札に加え、1枚を
   // セキュリティの上に置く」）に使う。指定時は conditions/value の代わりにこちらを使い、

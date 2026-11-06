@@ -130,6 +130,8 @@ const cases: Case[] = [
   { name: 'turn end: opp', blocks: [base({ trigger: 'main', action: 'destroy', target: 'self', atTurnEnd: 'opp' })], check: ['0.atTurnEnd'], raw: (r: any) => J(r).includes('"at_turn_end":"opp"') },
   { name: 'turn end: both', blocks: [base({ trigger: 'main', action: 'destroy', target: 'self', atTurnEnd: true })], check: ['0.atTurnEnd'], raw: (r: any) => J(r).includes('"at_turn_end":true') },
   { name: 'per other rest digimon', blocks: [base({ trigger: 'main', action: 'evolve', target: 'self', value: -1, perCount: 1, perRef: 'both_other_digimon', perRefStateCond: { base: 'cond_self_rest' } })], check: ['0.perRef', '0.perRefStateCond'], raw: (r: any) => J(r).includes('both_other_digimon') },
+  { name: 'deck open place under evo: own_card', blocks: [base({ action: 'deck_open', value: 3, rules: [{ action: 'place_under_digimon', target: 'own', value: 1, deckPosition: 'bottom', placeTarget: 'own_card' }, { action: 'return_deck', isRemaining: true, deckPosition: 'bottom' }] })], check: ['0.rules.0.placeTarget'], raw: (r: any) => J(r).includes('"place_target":"own_card"') },
+  { name: 'deck open place under evo: self', blocks: [base({ action: 'deck_open', value: 3, rules: [{ action: 'place_under_digimon', target: 'own', value: 1, deckPosition: 'bottom', placeTarget: 'self' }] })], check: ['0.rules.0.placeTarget'], raw: (r: any) => J(r).includes('"place_target":"self"') },
 ];
 
 let ng = 0;

@@ -4061,6 +4061,8 @@ PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_EVO_SOURCE_CODES));
 // 「レスト状態の他のデジモン1体ごとに」: デジモン（本体）を選んだときの〔他の〕＝このデジモン以外を数える。
 // 相手側にこのデジモンはいないので自分/両方だけ。⚠ エンジン未実装
 const PERREF_OTHER_DIGIMON_CODES: Record<string, string> = { own: 'own_other_digimon', both: 'both_other_digimon' };
+// 〜ごとにの「自分 / 相手 / 他の」トグル（アクションの対象と同じ操作。自分+相手＝両方）
+const PERREF_SIDE_TOGGLES = [{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'other', label: '他の' }];
 PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_OTHER_DIGIMON_CODES));
 // デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
 // （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
@@ -4828,9 +4830,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     fontWeight: active ? 'bold' : 'normal',
                     cursor: 'pointer', fontSize: 11,
                   });
+                  // 自分/相手/他の は複数押せる（自分+相手＝両方、他の＝このデジモン以外のデジモン。他のは自分を押しているときだけ出す）
+                  const sideOwn = curL1 === 'own' || curL1 === 'both';
+                  const sideOpp = curL1 === 'opp' || curL1 === 'both';
+                  const sideOther = !!otherCode && refSubject === otherCode;
+                  const toggleSide = (code: string, on: boolean) => {
+                    const own = code === 'own' ? on : sideOwn;
+                    const opp = code === 'opp' ? on : sideOpp;
+                    const other = own && (code === 'other' ? on : sideOther);
+                    if (!own && !opp) { setSubject(''); return; }
+                    const l1 = own && opp ? 'both' : own ? 'own' : 'opp';
+                    if (other) { setSubject(PERREF_OTHER_DIGIMON_CODES[l1]); return; }
+                    // 数えるもの（デジモン/テイマー/手札など）は引き継ぐ。行き先に無ければその先頭（デジモン）
+                    const kind = /_other_digimon$/.test(refSubject) ? 'digimon' : refSubject.replace(/^(own|opp|both)_/, '');
+                    const next = l1 + '_' + kind;
+                    setSubject(PERREF_L2_CODES.has(next) ? next : PERREF_L2[l1][0].code);
+                  };
                   return (
                     <>
-                      <ButtonGroup options={PERREF_L1} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <ButtonGroup options={PERREF_L1.filter((o) => o.code === 'self')} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
+                        {PERREF_SIDE_TOGGLES.filter((o) => o.code !== 'other' || sideOwn).map((o) => {
+                          const on = o.code === 'own' ? sideOwn : o.code === 'opp' ? sideOpp : sideOther;
+                          return (
+                            <button key={o.code} type="button" onClick={() => toggleSide(o.code, !on)} style={toggleBtnStyle(on)}
+                              title={o.code === 'other' ? 'このデジモン自身は数えない（「他のデジモン1体ごとに」）' : undefined}>{o.label}</button>
+                          );
+                        })}
+                        <ButtonGroup options={PERREF_L1.filter((o) => o.code === 'last_action')} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
+                      </div>
                       {hasDigiTamer && (
                         <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                           <button type="button" onClick={() => applyDigiTamer(!digimonChecked, tamerChecked)} style={toggleBtnStyle(digimonChecked)}>デジモン</button>
@@ -4849,17 +4877,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={setSubject}
                             accentColor="#1a4f8a"
                           />
-                          {/* 「他の〜」: このデジモン以外を数える（自分/両方のデジモン本体のときだけ） */}
-                          {otherCode && refSubject !== evoCode && (
-                            <button
-                              type="button"
-                              title="このデジモン自身は数えない（テキストの「他のデジモン1体ごとに」）"
-                              onClick={() => setSubject(refSubject === otherCode ? digimonCode : otherCode)}
-                              style={toggleBtnStyle(refSubject === otherCode)}
-                            >
-                              他の（このデジモン以外）
-                            </button>
-                          )}
                         </div>
                       )}
                       {otherCode && refSubject === otherCode && (

@@ -111,6 +111,8 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_color', 'cond_color_not', 'cond_cost_ge', 'cond_cost_le',
   'cond_digicross', 'cond_dp_ge', 'cond_dp_le',
   'cond_during_opp_turn', 'cond_during_own_turn', 'cond_exists',
+  // 参照〔DP〕〔Lv〕（保存は cond_exists ＋ cond_dp_ge 等）
+  'cond_ref_dp_ge', 'cond_ref_dp_le', 'cond_ref_lv_ge', 'cond_ref_lv_le',
   'cond_feature', 'cond_feature_contains', 'cond_has_evo',
   'cond_in_battle', 'cond_jogress', 'cond_link_eligible', 'cond_link_state',
   'cond_lv_ge', 'cond_lv_le', 'cond_memory_opponent',

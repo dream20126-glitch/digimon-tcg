@@ -14,7 +14,7 @@ import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
 import { KEYWORD_MODES, KEYWORD_COLOR_PARAM, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, DP_EXISTS_SUBJECT_PREFIX, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -11020,6 +11020,9 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'linked', label: 'リンクカード' },
   { code: 'battle_area', label: 'バトルエリア' },
+  // DP/Lv:「DP13000以上のデジモンがいるなら」。値は枚数ではなく DP/Lv の数値。保存は cond_exists ＋ cond_dp_ge 等（recipe.ts expandDpExistsRows）
+  { code: 'dp', label: 'DP' },
+  { code: 'lv', label: 'Lv' },
   // 「対数（枚数/体数）」ではなく「表示形式（レスト/アクティブ）が参照対象と一致するか」を
   // 見る特殊ゾーン。他ゾーンのge/le/eq等の量的比較とは別軸のため、専用コード(cond_same_state)+
   // 専用UIで扱う（DP参照(cond_dp_le/ge:self等)と同じ「参照」の考え方を状態一致に適用したもの）
@@ -11068,6 +11071,8 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
   'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
   'state_active:ge': 'cond_state_active_ge', 'state_active:le': 'cond_state_active_le', 'state_active:eq': 'cond_state_active_eq', 'state_active:gt': 'cond_state_active_gt', 'state_active:lt': 'cond_state_active_lt',
+  'dp:ge': 'cond_ref_dp_ge', 'dp:le': 'cond_ref_dp_le', 'dp:eq': 'cond_ref_dp_eq',
+  'lv:ge': 'cond_ref_lv_ge', 'lv:le': 'cond_ref_lv_le', 'lv:eq': 'cond_ref_lv_eq',
   'last_action:ge': 'cond_last_action_ge', 'last_action:le': 'cond_last_action_le', 'last_action:eq': 'cond_last_action_eq', 'last_action:gt': 'cond_last_action_gt', 'last_action:lt': 'cond_last_action_lt',
 };
 type RefQuant = 'ge' | 'le' | 'eq' | 'gt' | 'lt' | 'face_down' | 'face_up';
@@ -11116,6 +11121,8 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
   cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
   cond_state_active_ge: { zone: 'state_active', quant: 'ge' }, cond_state_active_le: { zone: 'state_active', quant: 'le' }, cond_state_active_eq: { zone: 'state_active', quant: 'eq' }, cond_state_active_gt: { zone: 'state_active', quant: 'gt' }, cond_state_active_lt: { zone: 'state_active', quant: 'lt' },
+  cond_ref_dp_ge: { zone: 'dp', quant: 'ge' }, cond_ref_dp_le: { zone: 'dp', quant: 'le' }, cond_ref_dp_eq: { zone: 'dp', quant: 'eq' },
+  cond_ref_lv_ge: { zone: 'lv', quant: 'ge' }, cond_ref_lv_le: { zone: 'lv', quant: 'le' }, cond_ref_lv_eq: { zone: 'lv', quant: 'eq' },
   cond_last_action_ge: { zone: 'last_action', quant: 'ge' }, cond_last_action_le: { zone: 'last_action', quant: 'le' }, cond_last_action_eq: { zone: 'last_action', quant: 'eq' }, cond_last_action_gt: { zone: 'last_action', quant: 'gt' }, cond_last_action_lt: { zone: 'last_action', quant: 'lt' },
 };
 // 「参照」で数値の代わりに比べる先（'opp'=相手のこのゾーン / 'self_card'=このカード / own_*=自分のデジモン等）
@@ -11210,7 +11217,11 @@ function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, sec
     : refCountModeKey(zone, evoCountMode || '');
   return { base: REF_ZONE_QUANT_TO_CODE[key + ':' + quant], value: currentValue };
 }
+// 参照〔DP〕〔Lv〕: そのDP/Lvのデジモンがいるか（以上/以下/完全一致）
+const REF_VALUE_ZONES = new Set(['dp', 'lv']);
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
+  dp: [{ code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' }],
+  lv: [{ code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' }],
   evo_source: [
     { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
     { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
@@ -11744,7 +11755,16 @@ function ConditionsHybridEditor({
                     <ButtonGroup
                       options={showLastActionRef ? REF_ZONE_OPTIONS : REF_ZONE_OPTIONS.filter((o) => o.code !== 'last_action')}
                       value={refZoneOf(c)}
-                      onChange={(zone) => updateAt(i, refApplyZone(zone, refQuantOf(c), c.value))}
+                      onChange={(zone) => {
+                        // DP/Lv は以上/以下/完全一致だけ。数値は枚数とは別物なので空にし、誰のデジモンか未指定なら両方にする
+                        if (REF_VALUE_ZONES.has(zone) || REF_VALUE_ZONES.has(refZoneOf(c))) {
+                          const q = refQuantOf(c);
+                          const quant = q === 'ge' || q === 'le' || q === 'eq' ? q : 'ge';
+                          updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] || REF_ZONE_QUANT_TO_CODE[zone + ':ge'], value: '', ...(REF_VALUE_ZONES.has(zone) && !c.subject ? { subject: 'both' } : {}) });
+                          return;
+                        }
+                        updateAt(i, refApplyZone(zone, refQuantOf(c), c.value));
+                      }}
                       accentColor={colors.accent}
                     />
                   )}
@@ -11987,9 +12007,12 @@ function ConditionsHybridEditor({
                                   min={0}
                                   value={c.value || ''}
                                   onChange={(e) => updateAt(i, { value: e.target.value })}
-                                  placeholder={refEvoCountMode === 'colors' ? '色数' : REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}
-                                  style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                                  placeholder={refZone === 'dp' ? 'DP' : refZone === 'lv' ? 'Lv' : refEvoCountMode === 'colors' ? '色数' : REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}
+                                  style={{ width: refZone === 'dp' ? 80 : 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                                 />
+                                {REF_VALUE_ZONES.has(refZone) ? (
+                                  <span style={{ fontSize: 10, color: '#555' }}>のデジモンがいる</span>
+                                ) : (<>
                                 <span style={{ fontSize: 10, color: '#555' }}>{refEvoCountMode === 'colors' ? '色' : REF_ZONE_UNIT_COUNT.has(refZone) ? '体' : '枚'}</span>
                                 <button
                                   type="button"
@@ -11999,6 +12022,7 @@ function ConditionsHybridEditor({
                                 >
                                   参照
                                 </button>
+                                </>)}
                               </>
                             )}
                           </div>
@@ -12328,6 +12352,10 @@ function ConditionsHybridEditor({
                       {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && (refQuantOf(c) === 'ge' || ((refQuantOf(c) === 'eq' || refQuantOf(c) === 'le') && String(c.value) === '0')) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} />
                       )}
+                      {/* 参照〔DP〕〔Lv〕: そのデジモンを色・特徴などでさらに絞り込む（保存は同じ cond_exists の兄弟条件） */}
+                      {cat.code === 'ref' && REF_VALUE_ZONES.has(refZoneOf(c)) && (
+                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} title="属性で絞り込む（このDP/Lvのデジモンをさらに絞り込む）" />
+                      )}
                       {/* 「このデジモンの進化元に『ガルルモン』がある（4枚以上ある）とき」: 参照「進化元」以上N に属性（名称/記述/特徴/色/Lv）を付ける。
                           保存は cond_evo_exists:N ＋兄弟の属性条件（バトルエリアの cond_exists と同じ形）。
                           以上以外（「進化元に『ゴツモン』『X抗体』がない」＝完全一致0 等）は cond_evo_match_{eq|le|gt|lt}:N */}
@@ -12339,44 +12367,6 @@ function ConditionsHybridEditor({
                       {cat.code === 'ref' && /^cond_(hand|trash|security|security_faceup|security_facedown)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone />
                       )}
-                      {/* DP〔参照〕:「DP13000以上のデジモンがいるなら」。ONにすると対象は自分/相手/両方のデジモン（いるかどうか）になる。
-                          保存は cond_exists@own/opp/both ＋ cond_dp_ge:13000（recipe.ts expandDpExistsRows） */}
-                      {cat.code === 'dp' && !supportsMultiValue && ['cond_dp_ge', 'cond_dp_le', 'cond_dp'].includes(c.base) && (() => {
-                        const dpEx = (c.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX);
-                        const side = dpEx ? (c.subject || '').slice(DP_EXISTS_SUBJECT_PREFIX.length) : '';
-                        const own = side === 'own' || side === 'both';
-                        const opp = side === 'opp' || side === 'both';
-                        const setSide = (o: boolean, p: boolean) => {
-                          if (!o && !p) return; // どちらかは必ず残す（外すときは〔参照〕のチェックを外す）
-                          updateAt(i, { subject: DP_EXISTS_SUBJECT_PREFIX + (o && p ? 'both' : o ? 'own' : 'opp') });
-                        };
-                        const btn = (active: boolean): React.CSSProperties => ({
-                          padding: '3px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 11,
-                          border: active ? `2px solid ${colors.accent}` : '1px solid #bbb',
-                          background: active ? colors.accent : '#f5f5f5', color: active ? '#fff' : '#333', fontWeight: active ? 'bold' : 'normal',
-                        });
-                        return (
-                          <div style={{ marginBottom: 4 }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: colors.accent }}>
-                              <input type="checkbox" checked={dpEx}
-                                onChange={(e) => updateAt(i, { subject: e.target.checked ? DP_EXISTS_SUBJECT_PREFIX + 'both' : undefined })} />
-                              参照（このDPのデジモンがいるなら）
-                            </label>
-                            {dpEx && (
-                              <>
-                                <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                  <button type="button" onClick={() => setSide(!own, opp)} style={btn(own)}>自分</button>
-                                  <button type="button" onClick={() => setSide(own, !opp)} style={btn(opp)}>相手</button>
-                                  <span style={{ fontSize: 10, color: '#666' }}>のデジモン（両方押す＝どちらのでもよい）</span>
-                                </div>
-                                <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
-                                  保存: cond_exists@{side} ＋ {c.base}。同じ欄の他の条件もこのデジモンの絞り込みとして読まれるため、この条件は単独の欄で使ってください
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })()}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
                           <input
@@ -12392,8 +12382,6 @@ function ConditionsHybridEditor({
                       )}
                       <div style={sameAsTargetChecked[i] ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
                       {(() => {
-                        // DP〔参照〕ON のときは上の自分/相手ボタンで選ぶ
-                        if ((c.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX)) return null;
                         const rawSub = splitStackSuffix(c.subject || '');
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };
                         const stackPos = rawSub.pos;

@@ -180,37 +180,42 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   });
 }
 
-// DPの条件行の〔参照〕（「DP13000以上のデジモンがいるなら」）。エディタでは DP の行（cond_dp_ge 等）の subject を
-// DP_EXISTS_SUBJECT_PREFIX＋自分/相手/両方（own/opp/both）にして持つ。
-// 保存は cond_exists@own/opp/both ＋兄弟の cond_dp_ge:13000（エンジンの cond_exists がそのまま読める形）
-export const DP_EXISTS_SUBJECT_PREFIX = '__dp_exists__:';
-const DP_EXISTS_BASES = new Set(['cond_dp_ge', 'cond_dp_le', 'cond_dp']);
+// 参照〔DP〕〔Lv〕（「DP13000以上のデジモンがいるなら」「Lv5以上かつDP13000以上のデジモンがいるなら」）。
+// エディタでは参照の行 cond_ref_dp_{ge|le|eq}:N@own/opp/both（Lv は cond_ref_lv_*）で持つ。
+// 保存は cond_exists@own/opp/both ＋兄弟の cond_dp_ge:N 等（エンジンの cond_exists がそのまま読める形）。
+// 参照の行が2つ（DPとLv）あっても cond_exists は1つにまとめる。行に付けた「属性で絞り込む」も兄弟の条件になる
+const REF_ATTR_ROW_RE = /^cond_ref_(dp|lv)_(ge|le|eq)$/;
+const REF_ATTR_BASE: Record<string, string> = { ge: '_ge', le: '_le', eq: '' };
 function expandDpExistsRows(pairs: ConditionPair[]): ConditionPair[] {
-  if (!pairs.some((p) => p && DP_EXISTS_BASES.has(p.base) && (p.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX))) return pairs;
+  if (!pairs.some((p) => p && REF_ATTR_ROW_RE.test(p.base))) return pairs;
   const out: ConditionPair[] = [];
+  let done = false;
   pairs.forEach((p) => {
-    if (p && DP_EXISTS_BASES.has(p.base) && (p.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX)) {
-      const side = (p.subject || '').slice(DP_EXISTS_SUBJECT_PREFIX.length) || 'both';
-      out.push({ base: 'cond_exists', value: '', subject: side });
-      out.push({ base: p.base, value: p.value });
-    } else out.push(p);
+    const m = p ? REF_ATTR_ROW_RE.exec(p.base) : null;
+    if (m) {
+      if (!done) { out.push({ base: 'cond_exists', value: '', subject: p.subject || 'both' }); done = true; }
+      out.push({ base: 'cond_' + m[1] + REF_ATTR_BASE[m[2]], value: p.value });
+    } else if (p && p.subject === REF_EXISTS_FILTER_MARKER) out.push({ base: p.base, value: p.value });
+    else out.push(p);
   });
   return out;
 }
-// 読込: cond_exists（入れ子の値なし）＋兄弟が DP の条件だけ → DP の行（〔参照〕ON）に戻す
+// 読込: cond_exists（入れ子の値なし）＋兄弟に DP/Lv の条件 → 参照〔DP〕〔Lv〕の行に戻す（他の属性は「属性で絞り込む」に）
+const DP_LV_ROW: Record<string, string> = {
+  cond_dp_ge: 'cond_ref_dp_ge', cond_dp_le: 'cond_ref_dp_le', cond_dp: 'cond_ref_dp_eq',
+  cond_lv_ge: 'cond_ref_lv_ge', cond_lv_le: 'cond_ref_lv_le', cond_lv: 'cond_ref_lv_eq',
+};
 function collapseDpExistsRows(pairs: ConditionPair[]): ConditionPair[] {
   const exIdx = pairs.findIndex((p) => p && p.base === 'cond_exists' && !p.value);
   if (exIdx === -1) return pairs;
-  const dpIdx = pairs.findIndex((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject);
-  if (dpIdx === -1) return pairs;
-  // 他の属性（Lv/色 等）は普通の条件行のまま残す（「Lv5以上かつDP13000以上のデジモンがいるなら」＝Lvの行＋DPの行〔参照〕。
-  // 保存すると同じ cond_exists の兄弟に戻るので、エンジンはどちらも「いるデジモン」の絞り込みとして読む）
-  if (pairs.filter((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject).length !== 1) return pairs;
+  const isRow = (p: ConditionPair) => !!p && !p.subject && !!DP_LV_ROW[p.base] && /^\d+$/.test(String(p.value ?? ''));
+  if (!pairs.some((p) => isRow(p))) return pairs;
   const side = pairs[exIdx].subject || 'opp';
   const out: ConditionPair[] = [];
   pairs.forEach((p, i) => {
     if (i === exIdx) return;
-    if (i === dpIdx) out.push({ base: p.base, value: p.value, subject: DP_EXISTS_SUBJECT_PREFIX + side });
+    if (isRow(p)) out.push({ base: DP_LV_ROW[p.base], value: p.value, subject: side });
+    else if (p && !p.subject && REF_EXISTS_FILTER_CODES.has(p.base)) out.push({ ...p, subject: REF_EXISTS_FILTER_MARKER });
     else out.push(p);
   });
   return out;

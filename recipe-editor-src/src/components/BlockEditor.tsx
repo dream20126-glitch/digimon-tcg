@@ -14,7 +14,7 @@ import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
 import { KEYWORD_MODES, KEYWORD_COLOR_PARAM, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, DP_EXISTS_SUBJECT_PREFIX, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -12339,6 +12339,44 @@ function ConditionsHybridEditor({
                       {cat.code === 'ref' && /^cond_(hand|trash|security|security_faceup|security_facedown)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone />
                       )}
+                      {/* DP〔参照〕:「DP13000以上のデジモンがいるなら」。ONにすると対象は自分/相手/両方のデジモン（いるかどうか）になる。
+                          保存は cond_exists@own/opp/both ＋ cond_dp_ge:13000（recipe.ts expandDpExistsRows） */}
+                      {cat.code === 'dp' && !supportsMultiValue && ['cond_dp_ge', 'cond_dp_le', 'cond_dp'].includes(c.base) && (() => {
+                        const dpEx = (c.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX);
+                        const side = dpEx ? (c.subject || '').slice(DP_EXISTS_SUBJECT_PREFIX.length) : '';
+                        const own = side === 'own' || side === 'both';
+                        const opp = side === 'opp' || side === 'both';
+                        const setSide = (o: boolean, p: boolean) => {
+                          if (!o && !p) return; // どちらかは必ず残す（外すときは〔参照〕のチェックを外す）
+                          updateAt(i, { subject: DP_EXISTS_SUBJECT_PREFIX + (o && p ? 'both' : o ? 'own' : 'opp') });
+                        };
+                        const btn = (active: boolean): React.CSSProperties => ({
+                          padding: '3px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 11,
+                          border: active ? `2px solid ${colors.accent}` : '1px solid #bbb',
+                          background: active ? colors.accent : '#f5f5f5', color: active ? '#fff' : '#333', fontWeight: active ? 'bold' : 'normal',
+                        });
+                        return (
+                          <div style={{ marginBottom: 4 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: colors.accent }}>
+                              <input type="checkbox" checked={dpEx}
+                                onChange={(e) => updateAt(i, { subject: e.target.checked ? DP_EXISTS_SUBJECT_PREFIX + 'both' : undefined })} />
+                              参照（このDPのデジモンがいるなら）
+                            </label>
+                            {dpEx && (
+                              <>
+                                <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  <button type="button" onClick={() => setSide(!own, opp)} style={btn(own)}>自分</button>
+                                  <button type="button" onClick={() => setSide(own, !opp)} style={btn(opp)}>相手</button>
+                                  <span style={{ fontSize: 10, color: '#666' }}>のデジモン（両方押す＝どちらのでもよい）</span>
+                                </div>
+                                <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                                  保存: cond_exists@{side} ＋ {c.base}。同じ欄の他の条件もこのデジモンの絞り込みとして読まれるため、この条件は単独の欄で使ってください
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
                           <input
@@ -12354,6 +12392,8 @@ function ConditionsHybridEditor({
                       )}
                       <div style={sameAsTargetChecked[i] ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
                       {(() => {
+                        // DP〔参照〕ON のときは上の自分/相手ボタンで選ぶ
+                        if ((c.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX)) return null;
                         const rawSub = splitStackSuffix(c.subject || '');
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };
                         const stackPos = rawSub.pos;

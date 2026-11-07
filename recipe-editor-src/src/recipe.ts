@@ -145,6 +145,7 @@ const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_
 // なる）。添付が無ければ何も変えずそのまま返す
 function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  pairs = expandDpExistsRows(pairs);
   const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_ZONE_FILTER_CODES.has(p.base));
   if (!hasAttrs) return pairs;
   // 手札/トラッシュの枚数の参照行に付いた属性（バトルエリア・進化元の参照行が無いときだけ）
@@ -179,11 +180,49 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   });
 }
 
+// DPの条件行の〔参照〕（「DP13000以上のデジモンがいるなら」）。エディタでは DP の行（cond_dp_ge 等）の subject を
+// DP_EXISTS_SUBJECT_PREFIX＋自分/相手/両方（own/opp/both）にして持つ。
+// 保存は cond_exists@own/opp/both ＋兄弟の cond_dp_ge:13000（エンジンの cond_exists がそのまま読める形）
+export const DP_EXISTS_SUBJECT_PREFIX = '__dp_exists__:';
+const DP_EXISTS_BASES = new Set(['cond_dp_ge', 'cond_dp_le', 'cond_dp']);
+function expandDpExistsRows(pairs: ConditionPair[]): ConditionPair[] {
+  if (!pairs.some((p) => p && DP_EXISTS_BASES.has(p.base) && (p.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX))) return pairs;
+  const out: ConditionPair[] = [];
+  pairs.forEach((p) => {
+    if (p && DP_EXISTS_BASES.has(p.base) && (p.subject || '').startsWith(DP_EXISTS_SUBJECT_PREFIX)) {
+      const side = (p.subject || '').slice(DP_EXISTS_SUBJECT_PREFIX.length) || 'both';
+      out.push({ base: 'cond_exists', value: '', subject: side });
+      out.push({ base: p.base, value: p.value });
+    } else out.push(p);
+  });
+  return out;
+}
+// 読込: cond_exists（入れ子の値なし）＋兄弟が DP の条件だけ → DP の行（〔参照〕ON）に戻す
+function collapseDpExistsRows(pairs: ConditionPair[]): ConditionPair[] {
+  const exIdx = pairs.findIndex((p) => p && p.base === 'cond_exists' && !p.value);
+  if (exIdx === -1) return pairs;
+  const dpIdx = pairs.findIndex((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject);
+  if (dpIdx === -1) return pairs;
+  // 他の属性（色/Lv 等）も付いているものは従来どおり参照行＋属性で表示する
+  if (pairs.some((p) => p && REF_ZONE_FILTER_CODES.has(p.base))) return pairs;
+  if (pairs.filter((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject).length !== 1) return pairs;
+  const side = pairs[exIdx].subject || 'opp';
+  const out: ConditionPair[] = [];
+  pairs.forEach((p, i) => {
+    if (i === exIdx) return;
+    if (i === dpIdx) out.push({ base: p.base, value: p.value, subject: DP_EXISTS_SUBJECT_PREFIX + side });
+    else out.push(p);
+  });
+  return out;
+}
+
 // expandRefExistsAttributeFiltersの逆変換（レシピ読込時）。cond_existsエントリを
 // cond_battle_area_ge(以上/1)の参照行に戻し、直後に続く属性フィルタ条件群には
 // REF_EXISTS_FILTER_MARKERを付け直して「参照行に添付」の表示に復元する
 function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  const dpEx = collapseDpExistsRows(pairs);
+  if (dpEx !== pairs) return dpEx;
   // 手札/トラッシュに〜がN枚以上あるとき（cond_trash_match_ge:N 等）→ 参照「トラッシュ」以上N の行＋属性の行に戻す
   const zoneMatchIdx = pairs.findIndex((p) => p && REF_ZONE_MATCH_RE.test(p.base));
   if (zoneMatchIdx !== -1) {

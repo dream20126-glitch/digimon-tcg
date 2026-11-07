@@ -4115,8 +4115,9 @@ const PERREF_OTHER_DIGIMON_CODES: Record<string, string> = { own: 'own_other_dig
 // 〜ごとにの「自分 / 相手 / 他の」トグル（アクションの対象と同じ操作。自分+相手＝両方）
 const PERREF_SIDE_TOGGLES = [{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'other', label: '他の' }];
 PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_OTHER_DIGIMON_CODES));
-// 「このデジモンとテイマーの色1色ごとに」: このカード〔本体〕＋〔自分のテイマー〕を合わせて数える（self_and_own_tamer）。⚠ エンジン未実装
-const PERREF_SELF_TAMER_CODE = 'self_and_own_tamer';
+// 〔このカード〕と〔自分/相手〕を両方押したとき: このカード（本体）＋自分/相手の〇〇を合わせて数える。
+// コードは 'self_and_' ＋ 自分/相手側のコード（例:「このデジモンとテイマーの色1色ごとに」＝ self_and_own_tamer）。⚠ エンジン未実装
+const PERREF_SELF_AND = 'self_and_';
 // デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
 // （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
 const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
@@ -4136,7 +4137,7 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
 const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
-  if (code === 'evo_source' || code === 'self_card' || code === PERREF_SELF_TAMER_CODE) return 'self';
+  if (code === 'evo_source' || code === 'self_card') return 'self';
   if (code === 'last_action_count' || code === 'last_action_cards') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
@@ -4754,8 +4755,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     };
     const { subject: legacySubject, legacyState } = decomposeRef(curPerRef);
     const refSubject = legacySubject;
+    // 〔このカード〕＋〔自分/相手〕（self_and_〇〇）: 自分/相手側の部分（perBaseRef）だけを他のボタンで扱う
+    const perSelfAnd = refSubject.startsWith(PERREF_SELF_AND);
+    const perBaseRef = perSelfAnd ? refSubject.slice(PERREF_SELF_AND.length) : refSubject;
+    const perFullRef = refSubject;
     // 状態(条件)UIは、デジモン/テイマー系の対象（自分/相手/両方）のときだけ表示
-    const isDigimonSubject = PERREF_STATE_ELIGIBLE_SUBJECTS.has(refSubject);
+    const isDigimonSubject = PERREF_STATE_ELIGIBLE_SUBJECTS.has(perBaseRef);
     const isEnabled = !!(curPerCount && curPerRef);
     // 現在の状態 cond（perRefStateCond > legacyState の優先順）
     const currentStateCond: ConditionPair = curPerRefStateCond
@@ -4789,6 +4794,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         perRefStateCond: isDigimonRef ? curPerRefStateCond : undefined,
       });
     }
+    const setPerSubjectRaw = (code: string) => setSubject(code);
     function setStateBase(newBase: string) {
       // 同じく 2フィールド (perRefStateCond + perRef のlegacy正規化) を1回でまとめて更新
       const newStateCond = newBase
@@ -4847,9 +4853,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                 {(() => {
+                  // 以下の自分/相手/デジモン/テイマー等のボタンは自分/相手側の部分だけを読み書きする（このカードONなら self_and_ を付けて保存）
+                  // eslint-disable-next-line @typescript-eslint/no-shadow
+                  const refSubject = perBaseRef;
+                  // eslint-disable-next-line @typescript-eslint/no-shadow
+                  const setSubject = (code: string) => {
+                    if (!perSelfAnd) { setPerSubjectRaw(code); return; }
+                    setPerSubjectRaw(code && perRefToL1(code) !== 'self' && perRefToL1(code) !== 'last_action' ? PERREF_SELF_AND + code : 'self_card');
+                  };
                   const curL1 = perRefToL1(refSubject);
                   const l2Options = PERREF_L2[curL1] || [];
+                  // 〔このカード〕: 自分/相手と一緒に押せる（両方＝self_and_〇〇）
+                  const selfOn = curL1 === 'self' || perSelfAnd;
+                  const toggleSelf = () => {
+                    if (perSelfAnd) { setPerSubjectRaw(perBaseRef); return; }
+                    if (curL1 === 'self') return; // このカードだけのときは外さない（全部外すと「〜ごとに」自体が消えるため）
+                    const side = curL1 === 'own' || curL1 === 'opp' || curL1 === 'both';
+                    // 「他の」はこのデジモン以外なので、このカードと一緒には数えない（デジモンに戻す）
+                    const base = /_other_digimon$/.test(perFullRef) ? curL1 + '_digimon' : perFullRef;
+                    setPerSubjectRaw(side ? PERREF_SELF_AND + base : 'self_card');
+                  };
                   const handleL1 = (l1: string) => {
+                    // eslint-disable-next-line @typescript-eslint/no-shadow
+                    const setSubject = setPerSubjectRaw;
                     if (!l1) { setSubject(''); return; }
                     // 色の種類を数えるときは枚数(last_action_count)では数えられないため「処理したカード」を既定にする
                     if (l1 === 'last_action') { setSubject(refSubject === 'last_action_cards' || curRefCount === 'colors' ? 'last_action_cards' : 'last_action_count'); return; }
@@ -4890,8 +4916,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const toggleSide = (code: string, on: boolean) => {
                     const own = code === 'own' ? on : sideOwn;
                     const opp = code === 'opp' ? on : sideOpp;
-                    const other = own && (code === 'other' ? on : sideOther);
+                    const other = own && !selfOn && (code === 'other' ? on : sideOther);
                     if (!own && !opp) { setSubject(''); return; }
+                    // このカードだけを押している状態から自分/相手を足す
+                    if (curL1 === 'self') { const l1 = own && opp ? 'both' : own ? 'own' : 'opp'; setPerSubjectRaw(PERREF_SELF_AND + PERREF_L2[l1][0].code); return; }
                     const l1 = own && opp ? 'both' : own ? 'own' : 'opp';
                     if (other) { setSubject(PERREF_OTHER_DIGIMON_CODES[l1]); return; }
                     // 数えるもの（デジモン/テイマー/手札など）は引き継ぐ。行き先に無ければその先頭（デジモン）
@@ -4902,8 +4930,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   return (
                     <>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <ButtonGroup options={PERREF_L1.filter((o) => o.code === 'self')} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
-                        {PERREF_SIDE_TOGGLES.filter((o) => o.code !== 'other' || sideOwn).map((o) => {
+                        <button type="button" onClick={toggleSelf} style={toggleBtnStyle(selfOn)}
+                          title="自分/相手と一緒に押すと、このカードも合わせて数える（「このデジモンとテイマーの〜ごとに」）">このカード</button>
+                        {PERREF_SIDE_TOGGLES.filter((o) => o.code !== 'other' || (sideOwn && !selfOn)).map((o) => {
                           const on = o.code === 'own' ? sideOwn : o.code === 'opp' ? sideOpp : sideOther;
                           return (
                             <button key={o.code} type="button" onClick={() => toggleSide(o.code, !on)} style={toggleBtnStyle(on)}
@@ -4938,17 +4967,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       {/* このカード: 本体／進化元。何を数えるか分かるよう常に表示する */}
                       {!hasDigiTamer && (l2Options.length > 1 || curL1 === 'self') && (
                         <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <ButtonGroup options={l2Options} value={refSubject === PERREF_SELF_TAMER_CODE ? 'self_card' : refSubject} onChange={setSubject} accentColor="#1a4f8a" />
-                          {/* 本体のときだけ: 自分のテイマーも合わせて数える（「このデジモンとテイマーの色1色ごとに」） */}
-                          {curL1 === 'self' && (refSubject === 'self_card' || refSubject === PERREF_SELF_TAMER_CODE) && (
-                            <button type="button" onClick={() => setSubject(refSubject === PERREF_SELF_TAMER_CODE ? 'self_card' : PERREF_SELF_TAMER_CODE)}
-                              style={toggleBtnStyle(refSubject === PERREF_SELF_TAMER_CODE)} title="このデジモンと自分のテイマーを合わせて数える">＋自分のテイマー</button>
-                          )}
+                          <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
                         </div>
                       )}
-                      {refSubject === PERREF_SELF_TAMER_CODE && (
+                      {perSelfAnd && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
-                          このデジモンと自分のテイマーを合わせて数えます（数え方「色の種類の数」で「このデジモンとテイマーの色1色ごとに」）。⚠ エンジン未実装
+                          このカード（本体）と、自分/相手側で選んだものを合わせて数えます（例: 数え方「色の種類の数」で「このデジモンとテイマーの色1色ごとに」）。⚠ エンジン未実装
                         </div>
                       )}
                       {refSubject === 'self_card' && (

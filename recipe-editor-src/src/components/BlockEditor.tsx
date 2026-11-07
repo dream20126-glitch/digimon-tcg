@@ -3204,9 +3204,24 @@ function TriggerSubjectStagedPicker({
       {/* suppressTypeButtons時でも、場所（手札/トラッシュ/セキュリティ/デッキ）は別軸の情報
           なので種別とは独立して出す（「破棄されたとき」のように、辞書の「種別なし」フラグは
           デジモン/テイマー等の種別だけを隠したい意図で、場所まで隠す意図ではないケース向け） */}
+      {/* 自分/相手＞進化元・重ねられているカード（「自分のデジモンの進化元が破棄されたとき」＝ own_evo_stack）も
+          同じ行に並べる（以前は別の行（第3段階）にあり、場所の行からは選べなかった） */}
       {suppressTypeButtons && hasFromZones && TGT_TOGGLE_L1.has(cur.l1) && (
         <div style={{ marginTop: 4 }}>
-          <ButtonGroup options={SUBJECT_L2_FROM_ZONES} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
+          <ButtonGroup
+            options={[...SUBJECT_L2_FROM_ZONES, { code: '__evo', label: '進化元' }, { code: '__stacked', label: '重ねられているカード' }]}
+            value={raw.family === 'evo' ? '__evo' : raw.family === 'stacked' ? '__stacked' : effectiveL2}
+            onChange={(v) => {
+              if (v === '__evo' || v === '__stacked') {
+                const fam: TriggerStackFamily = v === '__evo' ? 'evo' : 'stacked';
+                if (raw.family === fam) return;
+                setSubject(joinTriggerSubjectSuffix(SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'] || cur.l1, fam, raw.family ? raw.pos : ''));
+                return;
+              }
+              handleL2(v);
+            }}
+            accentColor={accentColor}
+          />
         </div>
       )}
       {/* 「このカード」+場所（例:「このカードが手札から破棄されたとき」）。
@@ -3239,7 +3254,7 @@ function TriggerSubjectStagedPicker({
       {zoneMode && currentZone && ZONE_INCREASE_UNIMPLEMENTED.has(currentZone) && (
         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ デッキ/進化元以外は保存はできますがエンジンが現状対応していないため発火しません</div>
       )}
-      {!evoMode && showStage3 && (
+      {!evoMode && showStage3 && !(suppressTypeButtons && TGT_TOGGLE_L1.has(cur.l1)) && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup
             options={[{ code: '', label: '指定なし' }, { code: 'evo', label: '進化元' }, { code: 'stacked', label: '重ねられているカード' }]}

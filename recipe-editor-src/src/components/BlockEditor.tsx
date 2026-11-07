@@ -2232,11 +2232,17 @@ function CostListEditor({
                   {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる。
                       辞書のhasFromZonesフラグには頼らずPLACE_ZONE_MAP側で直接持たせている
                       （このボタン自体が辞書未登録のハードコードのため） */}
-                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (() => {
+                  {/* バトルエリア: 取得元を選ばなければ従来通り「このカード」を置く（target:self_card）。
+                      手札等を選ぶとそこから置く（from。対象は空にする。外すと self_card に戻す） */}
+                  {(PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones || activePlaceZone === 'battle_area') && (() => {
                     const zones = c.fromZones || [];
                     const op = c.fromZonesOp || 'or';
                     const toggleZone = (code: string) => {
                       const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                      if (activePlaceZone === 'battle_area' && (!c.target || c.target === 'self_card')) {
+                        updateCost(i, { ...c, fromZones: next, target: next.length > 0 ? '' : 'self_card' });
+                        return;
+                      }
                       updateCost(i, { ...c, fromZones: next });
                     };
                     return (
@@ -2325,7 +2331,7 @@ function CostListEditor({
                   {/* 📥 取得元カードの条件: 置かれるカード自体の絞り込み（上のconditionsは
                       置き先＝コンテナ側(例:「アイギオモン」)を絞り込むのに対し、こちらは
                       取得元＝置かれるカード側(例:「結城ダン/結城カナン」)を絞り込む） */}
-                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (
+                  {(PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones || (activePlaceZone === 'battle_area' && (c.fromZones || []).length > 0)) && (
                     <div style={{ marginTop: 4 }}>
                       <ConditionChainField
                         chain={c.fromFilterChain}

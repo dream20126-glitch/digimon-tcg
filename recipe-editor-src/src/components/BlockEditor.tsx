@@ -4093,12 +4093,16 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'opp_battle_area', label: 'バトルエリア' },
     { code: 'opp_memory', label: 'メモリー' },
   ],
-  // 両方（自分+相手を合算してカウント）。ゾーン系（手札等）は合算する意味が薄いため
-  // デジモン/テイマー/カード系のみに限定する
+  // 両方（自分+相手を合算してカウント）。「お互いのトラッシュ合計5枚ごとに」のように手札/トラッシュ等も合算できる
+  // （both_hand / both_trash / both_security / both_battle_area は ⚠ エンジン未実装）
   both: [
     { code: 'both_digimon', label: 'デジモン' },
     { code: 'both_tamer', label: 'テイマー' },
     { code: 'both_card', label: 'カード' },
+    { code: 'both_hand', label: '手札' },
+    { code: 'both_trash', label: 'トラッシュ' },
+    { code: 'both_security', label: 'セキュリティ' },
+    { code: 'both_battle_area', label: 'バトルエリア' },
   ],
 };
 // 「デジモン」「テイマー」ボタンを両方ONにしたときに使う結合コード。ボタンとしては表示しない
@@ -4960,6 +4964,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             accentColor="#1a4f8a"
                           />
                         </div>
+                      )}
+                      {/^both_(hand|trash|security|battle_area)$/.test(refSubject) && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（自分と相手の合計を数える）</div>
                       )}
                       {otherCode && refSubject === otherCode && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（このデジモン以外を数える）</div>

@@ -140,6 +140,7 @@ const cases: Case[] = [
   { name: 'ref dp (both)', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_ref_dp_ge', value: '13000', subject: 'both' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@both') && J(r).includes('cond_dp_ge:13000') },
   { name: 'ref dp + ref lv', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_ref_lv_ge', value: '5', subject: 'both' }, { base: 'cond_ref_dp_ge', value: '13000', subject: 'both' }] })], check: ['0.conditions'], raw: (r: any) => (J(r).match(/cond_exists/g) || []).length === 1 && J(r).includes('cond_lv_ge:5') },
   { name: 'ref dp + feature attr', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_ref_dp_le', value: '5000', subject: 'opp' }, { base: 'cond_feature', value: 'X', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@opp') && J(r).includes('cond_feature:X') },
+  { name: 'per both trash', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, perCount: 5, perRef: 'both_trash' })], check: ['0.perRef', '0.perCount'], raw: (r: any) => J(r).includes('both_trash') },
 ];
 
 let ng = 0;

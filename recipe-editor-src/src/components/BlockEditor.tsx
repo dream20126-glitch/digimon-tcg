@@ -1719,8 +1719,19 @@ function CostListEditor({
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
           // 破棄の対象に場所（手札/デッキ）を選んだら、汎用の「破棄する」＋場所の対象で保存する
           // （例: 自分のデッキを1枚破棄 → action:'discard', target:'own_deck:1'）。枚数は対象の :N
+          // セキュリティ: 位置（上/下/選んで/全て）はアクションの末尾（security_trash_top 等）。位置を選び直していればそのまま
+          if (isDiscardActive && useL2 === 'security' && newBase) {
+            const keepAct = cActionBase === 'security_trash' ? c.action : 'security_trash_top';
+            updateCost(i, { ...c, ...cCleared, action: keepAct, target: newBase + (cTgtSuffix || ':1'), fromZones: undefined });
+            return;
+          }
           if (isDiscardActive && (COST_DISCARD_TGT_ZONES[l1] || []).includes(useL2) && newBase) {
             updateCost(i, { ...c, ...cCleared, action: 'discard', target: newBase + (cTgtSuffix || ':1'), fromZones: undefined });
+            return;
+          }
+          // セキュリティから他の対象へ変えたら、破棄は既定（手札の破棄と同じ cost_discard）に戻す
+          if (isDiscardActive && cActionBase === 'security_trash') {
+            updateCost(i, { ...c, ...cCleared, action: 'cost_discard', target: newBase + cTgtSuffix, fromZones: undefined });
             return;
           }
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
@@ -1813,11 +1824,24 @@ function CostListEditor({
                 {/* 破棄: 場所/位置/裏表（対象欄に統合。以前はアクション欄側にあったが、
                     「対象」で全て設定できるようにするため、対象の絞り込み系コントロールと
                     ここへまとめた。選んだ場所に応じて実アクションコードを切り替える */}
+                {/* 対象＝自分/相手のセキュリティ: 位置（上/下/選んで/全て）。アクションの末尾で持つ（security_trash_top 等） */}
+                {isDiscardActive && cCurTgt.l2 === 'security' && cActionBase === 'security_trash' && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                    <ButtonGroup
+                      options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }, { code: 'all', label: '全て' }]}
+                      value={(getActionVariant(c.action || '')?.suffix || '_top').replace(/^_/, '')}
+                      onChange={(v) => { if (v) updateCost(i, { ...c, action: 'security_trash_' + v }); }}
+                      accentColor="#b76e00"
+                    />
+                  </div>
+                )}
                 {isDiscardActive && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
                     <ButtonGroup
-                      options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                      // セキュリティは🎯対象（自分/相手→セキュリティ）で選ぶので、ここには出さない
+                      options={DISCARD_ZONE_MAP.filter((z) => z.code !== 'security').map((z) => ({ code: z.code, label: z.label }))}
                       value={activeDiscardZone}
                       onChange={(zoneCode) => {
                         if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
@@ -3914,7 +3938,8 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   { code: 'linked', label: 'リンクカード', action: 'unlink', warn: '⚠ エンジン未対応: 現状は対象を選べず、リンクしている先頭のカードから自動で破棄されます（指定/絞り込みは未反映）' },
 ];
 // コストの「破棄」で🎯対象に出す場所（エンジンの汎用 discard が扱えるもの: own/opponent/both_hand・own/both_deck）
-const COST_DISCARD_TGT_ZONES: Record<string, string[]> = { own: ['hand', 'deck'], opp: ['hand'], both: ['hand', 'deck'] };
+// セキュリティ（自分/相手）も対象で選ぶ（「自分のセキュリティを上から1枚破棄することで」→ security_trash_top ＋ target own_security）
+const COST_DISCARD_TGT_ZONES: Record<string, string[]> = { own: ['hand', 'deck', 'security'], opp: ['hand', 'security'], both: ['hand', 'deck'] };
 const COST_DISCARD_ZONE_OF_TARGET: Record<string, string> = {
   own_hand: 'hand', opponent_hand: 'hand', both_hand: 'hand', own_deck: 'deck', both_deck: 'deck',
 };

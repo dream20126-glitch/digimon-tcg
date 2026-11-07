@@ -139,6 +139,7 @@ const cases: Case[] = [
   { name: 'per self + own tamer colors', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, perCount: 1, perRef: 'self_and_own_tamer', refCount: 'colors' })], check: ['0.perRef', '0.refCount'], raw: (r: any) => J(r).includes('self_and_own_tamer') },
   { name: 'dp exists ref (both)', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_dp_ge', value: '13000', subject: '__dp_exists__:both' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@both') && J(r).includes('cond_dp_ge:13000') },
   { name: 'dp exists ref (opp, with turn cond)', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_during_own_turn' }, { base: 'cond_dp_le', value: '5000', subject: '__dp_exists__:opp' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@opp') },
+  { name: 'dp exists ref + lv', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_lv_ge', value: '5' }, { base: 'cond_dp_ge', value: '13000', subject: '__dp_exists__:both' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@both') && J(r).includes('cond_lv_ge:5') },
 ];
 
 let ng = 0;

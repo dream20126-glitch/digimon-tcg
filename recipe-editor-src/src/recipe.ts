@@ -203,8 +203,8 @@ function collapseDpExistsRows(pairs: ConditionPair[]): ConditionPair[] {
   if (exIdx === -1) return pairs;
   const dpIdx = pairs.findIndex((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject);
   if (dpIdx === -1) return pairs;
-  // 他の属性（色/Lv 等）も付いているものは従来どおり参照行＋属性で表示する
-  if (pairs.some((p) => p && REF_ZONE_FILTER_CODES.has(p.base))) return pairs;
+  // 他の属性（Lv/色 等）は普通の条件行のまま残す（「Lv5以上かつDP13000以上のデジモンがいるなら」＝Lvの行＋DPの行〔参照〕。
+  // 保存すると同じ cond_exists の兄弟に戻るので、エンジンはどちらも「いるデジモン」の絞り込みとして読む）
   if (pairs.filter((p) => p && DP_EXISTS_BASES.has(p.base) && !p.subject).length !== 1) return pairs;
   const side = pairs[exIdx].subject || 'opp';
   const out: ConditionPair[] = [];

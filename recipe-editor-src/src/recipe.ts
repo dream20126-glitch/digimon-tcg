@@ -127,14 +127,15 @@ export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
 export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_lv', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_cost', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each', 'cond_attr_or']);
 // 参照「手札/トラッシュ」の枚数＋属性＝「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」。
 // 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
-const REF_ZONE_COUNT_RE = /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/;
-const REF_ZONE_MATCH_RE = /^cond_(hand|trash)_match_(ge|le|eq|gt|lt)$/;
+// セキュリティも同じ形（「自分の表向きのセキュリティに特徴『ディープセイバーズ』があるなら」= cond_security_match_ge:1 ＋ cond_face_up ＋ cond_feature）
+const REF_ZONE_COUNT_RE = /^cond_(hand|trash|security)_(ge|le|eq|gt|lt)$/;
+const REF_ZONE_MATCH_RE = /^cond_(hand|trash|security)_match_(ge|le|eq|gt|lt)$/;
 // 参照「進化元」以下/完全一致/より多い/より少ない N ＋属性＝「進化元に『ゴツモン』『X抗体』がない」（完全一致0）。
 // 保存は cond_evo_match_{quant}:N@subject ＋兄弟の属性条件（以上N は従来どおり cond_evo_exists:N）
 const REF_EVO_COUNT_RE = /^cond_has_evo_(le|eq|gt|lt)$/;
 const REF_EVO_MATCH_RE = /^cond_evo_match_(le|eq|gt|lt)$/;
 const isRefEvoRow = (p: ConditionPair) => !!p && (p.base === 'cond_has_evo' || REF_EVO_COUNT_RE.test(p.base));
-export const REF_ZONE_FILTER_CODES = new Set([...REF_EXISTS_FILTER_CODES, 'cond_type']);
+export const REF_ZONE_FILTER_CODES = new Set([...REF_EXISTS_FILTER_CODES, 'cond_type', 'cond_face_up', 'cond_face_down']);
 // 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 
@@ -3002,7 +3003,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     step.trigger_conditions.forEach((s: string) => _triggerConditionsRaw.push(stringToPair(String(s))));
   }
   // 「進化元に〇〇がある」（cond_evo_exists ＋兄弟の属性条件）は参照＋属性で絞り込むの表示に戻す
-  const triggerConditions: ConditionPair[] = _triggerConditionsRaw.some((p) => p.base === 'cond_evo_exists' || /^cond_(hand|trash|evo)_match_/.test(p.base))
+  const triggerConditions: ConditionPair[] = _triggerConditionsRaw.some((p) => p.base === 'cond_evo_exists' || /^cond_(hand|trash|security|evo)_match_/.test(p.base))
     ? collapseRefExistsAttributeFilters(_triggerConditionsRaw) : _triggerConditionsRaw;
   // burst_evolve専用条件復元
   const burstBaseFilter: ConditionPair[] = [];

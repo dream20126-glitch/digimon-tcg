@@ -4115,6 +4115,8 @@ const PERREF_OTHER_DIGIMON_CODES: Record<string, string> = { own: 'own_other_dig
 // 〜ごとにの「自分 / 相手 / 他の」トグル（アクションの対象と同じ操作。自分+相手＝両方）
 const PERREF_SIDE_TOGGLES = [{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'other', label: '他の' }];
 PERREF_COMBO_ONLY_CODES.push(...Object.values(PERREF_OTHER_DIGIMON_CODES));
+// 「このデジモンとテイマーの色1色ごとに」: このカード〔本体〕＋〔自分のテイマー〕を合わせて数える（self_and_own_tamer）。⚠ エンジン未実装
+const PERREF_SELF_TAMER_CODE = 'self_and_own_tamer';
 // デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
 // （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
 const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
@@ -4134,7 +4136,7 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
 const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
-  if (code === 'evo_source' || code === 'self_card') return 'self';
+  if (code === 'evo_source' || code === 'self_card' || code === PERREF_SELF_TAMER_CODE) return 'self';
   if (code === 'last_action_count' || code === 'last_action_cards') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
@@ -4935,8 +4937,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                       {/* このカード: 本体／進化元。何を数えるか分かるよう常に表示する */}
                       {!hasDigiTamer && (l2Options.length > 1 || curL1 === 'self') && (
-                        <div style={{ marginTop: 4 }}>
-                          <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                        <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <ButtonGroup options={l2Options} value={refSubject === PERREF_SELF_TAMER_CODE ? 'self_card' : refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                          {/* 本体のときだけ: 自分のテイマーも合わせて数える（「このデジモンとテイマーの色1色ごとに」） */}
+                          {curL1 === 'self' && (refSubject === 'self_card' || refSubject === PERREF_SELF_TAMER_CODE) && (
+                            <button type="button" onClick={() => setSubject(refSubject === PERREF_SELF_TAMER_CODE ? 'self_card' : PERREF_SELF_TAMER_CODE)}
+                              style={toggleBtnStyle(refSubject === PERREF_SELF_TAMER_CODE)} title="このデジモンと自分のテイマーを合わせて数える">＋自分のテイマー</button>
+                          )}
+                        </div>
+                      )}
+                      {refSubject === PERREF_SELF_TAMER_CODE && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
+                          このデジモンと自分のテイマーを合わせて数えます（数え方「色の種類の数」で「このデジモンとテイマーの色1色ごとに」）。⚠ エンジン未実装
                         </div>
                       )}
                       {refSubject === 'self_card' && (

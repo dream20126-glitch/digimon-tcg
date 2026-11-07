@@ -496,10 +496,8 @@ function FeatureTagsCombined({
 // （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
 // 表示中か)を持つため、独立したコンポーネントとして切り出している
 function RefExistsAttributeFilterPanel({
-  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true, forEvo = false, forZone = false, forSecurity = false,
+  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true, forEvo = false, forZone = false,
 }: {
-  // 参照「セキュリティ」の枚数の行に付けるとき。表向き/裏向きも出す（cond_face_up / cond_face_down）
-  forSecurity?: boolean;
   // 参照「手札/トラッシュ」の枚数の行に付けるとき（「トラッシュに名称に『デビモン』を含むデジモンカードが7枚以上」）。タイプも出す
   forZone?: boolean;
   // 参照「進化元」の行に付けるとき（「このデジモンの進化元に『ガルルモン』があるとき」）。進化元枚数の属性は出さない
@@ -540,8 +538,6 @@ function RefExistsAttributeFilterPanel({
   // タイプ（手札/トラッシュの参照のみ。デジモン/テイマー/オプション/デジタマ。複数はOR）
   const typeVal = getAttr('cond_type');
   const types = (typeVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-  // 表向き/裏向き（セキュリティの参照のみ）
-  const faceVal = getAttr('cond_face_up') ? 'cond_face_up' : getAttr('cond_face_down') ? 'cond_face_down' : '';
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
   // 名称の属性があるか（含む・完全一致のどちらか）
@@ -554,7 +550,6 @@ function RefExistsAttributeFilterPanel({
     const s = new Set<string>();
     if (colorVal) s.add('color');
     if (typeVal) s.add('type');
-    if (faceVal) s.add('face');
     if (evoVal) s.add('evo');
     if (nameVal) s.add('name');
     if (lvGe || lvLe || lvEq) s.add('lv');
@@ -566,7 +561,6 @@ function RefExistsAttributeFilterPanel({
     if (activeSub.has(key)) {
       if (key === 'color') setAttr('cond_color', undefined);
       else if (key === 'type') setAttr('cond_type', undefined);
-      else if (key === 'face') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_face_up' || cc.base === 'cond_face_down'))));
       else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le' || cc.base === 'cond_lv'))));
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
@@ -578,7 +572,6 @@ function RefExistsAttributeFilterPanel({
     }
   };
   const subButtons: { key: string; label: string }[] = [
-    ...(forSecurity ? [{ key: 'face', label: '表向き/裏向き' }] : []),
     ...(forZone ? [{ key: 'type', label: 'タイプ' }] : []),
     { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
     ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'name', label: '名称' }, ...(forEvo || forZone ? [] : [{ key: 'evo', label: '進化元枚数' }])] : []),
@@ -813,16 +806,6 @@ function RefExistsAttributeFilterPanel({
                 options={[{ code: 'デジモン', label: 'デジモン' }, { code: 'テイマー', label: 'テイマー' }, { code: 'オプション', label: 'オプション' }, { code: 'デジタマ', label: 'デジタマ' }]}
                 values={types}
                 onToggle={(code, on) => setAttr('cond_type', (on ? [...types, code] : types.filter((t) => t !== code)).join(','))}
-                accentColor="#946200"
-              />
-            </div>
-          )}
-          {activeSub.has('face') && (
-            <div style={{ marginBottom: 4 }}>
-              <ButtonGroup
-                options={[{ code: 'cond_face_up', label: '表向き' }, { code: 'cond_face_down', label: '裏向き' }]}
-                value={faceVal}
-                onChange={(v) => onChange([...conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_face_up' || cc.base === 'cond_face_down'))), ...(v ? [{ base: v, subject: marker }] : [])])}
                 accentColor="#946200"
               />
             </div>
@@ -12311,8 +12294,8 @@ function ConditionsHybridEditor({
                       )}
                       {/* 「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」: 参照「手札/トラッシュ」の枚数に属性（タイプ/名称/特徴/色/Lv/コスト）を付ける。
                           保存は cond_trash_match_ge:7 ＋兄弟の属性条件（バトルエリア・進化元の参照行がある欄では出さない） */}
-                      {cat.code === 'ref' && /^cond_(hand|trash|security)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
-                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone forSecurity={/^cond_security_/.test(c.base)} />
+                      {cat.code === 'ref' && /^cond_(hand|trash|security|security_faceup|security_facedown)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
+                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone />
                       )}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>

@@ -9749,8 +9749,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               titleBase={effZoneSrc ? '対象の条件（選ぶカード）' : '取得元カードの条件'}
               theme="action"
               extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
-              commonConditions={effectFromFilter}
-              onCommonConditionsChange={(next) => updateEffect({ fromFilter: next })}
+              /* 取得元がセキュリティのときの裏表（cond_face_up/down）は下の「セキュリティの裏表」だけで扱う
+                 （条件の一覧に渡すと〔参照〕〔進化元〕の裏表の行として開いてしまう） */
+              commonConditions={effectFromZones.includes('security') ? (effectFromFilter || []).filter((p) => p.base !== 'cond_face_up' && p.base !== 'cond_face_down') : effectFromFilter}
+              onCommonConditionsChange={(next) => updateEffect({ fromFilter: effectFromZones.includes('security')
+                ? [...next, ...(effectFromFilter || []).filter((p) => p.base === 'cond_face_up' || p.base === 'cond_face_down')]
+                : next })}
             />
             {/* 取得元がセキュリティのとき: 表向き/裏向き（「自分のセキュリティから〜を持つ表向きのデジモンカード1枚を登場できる」）。
                 取得元カードの条件の cond_face_up / cond_face_down（from_filter.face_up / face_down）として保存する */}

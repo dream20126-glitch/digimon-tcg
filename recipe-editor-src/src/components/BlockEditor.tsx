@@ -14,7 +14,7 @@ import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
 import { KEYWORD_MODES, KEYWORD_COLOR_PARAM, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, LV_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -496,12 +496,14 @@ function FeatureTagsCombined({
 // （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
 // 表示中か)を持つため、独立したコンポーネントとして切り出している
 function RefExistsAttributeFilterPanel({
-  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true, forEvo = false, forZone = false,
+  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true, forEvo = false, forZone = false, withNameDesc = false,
 }: {
   // 参照「手札/トラッシュ」の枚数の行に付けるとき（「トラッシュに名称に『デビモン』を含むデジモンカードが7枚以上」）。タイプも出す
   forZone?: boolean;
   // 参照「進化元」の行に付けるとき（「このデジモンの進化元に『ガルルモン』があるとき」）。進化元枚数の属性は出さない
   forEvo?: boolean;
+  // 名称・記述も出す（Lv参照の「『シードラモン』の記述がある自分のデジモン」。LV_REF_FILTER_MARKER 用）
+  withNameDesc?: boolean;
   conditions: ConditionPair[]; onChange: (next: ConditionPair[]) => void;
   // 呼び出し元ごとに別々のマーカー文字列を使うことで、同じ発動条件欄に複数の
   // 「参照行専用フィルタ」（例: バトルエリア参照用・DP参照用）が混在しても互いに
@@ -539,6 +541,9 @@ function RefExistsAttributeFilterPanel({
   const colorVal = getAttr('cond_color');
   // タイプ（手札/トラッシュの参照のみ。デジモン/テイマー/オプション/デジタマ。複数はOR）
   const typeVal = getAttr('cond_type');
+  // 記述（「『シードラモン』の記述がある」。カンマ区切りはどれか）
+  const descVal = getAttr('cond_description_contains');
+  const descs = (descVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
   const types = (typeVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
@@ -557,6 +562,7 @@ function RefExistsAttributeFilterPanel({
     if (lvGe || lvLe || lvEq) s.add('lv');
     if (costGe || costLe || costEq) s.add('cost');
     if (featureVal) s.add('feature');
+    if (descVal) s.add('desc');
     return s;
   });
   const toggleSub = (key: string) => {
@@ -566,6 +572,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le' || cc.base === 'cond_lv'))));
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
+      else if (key === 'desc') setAttr('cond_description_contains', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
       else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each' || cc.base === 'cond_attr_or'))));
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
@@ -577,6 +584,7 @@ function RefExistsAttributeFilterPanel({
     ...(forZone ? [{ key: 'type', label: 'タイプ' }] : []),
     { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
     ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'name', label: '名称' }, ...(forEvo || forZone ? [] : [{ key: 'evo', label: '進化元枚数' }])] : []),
+    ...(withNameDesc ? [{ key: 'name', label: '名称' }, { key: 'desc', label: '記述' }] : []),
   ];
 
   return (
@@ -829,6 +837,17 @@ function RefExistsAttributeFilterPanel({
           )}
           {forZone && open && (
             <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>このゾーンのうち、下の条件に合うカードの枚数で判定します</div>
+          )}
+          {activeSub.has('desc') && (
+            <div>
+              <span style={{ fontSize: 10, color: '#666' }}>記述（「〜」の記述がある）:</span>
+              <MultiTextTags
+                values={descs}
+                onChange={(next) => setAttr('cond_description_contains', next.join(','))}
+                placeholder="例: シードラモン"
+                accentColor="#946200"
+              />
+            </div>
           )}
           {activeSub.has('feature') && (
             <div>
@@ -11633,7 +11652,7 @@ function ConditionsHybridEditor({
   // よく使う条件（色/タイプ/特徴/Lv/DP/名前/場所）ボタンのトグル。
   // オフ→オン: そのカテゴリの既定コードで1行追加。オン→オフ: そのカテゴリの行を全て削除
   function toggleCategory(cat: string) {
-    if (conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat)) {
+    if (conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== DP_REF_FILTER_MARKER && c.subject !== LV_REF_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat)) {
       onChange(conditions.filter((c) => c.subject === REF_EXISTS_FILTER_MARKER || c.subject === COST_TYPE_SCOPE_SUBJECT || baseToCategory(c.base) !== cat));
     } else {
       addRow(CATEGORY_DEFAULT_BASE[cat] || '');
@@ -11694,7 +11713,7 @@ function ConditionsHybridEditor({
       {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {visibleCategoryOptions.map((cat) => {
-          const active = conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
+          const active = conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== DP_REF_FILTER_MARKER && c.subject !== LV_REF_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
           return (
             <button
               key={cat.code}
@@ -11733,7 +11752,7 @@ function ConditionsHybridEditor({
   const showOpBetweenPanels = part === 'panels' && !!onConditionsOpChange;
   const isQuickGroupBase = (b: string) => b === 'cond_self_rest' || b === 'cond_self_active';
   const groupRowsOf = (code: string) => conditions.map((c, i) => ({ c, i })).filter(({ c }) =>
-    c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && !isQuickGroupBase(c.base) && baseToCategory(c.base) === code);
+    c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== DP_REF_FILTER_MARKER && c.subject !== LV_REF_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && !isQuickGroupBase(c.base) && baseToCategory(c.base) === code);
   const maxOrGroup = Math.max(0, ...conditions.map((c) => c.orGroup || 0));
   // 「全ての選択肢に共通（AND）」にした条件（orGroup:-1）。先頭にまとめて並べ、AND/ORの切替は付けない
   const isCommonCat = (code: string) => { const rows = groupRowsOf(code); return rows.length > 0 && rows.every((r) => r.c.orGroup === -1); };
@@ -11805,7 +11824,7 @@ function ConditionsHybridEditor({
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {interleaveOpSep(orderedCategoryOptions.map((cat) => {
-        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
+        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== DP_REF_FILTER_MARKER && c.subject !== LV_REF_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         // 特徴（含む/完全一致）: 別々の行に分けず、1行に両モードのタグをまとめて表示する
         // （「鳥（含む）」「セイバーズ」のように並べて追加できるようにするため、通常の
@@ -11990,8 +12009,13 @@ function ConditionsHybridEditor({
                       { code: 'security', label: 'セキュリティ', subs: [{ code: 'own', label: '自分', marker: 'own_security_count' }, { code: 'opp', label: '相手', marker: 'opp_security_count' }] },
                       { code: 'last_action', label: '直前の効果', marker: 'last_action_lv' },
                       { code: 'cost_card', label: 'コストで処理', marker: 'cost_card_lv' },
+                      // 自分/相手のデジモン（どれか1体のLv。「選ぶ」は own_pick_lv / opp_pick_lv）
+                      { code: 'digimon', label: 'デジモン', subs: [{ code: 'own', label: '自分', marker: 'own_lv' }, { code: 'opp', label: '相手', marker: 'opp_lv' }] },
                     ];
-                    const curGroup = LV_REF_TREE.find((g) => g.marker === c.value || (g.subs || []).some((x) => x.marker === c.value));
+                    const lvPick = /_pick_lv$/.test(c.value || '');
+                    const lvBaseVal = (c.value || '').replace(/_pick_lv$/, '_lv');
+                    const lvIsDigi = lvBaseVal === 'own_lv' || lvBaseVal === 'opp_lv';
+                    const curGroup = LV_REF_TREE.find((g) => g.marker === lvBaseVal || (g.subs || []).some((x) => x.marker === lvBaseVal));
                     return (
                       <div>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>参照先</div>
@@ -12005,10 +12029,27 @@ function ConditionsHybridEditor({
                           <div style={{ marginTop: 4, marginLeft: 12 }}>
                             <ButtonGroup
                               options={curGroup.subs.map((x) => ({ code: x.marker, label: x.label }))}
-                              value={c.value || ''}
-                              onChange={(v) => updateAt(i, { value: v })}
+                              value={lvBaseVal}
+                              onChange={(v) => updateAt(i, { value: lvIsDigi && lvPick && /^(own|opp)_lv$/.test(v) ? v.replace(/_lv$/, '_pick_lv') : v })}
                               accentColor={colors.accent}
                             />
+                          </div>
+                        )}
+                        {lvIsDigi && (
+                          <div style={{ marginTop: 4, marginLeft: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                              <input type="checkbox" checked={lvPick} onChange={(e) => updateAt(i, { value: e.target.checked ? lvBaseVal.replace(/_lv$/, '_pick_lv') : lvBaseVal })} />
+                              1体をプレイヤーが選ぶ（「〜のデジモン1体のLv.」。未チェックならどれか1体と比べる）
+                            </label>
+                            <RefExistsAttributeFilterPanel
+                              conditions={conditions}
+                              onChange={onChange}
+                              marker={LV_REF_FILTER_MARKER}
+                              title="属性で絞り込む（比べるデジモン専用。例: 「シードラモン」の記述がある）"
+                              warnConflict={false}
+                              withNameDesc
+                            />
+                            <div style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応</div>
                           </div>
                         )}
                         <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）</div>

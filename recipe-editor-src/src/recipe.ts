@@ -293,7 +293,7 @@ function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPai
 // DP_REF_FILTER_MARKER付きの条件を除外する（⚠ targetFilterと異なりこちらは未保存。
 // 対象の条件＝targetFilterで設定すればbuildFilterObjectWithDpRefFilter側で正しく保存される）
 function stripDpRefFilterMarker(pairs: ConditionPair[]): ConditionPair[] {
-  return pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
+  return pairs.filter((p) => !(p && (p.subject === DP_REF_FILTER_MARKER || p.subject === LV_REF_FILTER_MARKER)));
 }
 
 // 原因の「どの効果で」（cause_effect: { keyword?, trigger? }）
@@ -719,6 +719,10 @@ const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other
 // ⚠ エンジン未実装（保存はできるが、dp_ref_filterを読んでDP参照先を絞り込む処理がまだ無い）
 export const DP_REF_FILTER_MARKER = '__dp_ref_filter__';
 const DP_REF_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge']);
+// Lv参照（自分/相手のデジモン。own_lv / own_pick_lv 等）に付ける「属性で絞り込む」の目印。保存は filter.lv_ref_filter
+// （「『シードラモン』の記述がある自分のデジモン1体のLv.以下の相手のデジモン」= lv_le:'own_pick_lv' ＋ lv_ref_filter:{description_contains:'シードラモン'}）。⚠ エンジン未対応
+export const LV_REF_FILTER_MARKER = '__lv_ref_filter__';
+const LV_REF_FILTER_CODES = new Set([...DP_REF_FILTER_CODES, 'cond_lv', 'cond_cost', 'cond_name', 'cond_name_contains', 'cond_description_contains']);
 
 // 参照ゾーン（手札/トラッシュ/セキュリティ/バトルエリア/レスト・アクティブ体数）の量的条件
 // （以上/以下/完全一致/より多い/より少ない）。cardMatchesFilterは候補カード単体しか見ないため
@@ -820,6 +824,9 @@ export const LV_REF_MARKERS: Record<string, string> = {
   own_hand_count: '自分の手札の枚数', opp_hand_count: '相手の手札の枚数',
   own_security_count: '自分のセキュリティの枚数', opp_security_count: '相手のセキュリティの枚数',
   last_action_lv: '直前の効果で処理したカードのLv', cost_card_lv: 'コストで処理したカードのLv',
+  // 自分/相手のデジモン（どれか1体。_pick＝プレイヤーが1体選ぶ）のLv。絞り込みは filter.lv_ref_filter（LV_REF_FILTER_MARKER）
+  own_lv: '自分のデジモンのLv', own_pick_lv: '自分のデジモン1体（選ぶ）のLv',
+  opp_lv: '相手のデジモンのLv', opp_pick_lv: '相手のデジモン1体（選ぶ）のLv',
 };
 function lvVal(v: any): number | string | undefined {
   if (typeof v === 'string' && LV_REF_MARKERS[v]) return v;
@@ -976,11 +983,14 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
 function buildFilterObjectWithDpRefFilter(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return buildFilterObject(pairs);
   const dpRefPairs = pairs.filter((p) => p && p.subject === DP_REF_FILTER_MARKER && DP_REF_FILTER_CODES.has(p.base));
-  if (dpRefPairs.length === 0) return buildFilterObject(pairs);
-  const normalPairs = pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
+  const lvRefPairs = pairs.filter((p) => p && p.subject === LV_REF_FILTER_MARKER && LV_REF_FILTER_CODES.has(p.base));
+  if (dpRefPairs.length === 0 && lvRefPairs.length === 0) return buildFilterObject(pairs);
+  const normalPairs = pairs.filter((p) => !(p && (p.subject === DP_REF_FILTER_MARKER || p.subject === LV_REF_FILTER_MARKER)));
   const base = buildFilterObject(normalPairs) || {};
-  const nested = buildFilterObject(dpRefPairs.map((p) => ({ base: p.base, value: p.value })));
+  const nested = dpRefPairs.length > 0 ? buildFilterObject(dpRefPairs.map((p) => ({ base: p.base, value: p.value }))) : null;
   if (nested) base.dp_ref_filter = nested;
+  const lvNested = lvRefPairs.length > 0 ? buildFilterObject(lvRefPairs.map((p) => ({ base: p.base, value: p.value }))) : null;
+  if (lvNested) base.lv_ref_filter = lvNested;
   return Object.keys(base).length > 0 ? base : null;
 }
 
@@ -1074,6 +1084,9 @@ function parseFilterObject(f: any): ConditionPair[] {
   // DP参照先（自分/相手）を絞り込む属性フィルタ（buildFilterObjectWithDpRefFilterの逆変換）。
   // 入れ子のdp_ref_filterを、DP_REF_FILTER_MARKER付きのConditionPairへ戻して
   // 「属性で絞り込む」パネルの表示を復元する
+  if (f.lv_ref_filter && typeof f.lv_ref_filter === 'object') {
+    parseFilterObject(f.lv_ref_filter).forEach((p) => out.push({ ...p, subject: LV_REF_FILTER_MARKER }));
+  }
   if (f.dp_ref_filter && typeof f.dp_ref_filter === 'object') {
     parseFilterObject(f.dp_ref_filter).forEach((p) => out.push({ ...p, subject: DP_REF_FILTER_MARKER }));
   }

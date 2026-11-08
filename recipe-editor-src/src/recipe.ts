@@ -3156,7 +3156,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     keywordCommonConditionsChain: _stepCommonChain,
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
-    immuneCardType: ['digimon', 'tamer', 'option', 'declared'].includes(step?.source_type) ? step.source_type : undefined,
+    immuneCardType: ['digimon', 'tamer', 'option', 'declared', 'dedigivolve'].includes(step?.source_type) ? step.source_type : undefined,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
     negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,

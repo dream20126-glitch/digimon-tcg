@@ -328,7 +328,8 @@ export interface EffectBlock {
   // ⚠ 現状どちらもエンジン未対応（hasActiveImmuneEffectsの呼び出し元がeffectSourceTypeを
   // 渡していないため、保存はできるが絞り込みは機能せず常に相手の効果全てをブロックする）
   // 'tamer'＝テイマーの効果のみ / 'declared'＝declare_category で宣言したカテゴリーの効果（LM-020）
-  immuneCardType?: 'digimon' | 'tamer' | 'option' | 'declared' | '';
+  // 'dedigivolve' ＝「【退化】の効果を受けない」（P-162）
+  immuneCardType?: 'digimon' | 'tamer' | 'option' | 'declared' | 'dedigivolve' | '';
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;

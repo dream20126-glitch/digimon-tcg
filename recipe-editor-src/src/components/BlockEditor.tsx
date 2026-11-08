@@ -4443,6 +4443,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [showSpecialEvolveMenu, setShowSpecialEvolveMenu] = useState(false);
   const isEditingAlt = editingEffect > 0 && !!altActions[editingEffect - 1];
   const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
+  // 効果1にまとめた「効果を受けない」（bundle）の位置。無ければ -1
+  const immuneBundleIdx = isEditingAlt ? -1 : altActions.findIndex((a, i) => i < leadBundleCount && a.action === 'immune_effects');
   // ディレイ（効果1＝ディレイ）: 最初の「その後」までの効果2以降が「ディレイで発動する効果」。
   // ディレイ効果どうしは前の効果が空振りしても順番に実行される（＝テキストの「その後」と同じ）ので、中では「その後」を使わない
   const isDelayBlock = DELAY_ACTION_CODES.has(block.action || '');
@@ -8649,7 +8651,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* immune_effects 専用:「相手の効果を受けない」の対象範囲
             （デジモン/テイマー/オプション全て なのか、デジモンの効果のみ なのか） */}
-        {effectAction === 'immune_effects' && (
+        {/* 効果1にまとめた効果（bundle）の「効果を受けない」も同じ欄で設定する
+            （P-162「DPをマイナスされず、【退化】の効果を受けない」＝DPマイナスされない＋効果を受けない（退化）） */}
+        {(effectAction === 'immune_effects' || immuneBundleIdx >= 0) && (
           <div className="field" style={{ marginTop: 8, background: '#fdf2f8', padding: 8, borderRadius: 4, border: '1px solid #f5b8d8' }}>
             <div style={{ fontWeight: 'bold', color: '#9d174d', marginBottom: 4, fontSize: 12 }}>
               🛡 相手のどの効果を受けないか
@@ -8661,15 +8665,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 { code: 'tamer', label: 'テイマーの効果のみ' },
                 { code: 'option', label: 'オプションの効果のみ' },
                 { code: 'declared', label: '宣言したカテゴリーの効果（カードカテゴリーを宣言する と組み合わせる）' },
+                // 「【退化】の効果を受けない」（source_type:'dedigivolve'）
+                { code: 'dedigivolve', label: '【退化】の効果' },
               ]}
-              value={(isEditingAlt ? editingAlt!.actionParams?.source_type : block.immuneCardType) || ''}
+              value={(effectAction !== 'immune_effects' ? altActions[immuneBundleIdx]?.actionParams?.source_type : isEditingAlt ? editingAlt!.actionParams?.source_type : block.immuneCardType) || ''}
               onChange={(v) => {
+                if (effectAction !== 'immune_effects') {
+                  const ap = { ...(altActions[immuneBundleIdx]?.actionParams || {}) };
+                  if (v) ap.source_type = v; else delete ap.source_type;
+                  updateAltAction(immuneBundleIdx, { actionParams: Object.keys(ap).length > 0 ? ap : undefined });
+                  return;
+                }
                 // 効果2以降は専用欄が無いので actionParams.source_type に持つ（JSON は同じ step.source_type）
                 if (isEditingAlt) {
                   const ap = { ...(editingAlt!.actionParams || {}) };
                   if (v) ap.source_type = v; else delete ap.source_type;
                   updateEffect({ actionParams: Object.keys(ap).length > 0 ? ap : undefined });
-                } else update('immuneCardType', (v || '') as 'digimon' | 'tamer' | 'option' | 'declared' | '');
+                } else update('immuneCardType', (v || '') as 'digimon' | 'tamer' | 'option' | 'declared' | 'dedigivolve' | '');
               }}
               accentColor="#9d174d"
             />

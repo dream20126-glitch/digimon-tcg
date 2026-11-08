@@ -142,6 +142,8 @@ const cases: Case[] = [
   { name: 'ref dp + feature attr', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, conditions: [{ base: 'cond_ref_dp_le', value: '5000', subject: 'opp' }, { base: 'cond_feature', value: 'X', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_exists@opp') && J(r).includes('cond_feature:X') },
   { name: 'per both trash', blocks: [base({ action: 'dp_plus', target: 'self', value: 1000, perCount: 5, perRef: 'both_trash' })], check: ['0.perRef', '0.perCount'], raw: (r: any) => J(r).includes('both_trash') },
   { name: 'コスト: 自分のセキュリティを上から1枚破棄', blocks: [base({ costs: [{ action: 'security_trash_top', target: 'own_security:1' }] })], check: ['0.costs.0.action', '0.costs.0.target'], raw: (r: any) => J(r).includes('security_trash_top') && J(r).includes('own_security') },
+  { name: 'immune 退化（効果1）', blocks: [base({ action: 'immune_effects', target: 'own:1', immuneCardType: 'dedigivolve' })], check: ['0.immuneCardType'], raw: (r: any) => J(r).includes('"source_type":"dedigivolve"') },
+  { name: 'DPマイナスされない＋退化を受けない（bundle）', blocks: [base({ action: 'cant_dp_minus', target: 'own:1', altActionsOp: 'and', altActions: [{ action: 'immune_effects', target: 'same_target', bundle: true, actionParams: { source_type: 'dedigivolve' } }] })], check: ['0.altActions.0.actionParams', '0.altActions.0.bundle'], raw: (r: any) => J(r).includes('"source_type":"dedigivolve"') },
 ];
 
 let ng = 0;

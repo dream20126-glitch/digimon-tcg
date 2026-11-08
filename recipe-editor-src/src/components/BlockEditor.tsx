@@ -3253,7 +3253,9 @@ function TriggerSubjectStagedPicker({
       {suppressTypeButtons && hasFromZones && TGT_TOGGLE_L1.has(cur.l1) && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup
-            options={[...SUBJECT_L2_FROM_ZONES, { code: '__evo', label: '進化元' }, { code: '__stacked', label: '重ねられているカード' }]}
+            options={[...SUBJECT_L2_FROM_ZONES, { code: '__evo', label: '進化元' }, { code: '__stacked', label: '重ねられているカード' },
+              // 種類ボタンを出さないトリガー（破棄されたとき）でも、オプション（「自分/相手のオプションが破棄されたとき」）は選べる
+              ...(SUBJECT_L1L2_TO_CODE[cur.l1 + ':option'] ? [{ code: 'option', label: 'オプション' }] : [])]}
             value={raw.family === 'evo' ? '__evo' : raw.family === 'stacked' ? '__stacked' : effectiveL2}
             onChange={(v) => {
               if (v === '__evo' || v === '__stacked') {

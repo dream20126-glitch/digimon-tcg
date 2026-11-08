@@ -1655,6 +1655,14 @@ function getRefSourceCount(refSource, ctx) {
   return getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side);
 }
 
+// per_count の参照先（step.ref）に数え方を付けた名前。ref_count:'colors' なら「<参照>_colors」（色の種類の数）。
+// 継続効果（【お互いのターン】等）の計算でも使う（ウォーグレイモン P-182・カイゼルグレイモン P-185。以前は効果の実行時だけ見ていた）
+function _refWithCountMode(step) {
+  const r = (step && step.ref) || 'evo_source';
+  if (step && step.ref_count === 'colors' && !/_colors$/.test(String(r))) return r + '_colors';
+  return r;
+}
+
 // 参照先の枚数を取得（直接指定版 - calcPerCountValue用）
 function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateStr) {
   // 「<参照>_colors」: 数える対象のカードの色の種類の数（多色カードはそれぞれの色を数える）。
@@ -1712,6 +1720,35 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
       return _hs.reduce((s, h) => s + _n(h), 0);
     }
   }
+  // 数える対象のカードの一覧（「このデジモンと〜」・お互いの手札/トラッシュ等で、色の数を重ねずに数えるため）
+  const _digi = (p) => (p.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
+  const _tam = (p) => (p.tamerArea || []).filter(c => c !== null && c !== undefined);
+  const _ba = (p) => (p.battleArea || []).filter(c => c !== null && c !== undefined);
+  const _cardsOfRef = (r) => {
+    const m = /^(own|opp|both)_(digimon|tamer|card|digimon_tamer|hand|trash|security|battle_area)$/.exec(String(r || ''));
+    if (!m) return null;
+    const ps = m[1] === 'own' ? [player] : m[1] === 'opp' ? [opponent] : [player, opponent];
+    const out = [];
+    ps.forEach((p) => {
+      if (m[2] === 'digimon') out.push(..._digi(p));
+      else if (m[2] === 'tamer') out.push(..._tam(p));
+      else if (m[2] === 'card' || m[2] === 'digimon_tamer') out.push(..._ba(p), ..._tam(p));
+      else if (m[2] === 'battle_area') out.push(..._ba(p));
+      else out.push(...((p[m[2]] || []).filter(Boolean)));
+    });
+    return out;
+  };
+  // 「このデジモンと〜」（self_and_<参照>。ウォーグレイモン P-182「このデジモンとテイマーの色1色ごとに」= self_and_own_tamer＋ref_count:colors）
+  {
+    const _saM = /^self_and_(.+)$/.exec(String(refSource || ''));
+    if (_saM) {
+      const _rest = _cardsOfRef(_saM[1]);
+      if (_rest) return countWith([card].concat(_rest.filter(c => c !== card)));
+      return countWith(card ? [card] : []) + getRefSourceCountDirect(_saM[1] + (_colorMode ? '_colors' : ''), card, bs, side, refFilter, refStateStr);
+    }
+  }
+  // お互いの手札/トラッシュ/セキュリティ/バトルエリア（both_trash 等。デュークモン P-186「お互いのトラッシュ合計5枚ごとに」）
+  if (/^both_(hand|trash|security|battle_area)$/.test(String(refSource || ''))) return countWith(_cardsOfRef(refSource));
   switch (refSource) {
     // --- 自分側 ---
     case 'evo_source':         return countWith(card && card.stack ? card.stack : []);
@@ -1936,6 +1973,8 @@ function _actionFilterOk(action, c, ctx) {
 function runOneAction(action, defaultTarget, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+  // セキュリティ破棄（security_trash_top/bottom）で、対象が自分のセキュリティなら case 内で opponent を自分に読み替えるための元の相手
+  const _sttOppPlayer = opponent;
   const sideLabel = ctx.side === 'player' ? '自分' : '相手';
   // 枠色: レシピで明示指定されていればそれを優先、無ければアクションコードから推測
   const uiColor = getUIColor(action.code, '#ff4444', action.frameColor);
@@ -2659,6 +2698,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       let _discardedCount = 0;
       const _sttCards = [];
+      // 対象が自分のセキュリティ（own_security。マスティモン P-187「自分のセキュリティを上から1枚破棄することで」）なら自分側。
+      // それ以外は従来どおり相手のセキュリティ
+      const _sttOwn = /^own_security/.test(String(action._stepTarget || ''));
+      const opponent = _sttOwn ? player : _sttOppPlayer;
       for (let i = 0; i < n; i++) {
         if (opponent.security.length > 0) { const sc = opponent.security.shift(); opponent.trash.push(sc); _sttCards.push(sc); ctx.addLog('🛡 セキュリティ破棄' + (sc && sc.name ? '（「' + sc.name + '」）' : '')); _discardedCount++; }
       }
@@ -2669,7 +2712,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.renderAll();
       // セキュリティ→トラッシュの移動演出。破棄されたカードは公開情報なので、自分・相手どちらの画面も表向き
       // （オオクワモン BT26-042 進化元「相手のセキュリティを上から1枚破棄する」で演出が無かった）
-      const _sttPre = ctx.side === 'player' ? '相手の' : '';
+      const _sttPre = (ctx.side === 'player') !== _sttOwn ? '相手の' : '';
       _moveBatchIntro(ctx, _sttCards, _sttPre + 'セキュリティ', _sttPre + 'トラッシュ', () => {
         let _si = 0;
         const _sttNext = () => {
@@ -3702,6 +3745,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'security_trash_bottom': {
       const n = action.value || 1;
       let _discardedCount = 0;
+      const opponent = /^own_security/.test(String(action._stepTarget || '')) ? player : _sttOppPlayer;
       for(let i = 0; i < n; i++) {
         if(opponent.security.length > 0) { opponent.trash.push(opponent.security.pop()); ctx.addLog('🛡 セキュリティ（下から）破棄'); _discardedCount++; }
       }
@@ -5644,11 +5688,14 @@ function resolveDpFilterMarkers(filter, selfCard, bs, side) {
 // 解決しようとしている効果の側(effectSide)が異なる場合のみ「相手の効果」とみなす
 // （自分の効果はimmune_effectsの影響を受けない）。source_type:'digimon'指定時は
 // デジモンの効果のみ対象（他の効果は防がない）— effectSourceTypeで渡す
-function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
+function hasActiveImmuneEffects(card, effectSide, effectSourceType, effectAction) {
   if (!card || !Array.isArray(card.buffs)) return false;
   return card.buffs.some((b) => {
     if (!b || b.type !== 'keyword_immune') return false;
     if (!b._appliedSide) return false;
+    // 特定の効果だけ受けない（b.actionOnly。シーラモン P-162「【退化】の効果を受けない」= 'dedigivolve'）:
+    // その効果のときだけ防ぐ（呼び出し元が effectAction を渡さない判定＝ほかの効果では防がない）
+    if (b.actionOnly && b.actionOnly !== effectAction) return false;
     if (b._appliedSide === effectSide) {
       // 「相手の」と書かれていない免疫（b.anySide。クオンタモン LM-020「宣言したカードカテゴリーの効果を受けない」）は
       // 自分の効果も受けない。ただし自分側は発生元の種別が分かる効果だけ防ぐ（種別不明の内部処理まで止めないため）
@@ -5669,7 +5716,7 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
 // タイラントカブテリモン BT26-047 の「相手のオプションの効果を受けない」が相手のデュアルカードの
 // オプション効果で破られていた）
 let _curEffectCtx = null;
-function _isImmuneToEffect(card, ctx) {
+function _isImmuneToEffect(card, ctx, effectAction) {
   ctx = ctx || _curEffectCtx;
   if (!card || !ctx || !ctx.bs || !ctx.side) return false;
   const oppSide = ctx.side === 'player' ? 'ai' : 'player';
@@ -5681,7 +5728,7 @@ function _isImmuneToEffect(card, ctx) {
     const onOwn = !!(own && ((own.battleArea || []).includes(card) || (own.tamerArea || []).includes(card)));
     if (!onOwn || !(card.buffs || []).some(b => b && b.type === 'keyword_immune' && b.anySide)) return false;
   }
-  return hasActiveImmuneEffects(card, ctx.side, _effectSourceTypeOf(ctx));
+  return hasActiveImmuneEffects(card, ctx.side, _effectSourceTypeOf(ctx), effectAction);
 }
 // ctx.card（この効果を発動しているカード自身）の種別を immune_effects の source_type
 // 判定用コードへ変換する（デジモン/オプション/テイマー。不明なら undefined）
@@ -6364,12 +6411,51 @@ function _deckOpenPlayCard(card, sel, kind, slotIdx, ctx, done) {
   _summonCardFromEffect(card, ctx, { payCost: sel.cost_free ? null : cost, costDelta: delta, deferOnPlay: true }, done);
 }
 
+// === deck_open の行き先を選ぶグループ（selections[].group_op:'or'） ===
+// 「その中の〜1枚を手札に加えるか、このデジモンの進化元の下に置く」（ランドラモン P-167）: 同じ group 番号で
+// group_op:'or' の選択肢が並ぶ。どれか1つの行き先を選び、その選択肢だけを行う（エディタのルール「グループごとに異なる」OR）
+// selections の idx から始まる OR グループ（2つ以上）を返す。無ければ null
+function _deckOpenOrGroupAt(selections, idx) {
+  const s0 = selections[idx];
+  if (!s0 || s0.group_op !== 'or' || typeof s0.group !== 'number') return null;
+  const g = [s0];
+  for (let j = idx + 1; j < selections.length && selections[j] && selections[j].group_op === 'or' && selections[j].group === s0.group; j++) g.push(selections[j]);
+  return g.length > 1 ? g : null;
+}
+// OR グループを選んだ1つに置き換える（印は外す）
+function _deckOpenOrGroupReplace(selections, idx, group, chosen) {
+  const c = Object.assign({}, chosen); delete c.group; delete c.group_op;
+  selections.splice(idx, group.length, c);
+}
+const _DECK_OPEN_DEST_LBL = { hand: '手札に加える', trash: 'トラッシュに置く', evo_source: '進化元の下に置く', security_top: 'セキュリティの上に置く', security_bottom: 'セキュリティの下に置く', tamer: 'テイマーの下に置く', battle_area: 'バトルエリアに置く', play: '登場させる' };
+function _deckOpenDestLabel(sel) {
+  if (sel.action === 'evolve') return '進化する';
+  return _DECK_OPEN_DEST_LBL[sel.destination || 'hand'] || String(sel.destination || '手札に加える');
+}
+
+// deck_open の行き先「進化元の下に置く」（destination:'evo_source'。ランドラモン P-167「このデジモンの進化元の下に置く」）。
+// place_target は 'self'（このデジモン。未指定も同じ）だけ対応。position:'top' なら進化元の上、それ以外は一番下。
+// 置けたら true（置き先がバトルエリアにいなければ false＝呼び出し側で手札等に回さず、そのまま戻すカードにする）
+function _deckOpenPlaceEvo(card, sel, ctx, player) {
+  const pt = sel.place_target || 'self';
+  const holder = (pt === 'self' && ctx.card && (player.battleArea || []).includes(ctx.card)) ? ctx.card : null;
+  if (!holder) { ctx.addLog && ctx.addLog('⚠ 進化元の下に置くデジモンがいません'); return false; }
+  if (!Array.isArray(holder.stack)) holder.stack = [];
+  if (sel.position === 'top') holder.stack.unshift(card); else holder.stack.push(card);
+  ctx.addLog && ctx.addLog('🃏 「' + card.name + '」を「' + holder.name + '」の進化元の' + (sel.position === 'top' ? '上' : '下') + 'に置いた');
+  try {
+    fireWhenEvoSourceIncreaseTriggers(holder, ctx.side, ctx.bs, { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge }, () => {}, [card], { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+  } catch (_) {}
+  return true;
+}
+
 // CPU（ctx.side==='ai'）のデッキオープン: UIを出さずに自動で選ぶ。各選択は条件に合うカードを
 // 先頭から指定枚数まで選び（任意の選択も選ぶ）、残りは return_to に従って戻す
 // （deck_top は上へ、それ以外のデッキ戻しは下へ、trash はトラッシュへ）
 function _deckOpenAuto(opened, step, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-  const selections = Array.isArray(step.selections) ? step.selections : [];
+  // 行き先を選ぶグループ（group_op:'or'）を選んだ1つに置き換えるので、元のレシピを書き換えないよう写しを使う
+  const selections = Array.isArray(step.selections) ? step.selections.slice() : [];
   const returnTo = step.return_to || 'deck_bottom';
   const left = opened.slice();
   let si = 0;
@@ -6407,6 +6493,9 @@ function _deckOpenAuto(opened, step, ctx, callback) {
       returnPhase();
       return;
     }
+    // 行き先を選ぶグループ: 候補があるいちばん前の行き先にする
+    const _og = _deckOpenOrGroupAt(selections, si);
+    if (_og) _deckOpenOrGroupReplace(selections, si, _og, _og.find(x => left.some(c => cardMatchesFilter(c, x.filter || {}))) || _og[0]);
     const sel = selections[si++];
     const filter = sel.filter || {};
     const dest = sel.destination || 'hand';
@@ -6446,6 +6535,11 @@ function _deckOpenAuto(opened, step, ctx, callback) {
         _deckOpenPlayCard(c, sel, kind, slot, ctx, pickNext);
         return;
       }
+      if (dest === 'evo_source') {
+        if (!_deckOpenPlaceEvo(c, sel, ctx, player)) { left.push(c); nextSel(); return; }
+        pickNext();
+        return;
+      }
       if (dest === 'trash') player.trash.push(c); else { player.hand.push(c); _noteHandIncrease(ctx, player); }
       ctx.addLog && ctx.addLog('🃏 「' + c.name + '」を' + (dest === 'trash' ? 'トラッシュへ' : '手札に加えた'));
       pickNext();
@@ -6462,7 +6556,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // CPU は UI を出さずに自動で選ぶ
   if (ctx.side === 'ai') { _deckOpenAuto(opened, step, ctx, callback); return; }
   const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
-  const selections = Array.isArray(step.selections) ? step.selections : [];
+  // 行き先を選ぶグループ（group_op:'or'）を選んだ1つに置き換えるので、元のレシピを書き換えないよう写しを使う
+  const selections = Array.isArray(step.selections) ? step.selections.slice() : [];
   const returnTo = step.return_to || 'deck_bottom';
   // 戻し先はデッキの持ち主（deck_open deck_owner:'opp' なら相手。クオンタモン LM-020）
   const deckSide = step._deckOwnerSide || ctx.side;
@@ -6675,6 +6770,28 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       runReturnPhase();
       return;
     }
+    // 行き先を選ぶグループ（group_op:'or'。ランドラモン P-167「手札に加えるか、このデジモンの進化元の下に置く」）:
+    // 候補のある行き先が2つ以上なら先にどれにするかを選ぶ。1つならそれ、無ければ先頭（候補なしの表示になる）
+    const _og = _deckOpenOrGroupAt(selections, selIdx);
+    if (_og) {
+      const _leftCards = cardEls.filter(e => !e.removed).map(e => e.card);
+      const _ok = _og.filter(x => _leftCards.some(c => cardMatchesFilter(c, x.filter || {})));
+      if (_ok.length <= 1) {
+        _deckOpenOrGroupReplace(selections, selIdx, _og, _ok[0] || _og[0]);
+      } else {
+        cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
+        stepEl.innerText = 'どちらにしますか？';
+        clearButtons();
+        _ok.forEach((x) => {
+          const b = document.createElement('button');
+          b.innerText = _deckOpenDestLabel(x);
+          b.style.cssText = 'background:#00ff88;color:#002211;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;';
+          b.onclick = () => { clearButtons(); _deckOpenOrGroupReplace(selections, selIdx, _og, x); runSelectionPhase(); };
+          buttonArea.appendChild(b);
+        });
+        return;
+      }
+    }
     let sel = selections[selIdx];
     selIdx++;
     // 行き先が同じ選択が続く（「特徴『グローイングドーン』を持つカード1枚と特徴『ビートブレイク』を持つ紫のカード1枚を手札に加える」
@@ -6825,7 +6942,11 @@ function showDeckOpenUI(opened, step, ctx, callback) {
           const proceed = () => {
             if (dest === 'hand') { player.hand.push(entry.card); _noteHandIncrease(ctx, player); }
             else if (dest === 'trash') player.trash.push(entry.card);
-            ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
+            else if (dest === 'evo_source') {
+              // 置けない（このデジモンがいない）ときは選ばなかったことにして、戻すカードに残す
+              if (!_deckOpenPlaceEvo(entry.card, sel, ctx, player)) { cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); }); runSelectionPhase(); return; }
+            }
+            if (dest === 'hand' || dest === 'trash') ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
             _grpPicked.push(entry.card);
             removeEntry(entry);
             pickedCount++;
@@ -7954,7 +8075,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // 他アクションと共有のvalue計算より先に分岐しているため、ここで個別に計算する
             let gv = step.value != null ? step.value : (step.per_count ? 1 : 1);
             if (step.per_count) {
-              const refSource = step.ref || 'evo_source';
+              const refSource = _refWithCountMode(step);
               let refCount = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
               // 「他の自分の〜」等、参照範囲に自身(card)が含まれてしまう自陣盤面全体系の参照では、
               // このgrant_keyword自体を持つcard自身を二重に数えないよう1体分除外する
@@ -8049,7 +8170,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
           // per_count倍率（valueが未指定なら1をデフォルトに）
           let value = step.value != null ? step.value : (step.per_count ? 1 : null);
           if (step.per_count && value != null) {
-            const refSource = step.ref || 'evo_source';
+            const refSource = _refWithCountMode(step);
             const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
             value = value * Math.floor(count / step.per_count);
           }
@@ -8192,7 +8313,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
-              const refSource = step.ref || 'evo_source';
+              const refSource = _refWithCountMode(step);
               const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
               value = value * Math.floor(count / step.per_count);
             }
@@ -8343,7 +8464,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
-              const refSource = step.ref || 'evo_source';
+              const refSource = _refWithCountMode(step);
               const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
               value = value * Math.floor(count / step.per_count);
             }
@@ -8588,11 +8709,13 @@ const _SUBJECT_EXISTS_RE = /^(own|opp|opponent)(_tamer|_card|_digimon|_any)?$/;
 // 兄弟の属性条件（cond_name 等）を候補のフィルタとして消費するメタ条件。
 // cond_evo_exists:N@self＝「このデジモンの進化元に『〇〇』がN枚以上ある」（P-008/P-010）、
 // cond_{hand|trash}_match_{ge|le|eq|gt|lt}:N@subject＝「トラッシュに〜なカードがN枚以上ある」（P-034）
-const _ZONE_MATCH_RE = /^cond_(hand|trash)_match_(ge|le|eq|gt|lt)$/;
+// セキュリティも同じ形（cond_security[_faceup|_facedown]_match_*。プクモン P-171「自分の表向きのセキュリティに『ディープセイバーズ』があるなら」）
+const _ZONE_MATCH_RE = /^cond_(hand|trash|security|security_faceup|security_facedown)_match_(ge|le|eq|gt|lt)$/;
 const _EXISTS_META_CODES = new Set(['cond_exists', 'cond_not_exists', 'cond_evo_exists',
   'cond_evo_match_le', 'cond_evo_match_eq', 'cond_evo_match_gt', 'cond_evo_match_lt',
   'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
-  'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt']);
+  'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt',
+  ...['security', 'security_faceup', 'security_facedown'].flatMap((z) => ['ge', 'le', 'eq', 'gt', 'lt'].map((q) => 'cond_' + z + '_match_' + q))]);
 // 兄弟の属性条件をカード c に当てはめる（cond_evo_exists / cond_*_match 用。陣営の subject は外して評価）
 function _cardMatchesSiblingConds(c, otherConds, bs, cardSide) {
   if (!c) return false;
@@ -9299,12 +9422,24 @@ function checkConditions(conditions, card, bs, side) {
       // 「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」: subject 側の
       // 手札/トラッシュのうち兄弟の属性条件（cond_type 等）に合うカードを数えて比べる（P-034）
       case 'cond_hand_match_ge': case 'cond_hand_match_le': case 'cond_hand_match_eq': case 'cond_hand_match_gt': case 'cond_hand_match_lt':
-      case 'cond_trash_match_ge': case 'cond_trash_match_le': case 'cond_trash_match_eq': case 'cond_trash_match_gt': case 'cond_trash_match_lt': {
+      case 'cond_trash_match_ge': case 'cond_trash_match_le': case 'cond_trash_match_eq': case 'cond_trash_match_gt': case 'cond_trash_match_lt':
+      case 'cond_security_match_ge': case 'cond_security_match_le': case 'cond_security_match_eq': case 'cond_security_match_gt': case 'cond_security_match_lt':
+      case 'cond_security_faceup_match_ge': case 'cond_security_faceup_match_le': case 'cond_security_faceup_match_eq': case 'cond_security_faceup_match_gt': case 'cond_security_faceup_match_lt':
+      case 'cond_security_facedown_match_ge': case 'cond_security_facedown_match_le': case 'cond_security_facedown_match_eq': case 'cond_security_facedown_match_gt': case 'cond_security_facedown_match_lt': {
         if (!bs) return true;
         const _m = _ZONE_MATCH_RE.exec(cond.code);
         const _ts = resolveSubjectSide(cond.subject, side);
-        const _zone = (bs[_ts] && bs[_ts][_m[1]]) || [];
-        const _oc = conditions.filter(c => !_EXISTS_META_CODES.has(c.code) && c.code !== 'per_count');
+        const _isSec = _m[1].startsWith('security');
+        let _zone = (bs[_ts] && bs[_ts][_isSec ? 'security' : _m[1]]) || [];
+        // セキュリティの表向き/裏向き: コード（_faceup/_facedown）か兄弟の cond_face_up / cond_face_down で絞る
+        if (_isSec) {
+          const _fu = (c) => !!(c && (c._faceUp === true || c.faceUp === true));
+          const _wantUp = _m[1] === 'security_faceup' || conditions.some(c => c.code === 'cond_face_up');
+          const _wantDown = _m[1] === 'security_facedown' || conditions.some(c => c.code === 'cond_face_down');
+          if (_wantUp) _zone = _zone.filter(_fu);
+          else if (_wantDown) _zone = _zone.filter(c => c && !_fu(c));
+        }
+        const _oc = conditions.filter(c => !_EXISTS_META_CODES.has(c.code) && c.code !== 'per_count' && c.code !== 'cond_face_up' && c.code !== 'cond_face_down');
         const _n = _zone.filter(x => _cardMatchesSiblingConds(x, _oc, bs, _ts)).length;
         return _cmpCount(_n, _m[2], Number(cond.value || 0));
       }
@@ -13130,9 +13265,14 @@ export function fireOptionUsedTriggers(usedSide, bs, ctxBase, done, opts) {
 // step.zone_increase が明示されている場合は 'deck'（または未指定＝後方互換で無条件一致）の
 // ものだけを対象にする。'evo_source' 等、他ゾーン向けに明示されたステップはここでは発火しない
 // （進化元向けは _fireEvoSourceIncreaseTrigger で別途、そのデジモン自身の視点のみ発火する）
+// 発動主体が進化元（own_evo_stack 等。姚青嵐 P-168「自分のデジモンの進化元が効果で増えたとき」）で zone_increase が無いものは
+// 「進化元が増えたとき」（エディタは増えた場所の欄を出さず、発動主体〔進化元〕で表す）
+function _isEvoStackIncreaseStep(step) {
+  return !!step && !step.zone_increase && /_evo_stack$/.test(String(step.subject || ''));
+}
 function _zoneIncreaseMatches(step, zone) {
   const zi = step && step.zone_increase;
-  if (!zi) return true;
+  if (!zi) return zone === 'evo_source' ? _isEvoStackIncreaseStep(step) : !_isEvoStackIncreaseStep(step);
   const list = Array.isArray(zi) ? zi : [zi];
   return list.includes(zone);
 }
@@ -13238,14 +13378,20 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
   const evoZone = (s) => {
     const zi = s && s.zone_increase;
     const list = Array.isArray(zi) ? zi : (zi ? [zi] : []);
-    return list.includes('evo_source');
+    return list.includes('evo_source') || _isEvoStackIncreaseStep(s);
   };
   const reactions = [];
   // trigger_conditions を置かれたカードで評価して、満たしたカードを返す（placed 未指定なら判定しない）
   const pickPlaced = (step, reactSide) => {
-    if (!placed) return true;
     const hasTc = (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0)
       || (Array.isArray(step.trigger_conditions_chain) && step.trigger_conditions_chain.length > 0);
+    // 発動主体〔進化元〕で書いたもの（姚青嵐 P-168「特徴に『水棲』を含む自分のデジモンの進化元が増えたとき」）の
+    // 発動条件は、置かれたカードではなく進化元が増えたデジモン（digi）の条件
+    if (_isEvoStackIncreaseStep(step)) {
+      if (hasTc && !_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, digi, bs, reactSide, step.trigger_conditions_chain)) return null;
+      return (placed && placed[0]) || true;
+    }
+    if (!placed) return true;
     if (!hasTc) return placed[0] || true;
     return placed.find(pc => _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, pc, bs, reactSide, step.trigger_conditions_chain)) || null;
   };
@@ -18642,7 +18788,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
         const c = tgtPlayer.battleArea[i];
         // cant_discard: 重ねられているカードは破棄されない（退化は破棄先がトラッシュ固定のため対象外）
-        if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard')) && !_isImmuneToEffect(c, ctx)) valid.push(i);
+        if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard')) && !_isImmuneToEffect(c, ctx) && !_isImmuneToEffect(c, ctx, 'dedigivolve')) valid.push(i);
       }
       if (valid.length === 0) {
         ctx.addLog && ctx.addLog('⚠ 進化元を持つ対象がいません');
@@ -21160,15 +21306,23 @@ function executeRecipeStep(step, ctx, store, callback) {
       // both:N は「デジモン1体を持ち主のセキュリティの上に置く」（クオンタモン LM-020【進化時】のコスト）: 自分/相手どちらの
       // デジモンも選べ、選んだカードの持ち主のセキュリティに置く（候補ごとに own で持ち主を持つ）
       {
-        const _psM = /^(opponent|own|both)(_card|_tamer)?:(\d+|all)$/.exec(String(step.target || ''));
+        // _other＝このカード以外（マスティモン P-187「他のデジモン/テイマー1体をセキュリティの上か下に置くことで」= both_other_card:1）
+        const _psM0 = /^(opponent|own|both)(_other)?(_card|_tamer)?:(\d+|all)$/.exec(String(step.target || ''));
+        const _psM = _psM0 ? [_psM0[0], _psM0[1], _psM0[3], _psM0[4]] : null;
+        const _psOther = !!(_psM0 && _psM0[2]);
         if (_psM) {
           const _psBoth = _psM[1] === 'both';
           const _psWantTamer = _psM[2] === '_card' || _psM[2] === '_tamer' || _filterWantsTamer(step.filter || null);
           const _psWantDigi = _psM[2] !== '_tamer';
+          // 種類の条件（condition の cond_type「デジモン,テイマー」。〔カード〕だとオプションも入るため）
+          const _psTypeConds = (step.condition ? parseRecipeCondition(String(step.condition)) : []).filter(c => c && c.code === 'cond_type');
+          const _psOk = (c) => c && !(_psOther && c === ctx.card)
+            && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))
+            && (_psTypeConds.length === 0 || checkConditions(_psTypeConds, c, ctx.bs, ctx.side));
           const _psEntries = [];
           const _psCollect = (P, isOpp) => {
-            if (_psWantDigi) (P.battleArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'battleArea', idx: i, own: !isOpp }); });
-            if (_psWantTamer) (P.tamerArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'tamerArea', idx: i, own: !isOpp }); });
+            if (_psWantDigi) (P.battleArea || []).forEach((c, i) => { if (_psOk(c)) _psEntries.push({ card: c, zone: 'battleArea', idx: i, own: !isOpp }); });
+            if (_psWantTamer) (P.tamerArea || []).forEach((c, i) => { if (_psOk(c)) _psEntries.push({ card: c, zone: 'tamerArea', idx: i, own: !isOpp }); });
           };
           if (_psBoth || _psM[1] === 'own') _psCollect(player, false);
           if (_psBoth || _psM[1] === 'opponent') _psCollect(opponent, true);
@@ -21177,8 +21331,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_psEntries.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(_psIsCost ? false : undefined); break; }
           const _psCount = _psM[3] === 'all' ? _psEntries.length : Math.min(parseInt(_psM[3], 10) || 1, _psEntries.length);
           const _psFaceUp = Array.isArray(step.options) && step.options.includes('face_up');
-          const _psToBottom = step.position === 'bottom';
+          let _psToBottom = step.position === 'bottom';
+          // position:'select'＝「セキュリティの上か下に置く」: 置く前に上か下かを選ぶ（CPU は上）
           const _psMove = (list) => {
+            if (step.position !== 'select' || effectiveSide === 'ai' || (list || []).length === 0) { _psMoveNow(list); return; }
+            showAltActionChoice(['セキュリティの上に置く', 'セキュリティの下に置く'], (ci) => { _psToBottom = ci === 1; _psMoveNow(list); });
+          };
+          const _psMoveNow = (list) => {
             let _psMoved = 0;
             const _psCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
             // 1体ずつ: セキュリティに置かれるのも「バトルエリアを離れる」ので、離れるときの置換効果（【分離】【守護】
@@ -22105,6 +22264,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _IM_TYPE_OF_CAT = { 'デジモン': 'digimon', 'テイマー': 'tamer', 'オプション': 'option', 'デジタマ': 'digitama' };
       const _IM_LBL = { digimon: 'デジモンの', tamer: 'テイマーの', option: 'オプションの', digitama: 'デジタマの' };
       let _imSrcType = _IM_LBL[step.source_type] ? step.source_type : undefined;
+      // source_type:'dedigivolve'＝「【退化】の効果を受けない」（シーラモン P-162）。種別ではなく効果の種類で絞る
+      const _IM_ACTION_LBL = { dedigivolve: '【退化】の' };
+      const _imActionOnly = _IM_ACTION_LBL[step.source_type] ? step.source_type : undefined;
       if (step.source_type === 'declared') {
         const _imDecl = _declaredCategoryOf(ctx);
         _imSrcType = _IM_TYPE_OF_CAT[_imDecl];
@@ -22115,7 +22277,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _imAnySide = step.source_type === 'declared' || step.immune_from === 'any' || step.immune_from === 'both';
       const _imWho = _imAnySide ? '' : '相手の';
       // 「自分のデジモン全て」で期限つきなら継続する全体処理（あとから条件を満たしたデジモンにも付く）
-      if (_imAll && !_imAnySide && _registerGlobalEffect(ctx, ctx.side, { type: 'keyword_immune', value: 0, duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn', filter: step.filter || null, sourceType: _imSrcType })) {
+      if (_imAll && !_imAnySide && !_imActionOnly && _registerGlobalEffect(ctx, ctx.side, { type: 'keyword_immune', value: 0, duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn', filter: step.filter || null, sourceType: _imSrcType })) {
         const _imLbl = _IM_LBL[_imSrcType] || '';
         _imTgts.forEach((tgt) => ctx.addLog('🪄 「' + tgt.name + '」は相手の' + _imLbl + '効果を受けない'));
         ctx.renderAll && ctx.renderAll();
@@ -22129,8 +22291,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (lastBuff && lastBuff.type === 'keyword_immune') {
           if (_imSrcType) lastBuff.sourceType = _imSrcType;
           if (_imAnySide) lastBuff.anySide = true;
+          if (_imActionOnly) lastBuff.actionOnly = _imActionOnly;
         }
-        ctx.addLog('🪄 「' + tgt.name + '」は' + _imWho + (_IM_LBL[_imSrcType] || '') + '効果を受けない');
+        ctx.addLog('🪄 「' + tgt.name + '」は' + _imWho + (_IM_LBL[_imSrcType] || _IM_ACTION_LBL[_imActionOnly] || '') + '効果を受けない');
       });
       ctx.renderAll && ctx.renderAll();
       callback();
@@ -23197,7 +23360,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
       let _dpPerCount = null;
       if (step.per_count && effectiveValue != null) {
-        const refSource = step.ref || 'evo_source';
+        const refSource = _refWithCountMode(step);
         const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
         // 期間のある DP+/- は、効果中に参照数が変わったら値も変わる（ドリモゲモン BT26-040「相手のターン終了まで、
         // 裏向きの進化元1枚ごとにDP+1000」: あとから裏向きの進化元が増えたらDPも増える）。recalcDp が毎回数え直す
@@ -23238,6 +23401,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (step.filter) action.filter = step.filter;
       if (step.from_owner) action.from_owner = step.from_owner;
       if (step.security_position) action.security_position = step.security_position;
+      // レシピの対象文字列（「自分のセキュリティを上から1枚破棄」= security_trash_top ＋ own_security:1 の持ち主の判定用）
+      if (step.target) action._stepTarget = String(step.target);
       let target = null;
       if (step.target) {
         const t = step.target;

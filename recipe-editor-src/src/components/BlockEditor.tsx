@@ -11379,6 +11379,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
   color: [
     { value: 'cond_color', label: '含む' },
     { value: 'cond_color_not', label: '以外' },
+    // 「〜と同じ色」（cond_color_same。自分/相手のデジモン等・このカード）
+    { value: 'cond_color_same', label: '同じ色' },
     // 「1色の〜」: カードの色の数（filter.color_count）
     { value: 'cond_color_count', label: '色の数' },
   ],
@@ -11437,6 +11439,38 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
   ],
 };
 
+// 色〔同じ色〕（cond_color_same）の値: 「このカードと同じ色」= 'self'、「自分のデジモンと同じ色」= 'own_digimon'、
+// 種類を複数選ぶとカンマ区切り（'own_digimon,own_tamer'）。種類を選ばない 自分/相手 は 'own' / 'opp'（カードの種類を問わない）。
+// 対象の色と、そのカードのどれか1枚の色が1色でも同じなら当てはまる（P-206「エリアの自分のデジモンと同じ色のテイマーカード」）
+const COLOR_SAME_TYPES = [{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }, { code: 'option', label: 'オプション' }];
+function ColorSameEditor({ value, onChange, accent }: { value?: string; onChange: (v: string) => void; accent: string }) {
+  const parts = String(value || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const side = parts[0] === 'self' ? 'self' : (parts[0] || '').startsWith('opp') ? 'opp' : parts.length > 0 ? 'own' : '';
+  const types = parts.map((x) => x.replace(/^(own|opp)_?/, '')).filter((t) => COLOR_SAME_TYPES.some((o) => o.code === t));
+  const build = (sd: string, ts: string[]) => (sd === 'self' ? 'self' : !sd ? '' : ts.length === 0 ? sd : COLOR_SAME_TYPES.map((o) => o.code).filter((t) => ts.includes(t)).map((t) => sd + '_' + t).join(','));
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <ButtonGroup
+        options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'self', label: 'このカード' }]}
+        value={side}
+        onChange={(v) => onChange(build(v, side === 'self' ? [] : types))}
+        accentColor={accent}
+      />
+      {(side === 'own' || side === 'opp') && (
+        <MultiButtonGroup
+          options={COLOR_SAME_TYPES}
+          values={types}
+          onToggle={(code, on) => onChange(build(side, on ? [...types, code] : types.filter((t) => t !== code)))}
+          accentColor={accent}
+        />
+      )}
+      <div style={{ fontSize: 10, color: '#666' }}>
+        {side === 'self' ? 'このカードと1色でも同じ色' : side ? (side === 'own' ? '自分' : '相手') + 'の' + (types.length ? types.map((t) => COLOR_SAME_TYPES.find((o) => o.code === t)!.label).join('/') : 'カード') + 'のどれかと1色でも同じ色' : '誰と同じ色か選んでください'}
+        <span style={{ color: '#c62828' }}>　⚠ エンジン未対応</span>
+      </div>
+    </div>
+  );
+}
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
 // 名称/記述の値を特徴と同じタグ入力（カンマ区切り・OR）にする条件。⚠ カンマ区切りのOR判定はエンジン未対応
 const OR_TAG_BASES = new Set(['cond_name', 'cond_name_contains', 'cond_name_not', 'cond_description_contains']);
@@ -11448,7 +11482,7 @@ function swapOpts(cur: string[] | undefined, group: string[], v: string): string
 }
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
-  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct' || base === 'cond_color_count' || base === 'cond_color_count_ge' || base === 'cond_color_count_le') return 'color';
+  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_same' || base === 'cond_color_distinct' || base === 'cond_color_count' || base === 'cond_color_count_ge' || base === 'cond_color_count_le') return 'color';
   if (base === 'cond_has_keyword') return 'keyword';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
@@ -12244,6 +12278,8 @@ function ConditionsHybridEditor({
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）
                       </div>
+                    ) : c.base === 'cond_color_same' ? (
+                      <ColorSameEditor value={c.value} onChange={(v) => updateAt(i, { value: v })} accent={colors.accent} />
                     ) : c.base === 'cond_same_as_picked'
                       || ((supportsMultiValue || multiType) && c.base === 'cond_type')
                       || c.base === 'cond_color'
@@ -12659,6 +12695,8 @@ function ConditionsHybridEditor({
                     />
                     以外
                   </label>
+                ) : c.base === 'cond_color_same' ? (
+                  <ColorSameEditor value={c.value} onChange={(v) => updateAt(i, { value: v })} accent={colors.accent} />
                 ) : c.base === 'cond_same_as_picked' ? (
                   /* 「選んだカードと同じ」: どの属性が同じか（名前/色/…）を複数選ぶ（値は 'color' / 'name,color' 等） */
                   (() => {

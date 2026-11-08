@@ -154,6 +154,9 @@ const cases: Case[] = [
   { name: '参照バトルエリア＋育成エリア含む', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
   { name: '参照バトルエリア＋育成エリア含む＋特徴', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own' }, { base: 'cond_feature', value: 'X', subject: '__ref_exists_filter__' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
   { name: '参照DP＋育成エリア含む', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_ref_dp_ge', value: '13000', subject: 'both' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
+  { name: '取得元: 自分のデジモンと同じ色のテイマー', blocks: [base({ action: 'summon', value: -4, target: 'own_tamer:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_color_same', value: 'own_digimon' }] })], check: ['0.fromFilter'], raw: (r: any) => J(r).includes('"color_same_as":"own_digimon"') },
+  { name: '取得元: 自分のデジモン/テイマーと同じ色', blocks: [base({ action: 'summon', value: -4, target: 'own_tamer:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_color_same', value: 'own_digimon,own_tamer' }] })], check: ['0.fromFilter'] },
+  { name: '対象の条件: このカードと同じ色', blocks: [base({ action: 'destroy', target: 'opponent:1', conditions: [{ base: 'cond_color_same', value: 'self' }] })], check: ['0.conditions'] },
 ];
 
 let ng = 0;

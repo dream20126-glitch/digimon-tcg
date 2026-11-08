@@ -124,7 +124,9 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
 // cond_lv / cond_cost: 一致（「Lv4かLv5」= cond_lv:4,5）。cond_attr_or: 値なしの印。属性どうしを「どれか1つに合えばよい」（OR）にする
-export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_lv', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_cost', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each', 'cond_attr_or']);
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_lv', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_cost', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each', 'cond_attr_or',
+  // cond_include_breed: 値なしの印。「エリアの〜」＝バトルエリアに加えて育成エリアも含める
+  'cond_include_breed']);
 // 参照「手札/トラッシュ」の枚数＋属性＝「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」。
 // 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
 // セキュリティも同じ形（「自分の表向きのセキュリティに特徴『ディープセイバーズ』があるなら」= cond_security_match_ge:1 ＋ cond_face_up ＋ cond_feature）

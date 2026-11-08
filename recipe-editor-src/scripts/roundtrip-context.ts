@@ -151,6 +151,9 @@ const cases: Case[] = [
   { name: 'コスト: お互いのデジモン/オプション（both_card＋タイプ）', blocks: [base({ costs: [{ action: 'discard', target: 'both_card:1', fromZones: ['battle_area'], conditions: [{ base: 'cond_type', value: 'デジモン,オプション' }] }] })], check: ['0.costs.0.target', '0.costs.0.conditions'], raw: (r: any) => J(r).includes('cond_type:デジモン,オプション') },
   { name: '破棄されたとき（お互いのオプション・バトルエリアから）', blocks: [base({ trigger: 'discard', triggers: ['discard'], triggerSubject: 'both_option', triggerFromZones: ['battle_area'] })], check: ['0.triggerFromZones', '0.triggerSubject'], raw: (r: any) => J(r).includes('both_option') && J(r).includes('battle_area') },
   { name: '破棄されたとき（自分のリンクカード）', blocks: [base({ trigger: 'discard', triggers: ['discard'], triggerSubject: 'own_linked' })], check: ['0.triggerSubject'], raw: (r: any) => J(r).includes('own_linked') },
+  { name: '参照バトルエリア＋育成エリア含む', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
+  { name: '参照バトルエリア＋育成エリア含む＋特徴', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own' }, { base: 'cond_feature', value: 'X', subject: '__ref_exists_filter__' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
+  { name: '参照DP＋育成エリア含む', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_ref_dp_ge', value: '13000', subject: 'both' }, { base: 'cond_include_breed', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_include_breed') && !J(r).includes('__ref_exists_filter__') },
 ];
 
 let ng = 0;

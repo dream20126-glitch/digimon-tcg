@@ -513,7 +513,9 @@ function RefExistsAttributeFilterPanel({
   // 独立した入れ子に分離するため、他の条件に影響しない＝falseで警告を出さない
   warnConflict?: boolean;
 }) {
-  const attrs = conditions.filter((cc) => cc.subject === marker);
+  // 「育成エリア含む」（cond_include_breed）は属性ではなく範囲の印なので、属性の開閉・全消しとは別に扱う
+  const breedOn = conditions.some((cc) => cc.subject === marker && cc.base === 'cond_include_breed');
+  const attrs = conditions.filter((cc) => cc.subject === marker && cc.base !== 'cond_include_breed');
   const hasAnyAttr = attrs.length > 0;
   const [open, setOpen] = useState(hasAnyAttr);
   const getAttr = (base: string) => attrs.find((a) => a.base === base);
@@ -579,6 +581,21 @@ function RefExistsAttributeFilterPanel({
 
   return (
     <div style={{ marginBottom: 4 }}>
+      {/* 「エリアの〜」（バトルエリアに限らず育成エリアも含む）: バトルエリア・DP/Lv の参照行だけ。保存は兄弟の cond_include_breed（値なしの印） */}
+      {marker === REF_EXISTS_FILTER_MARKER && !forEvo && !forZone && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 2 }}>
+          <input
+            type="checkbox"
+            checked={breedOn}
+            onChange={(e) => {
+              const rest = conditions.filter((cc) => !(cc.subject === marker && cc.base === 'cond_include_breed'));
+              onChange(e.target.checked ? [...rest, { base: 'cond_include_breed', subject: marker }] : rest);
+            }}
+          />
+          育成エリア含む（「エリアの〜」）
+          {breedOn && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応</span>}
+        </label>
+      )}
       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
         <input
           type="checkbox"
@@ -587,7 +604,7 @@ function RefExistsAttributeFilterPanel({
             setOpen(e.target.checked);
             if (!e.target.checked) {
               setActiveSub(new Set());
-              onChange(conditions.filter((cc) => cc.subject !== marker));
+              onChange(conditions.filter((cc) => cc.subject !== marker || cc.base === 'cond_include_breed'));
             }
           }}
         />

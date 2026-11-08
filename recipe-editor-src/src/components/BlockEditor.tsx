@@ -3420,8 +3420,11 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
   ],
+  // 他のデジモン/テイマー（自分/相手どちらでも。このカード以外。P-187「他のデジモン/テイマー1体をセキュリティの上か下に置く」）
   both_other: [
     { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
   ],
 };
 // 対象の種類ボタンと場所ボタンを並べたとき、同じコード（セキュリティ）が2つ出ないようにする（後の場所ボタン側を残す）
@@ -3464,7 +3467,7 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
   'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
-  'both_other:digimon': 'both_other',
+  'both_other:digimon': 'both_other', 'both_other:card': 'both_other_card', 'both_other:tamer': 'both_other_tamer',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
   // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア/
   // リンクカード）を対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
@@ -3499,6 +3502,8 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both: { l1: 'both', l2: 'digimon' },
   // 「他のデジモン（自分/相手どちらでも。このデジモン以外）」。自分+相手+他 のトグルで選ぶ
   both_other: { l1: 'both_other', l2: 'digimon' },
+  both_other_card: { l1: 'both_other', l2: 'card' },
+  both_other_tamer: { l1: 'both_other', l2: 'tamer' },
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },

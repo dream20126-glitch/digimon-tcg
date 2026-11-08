@@ -144,6 +144,7 @@ const cases: Case[] = [
   { name: 'コスト: 自分のセキュリティを上から1枚破棄', blocks: [base({ costs: [{ action: 'security_trash_top', target: 'own_security:1' }] })], check: ['0.costs.0.action', '0.costs.0.target'], raw: (r: any) => J(r).includes('security_trash_top') && J(r).includes('own_security') },
   { name: 'immune 退化（効果1）', blocks: [base({ action: 'immune_effects', target: 'own:1', immuneCardType: 'dedigivolve' })], check: ['0.immuneCardType'], raw: (r: any) => J(r).includes('"source_type":"dedigivolve"') },
   { name: 'DPマイナスされない＋退化を受けない（bundle）', blocks: [base({ action: 'cant_dp_minus', target: 'own:1', altActionsOp: 'and', altActions: [{ action: 'immune_effects', target: 'same_target', bundle: true, actionParams: { source_type: 'dedigivolve' } }] })], check: ['0.altActions.0.actionParams', '0.altActions.0.bundle'], raw: (r: any) => J(r).includes('"source_type":"dedigivolve"') },
+  { name: 'コスト: 他のデジモン/テイマー（both_other_card）', blocks: [base({ costs: [{ action: 'place_on_security_top', target: 'both_other_card:1' }] })], check: ['0.costs.0.target'], raw: (r: any) => J(r).includes('both_other_card:1') },
 ];
 
 let ng = 0;

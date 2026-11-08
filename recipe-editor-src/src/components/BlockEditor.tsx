@@ -2818,6 +2818,9 @@ const SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   'both:digimon': 'both_digimon', 'both:card': 'both_card', 'both:tamer': 'both_tamer', 'both:player': 'both_player',
   // 自分+相手+他: このカード以外の、自分/相手どちらでも該当する全て（エンジン未実装のプレースホルダー）
   'both_other:digimon': 'both_other_digimon', 'both_other:card': 'both_other_card', 'both_other:tamer': 'both_other_tamer',
+  // オプション（「自分のオプションが破棄されたとき」等。発動主体の種類ボタン〔オプション〕）
+  'own:option': 'own_option', 'opp:option': 'opp_option', 'other_own:option': 'other_own_option',
+  'both:option': 'both_option', 'both_other:option': 'both_other_option',
 };
 const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: 'self', l2: '' },
@@ -2841,6 +2844,11 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both_other_digimon: { l1: 'both_other', l2: 'digimon' },
   both_other_card: { l1: 'both_other', l2: 'card' },
   both_other_tamer: { l1: 'both_other', l2: 'tamer' },
+  own_option: { l1: 'own', l2: 'option' },
+  opp_option: { l1: 'opp', l2: 'option' },
+  other_own_option: { l1: 'other_own', l2: 'option' },
+  both_option: { l1: 'both', l2: 'option' },
+  both_other_option: { l1: 'both_other', l2: 'option' },
   // 場所（手札/トラッシュ/セキュリティ）: 辞書側「場所指定」フラグが立っているトリガー
   // （破棄されたとき等）でのみ選択肢に出す。エンジンのsubjectMatchesに対応ケースが無く、
   // 保存はできても発火しない（進化元/テイマー下の破棄のみ対応済みのエンジン未実装枠）
@@ -3130,7 +3138,10 @@ function TriggerSubjectStagedPicker({
   const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
   const subjDigimonChecked = hasDigimonTamer && (effectiveL2 === 'digimon' || effectiveL2 === 'card');
   const subjTamerChecked = hasDigimonTamer && (effectiveL2 === 'tamer' || effectiveL2 === 'card');
-  const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+  const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card' && o.code !== 'option');
+  // 〔オプション〕は〔デジモン〕〔テイマー〕と同じ行に出すが、1つだけ選ぶ（押すとデジモン/テイマーは外れる）
+  const subjOptionCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':option'];
+  const subjOptionChecked = hasDigimonTamer && effectiveL2 === 'option';
   const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
     if (nextDigimon && nextTamer) setSubject(subjCardCode);
     else if (nextDigimon) setSubject(subjDigimonCode);
@@ -3205,12 +3216,15 @@ function TriggerSubjectStagedPicker({
       {!evoMode && hasDigimonTamer && (
         <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <MultiButtonGroup
-            options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
-            values={[...(subjDigimonChecked ? ['digimon'] : []), ...(subjTamerChecked ? ['tamer'] : [])]}
-            onToggle={(code, on) => applySubjDigiTamer(
-              code === 'digimon' ? on : subjDigimonChecked,
-              code === 'tamer' ? on : subjTamerChecked
-            )}
+            options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }, ...(subjOptionCode ? [{ code: 'option', label: 'オプション' }] : [])]}
+            values={[...(subjDigimonChecked ? ['digimon'] : []), ...(subjTamerChecked ? ['tamer'] : []), ...(subjOptionChecked ? ['option'] : [])]}
+            onToggle={(code, on) => {
+              if (code === 'option') { setSubject(on ? subjOptionCode : cur.l1); return; }
+              applySubjDigiTamer(
+                code === 'digimon' ? on : subjDigimonChecked,
+                code === 'tamer' ? on : subjTamerChecked
+              );
+            }}
             accentColor={accentColor}
           />
           {subjExclusiveL2Options.length > 0 && (
@@ -3719,6 +3733,8 @@ const DISCARD_TRIGGER_CODE = 'discard';
 // 「破棄」トリガーの「どこから」（破棄元のゾーン。step.trigger_from。エンジンの fireWhenEvoDiscardTriggers / 手札の破棄が読む）
 const DISCARD_TRIGGER_FROM_OPTIONS = [
   { code: 'hand', label: '手札' },
+  // バトルエリアから破棄されたとき（ビショップ・デヴァイス P-161 等。場のオプション・デジモン）
+  { code: 'battle_area', label: 'バトルエリア' },
   { code: 'evo_source', label: '進化元' },
   { code: 'tamer', label: 'テイマーの下' },
   // デッキ（上から破棄等）・セキュリティからの破棄は ⚠ エンジン未対応（破棄されたときのトリガーを誘発していない）

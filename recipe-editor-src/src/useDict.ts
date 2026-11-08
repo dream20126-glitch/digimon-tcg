@@ -425,12 +425,14 @@ export function useDict(password: string): DictAPI {
     if (local) {
       merged = {
         ...merged,
-        allowsRules: local.allowsRules !== undefined ? local.allowsRules : merged.allowsRules,
-        hasPositionVariant: local.hasPositionVariant !== undefined ? local.hasPositionVariant : merged.hasPositionVariant,
-        hasFromZones: local.hasFromZones !== undefined ? local.hasFromZones : merged.hasFromZones,
-        hasDeckPosition: local.hasDeckPosition !== undefined ? local.hasDeckPosition : merged.hasDeckPosition,
-        hasFaceOption: local.hasFaceOption !== undefined ? local.hasFaceOption : merged.hasFaceOption,
-        cantActionCode: local.cantActionCode !== undefined ? local.cantActionCode : merged.cantActionCode,
+        // スプシで「1」になっているフラグはスプシを正とする（ブラウザに残った古い「なし」で消さない。
+        // 以前は辞書画面で登録したときの値がブラウザに残り、後からスプシに1を入れても表示されなかった）
+        allowsRules: merged.allowsRules || !!local.allowsRules,
+        hasPositionVariant: merged.hasPositionVariant || !!local.hasPositionVariant,
+        hasFromZones: merged.hasFromZones || !!local.hasFromZones,
+        hasDeckPosition: merged.hasDeckPosition || !!local.hasDeckPosition,
+        hasFaceOption: merged.hasFaceOption || !!local.hasFaceOption,
+        cantActionCode: a.cantActionCode || local.cantActionCode || merged.cantActionCode,
       };
     }
     return merged;

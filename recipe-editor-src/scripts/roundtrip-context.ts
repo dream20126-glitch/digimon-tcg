@@ -150,6 +150,7 @@ const cases: Case[] = [
   { name: 'コスト: お互いのオプション（both_option）', blocks: [base({ costs: [{ action: 'discard', target: 'both_option:1', fromZones: ['battle_area'] }] })], check: ['0.costs.0.target'], raw: (r: any) => J(r).includes('both_option:1') },
   { name: 'コスト: お互いのデジモン/オプション（both_card＋タイプ）', blocks: [base({ costs: [{ action: 'discard', target: 'both_card:1', fromZones: ['battle_area'], conditions: [{ base: 'cond_type', value: 'デジモン,オプション' }] }] })], check: ['0.costs.0.target', '0.costs.0.conditions'], raw: (r: any) => J(r).includes('cond_type:デジモン,オプション') },
   { name: '破棄されたとき（お互いのオプション・バトルエリアから）', blocks: [base({ trigger: 'discard', triggers: ['discard'], triggerSubject: 'both_option', triggerFromZones: ['battle_area'] })], check: ['0.triggerFromZones', '0.triggerSubject'], raw: (r: any) => J(r).includes('both_option') && J(r).includes('battle_area') },
+  { name: '破棄されたとき（自分のリンクカード）', blocks: [base({ trigger: 'discard', triggers: ['discard'], triggerSubject: 'own_linked' })], check: ['0.triggerSubject'], raw: (r: any) => J(r).includes('own_linked') },
 ];
 
 let ng = 0;

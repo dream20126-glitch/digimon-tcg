@@ -2821,6 +2821,9 @@ const SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   // オプション（「自分のオプションが破棄されたとき」等。発動主体の種類ボタン〔オプション〕）
   'own:option': 'own_option', 'opp:option': 'opp_option', 'other_own:option': 'other_own_option',
   'both:option': 'both_option', 'both_other:option': 'both_other_option',
+  // リンクカード（「リンクカードが破棄されたとき」等。破棄されたときの場所の行〔リンクカード〕）
+  'own:linked': 'own_linked', 'opp:linked': 'opp_linked', 'other_own:linked': 'other_own_linked',
+  'both:linked': 'both_linked', 'both_other:linked': 'both_other_linked', 'self:linked': 'self_linked',
 };
 const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: 'self', l2: '' },
@@ -2849,6 +2852,12 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own_option: { l1: 'other_own', l2: 'option' },
   both_option: { l1: 'both', l2: 'option' },
   both_other_option: { l1: 'both_other', l2: 'option' },
+  own_linked: { l1: 'own', l2: 'linked' },
+  opp_linked: { l1: 'opp', l2: 'linked' },
+  other_own_linked: { l1: 'other_own', l2: 'linked' },
+  both_linked: { l1: 'both', l2: 'linked' },
+  both_other_linked: { l1: 'both_other', l2: 'linked' },
+  self_linked: { l1: 'self', l2: 'linked' },
   // 場所（手札/トラッシュ/セキュリティ）: 辞書側「場所指定」フラグが立っているトリガー
   // （破棄されたとき等）でのみ選択肢に出す。エンジンのsubjectMatchesに対応ケースが無く、
   // 保存はできても発火しない（進化元/テイマー下の破棄のみ対応済みのエンジン未実装枠）
@@ -3255,7 +3264,8 @@ function TriggerSubjectStagedPicker({
           <ButtonGroup
             options={[...SUBJECT_L2_FROM_ZONES, { code: '__evo', label: '進化元' }, { code: '__stacked', label: '重ねられているカード' },
               // 種類ボタンを出さないトリガー（破棄されたとき）でも、オプション（「自分/相手のオプションが破棄されたとき」）は選べる
-              ...(SUBJECT_L1L2_TO_CODE[cur.l1 + ':option'] ? [{ code: 'option', label: 'オプション' }] : [])]}
+              ...(SUBJECT_L1L2_TO_CODE[cur.l1 + ':option'] ? [{ code: 'option', label: 'オプション' }] : []),
+              ...(SUBJECT_L1L2_TO_CODE[cur.l1 + ':linked'] ? [{ code: 'linked', label: 'リンクカード' }] : [])]}
             value={raw.family === 'evo' ? '__evo' : raw.family === 'stacked' ? '__stacked' : effectiveL2}
             onChange={(v) => {
               if (v === '__evo' || v === '__stacked') {
@@ -3275,7 +3285,7 @@ function TriggerSubjectStagedPicker({
       {!zoneMode && hasFromZones && cur.l1 === 'self' && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup
-            options={[{ code: '', label: '指定なし' }, ...SUBJECT_L2_FROM_ZONES]}
+            options={[{ code: '', label: '指定なし' }, ...SUBJECT_L2_FROM_ZONES, { code: 'linked', label: 'リンクカード' }]}
             value={effectiveL2}
             onChange={(l2) => setSubject(l2 ? (SUBJECT_L1L2_TO_CODE['self:' + l2] || 'self') : 'self')}
             accentColor={accentColor}

@@ -9752,6 +9752,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               commonConditions={effectFromFilter}
               onCommonConditionsChange={(next) => updateEffect({ fromFilter: next })}
             />
+            {/* 取得元がセキュリティのとき: 表向き/裏向き（「自分のセキュリティから〜を持つ表向きのデジモンカード1枚を登場できる」）。
+                取得元カードの条件の cond_face_up / cond_face_down（from_filter.face_up / face_down）として保存する */}
+            {effectFromZones.includes('security') && (() => {
+              const ff = effectFromFilter || [];
+              const face = ff.some((p) => p.base === 'cond_face_up') ? 'up' : ff.some((p) => p.base === 'cond_face_down') ? 'down' : '';
+              const setFace = (v: string) => {
+                const rest = ff.filter((p) => p.base !== 'cond_face_up' && p.base !== 'cond_face_down');
+                updateEffect({ fromFilter: v === 'up' ? [...rest, { base: 'cond_face_up' }] : v === 'down' ? [...rest, { base: 'cond_face_down' }] : rest });
+              };
+              return (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: '#555' }}>🔄 セキュリティの裏表:</span>
+                  <ButtonGroup
+                    options={[{ code: '', label: '指定なし' }, { code: 'up', label: '表向き' }, { code: 'down', label: '裏向き' }]}
+                    value={face}
+                    onChange={setFace}
+                    accentColor="#00796b"
+                  />
+                </div>
+              );
+            })()}
             {/* 既に場にいる同名カードは除外（例:「自分のテイマーと同じ名称のカードは登場できない」）。
                 対象数/取得元とは独立したチェックのため、条件エディタとは別枠のチェックボックスで持つ */}
             {!isEditingAlt && (

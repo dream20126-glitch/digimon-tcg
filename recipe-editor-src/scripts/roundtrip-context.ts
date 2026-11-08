@@ -161,6 +161,7 @@ const cases: Case[] = [
   { name: 'この効果で特徴「三銃士」「TS」を持つカードを破棄したなら', blocks: [base({ action: 'draw', value: 1, conditions: [{ base: 'cond_last_action_ge', value: '1' }, { base: 'cond_feature', value: '三銃士,TS', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'], raw: (r: any) => J(r).includes('cond_last_action_match_ge:1') && J(r).includes('cond_feature:三銃士,TS') && !J(r).includes('__ref_exists_filter__') },
   { name: '「シードラモン」の記述がある自分のデジモン1体のLv.以下', blocks: [base({ action: 'return_deck', target: 'opponent:1', targetFilter: [{ base: 'cond_lv_le', value: 'own_pick_lv' }, { base: 'cond_description_contains', value: 'シードラモン', subject: '__lv_ref_filter__' }] })], check: ['0.targetFilter'], raw: (r: any) => J(r).includes('"lv_le":"own_pick_lv"') && J(r).includes('"lv_ref_filter":{"description_contains":"シードラモン"}') },
   { name: '相手のデジモンのLv.以上（参照・絞り込みなし）', blocks: [base({ action: 'destroy', target: 'opponent:1', targetFilter: [{ base: 'cond_lv_ge', value: 'opp_lv' }] })], check: ['0.targetFilter'] },
+  { name: 'セキュリティから表向きのデジモンを登場', blocks: [base({ action: 'summon', target: 'own:1', fromZones: ['security'], costFree: true, fromFilter: [{ base: 'cond_feature', value: 'ダークマスターズ' }, { base: 'cond_face_up' }] })], check: ['0.fromFilter', '0.fromZones'], raw: (r: any) => J(r).includes('"face_up":true') },
 ];
 
 let ng = 0;

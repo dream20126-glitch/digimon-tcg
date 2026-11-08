@@ -1742,7 +1742,7 @@ function CostListEditor({
         // デジモン/テイマーは複数選択可（対象・対象の条件と同じ操作感。両方選ぶと対象コードを
         // card+cond_typeフィルタに切り替える。「最も多いプレイヤー」等L2にdigimon/tamerが
         // 無いカテゴリでは常にfalseになるだけで無害）
-        const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own' || cCurTgt.l1 === 'both');
+        const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own' || cCurTgt.l1 === 'both' || cCurTgt.l1 === 'both_other');
         const cIsOrMode = !!typeSelMulti(cCurTgt.l2, c.conditions || []);
         const cTypeChecked = cHasDigimonTamer ? typeSelOf(cCurTgt.l2, c.conditions || []) : [];
         const cExclusiveL2Options = cTgtL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
@@ -8751,7 +8751,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ...(TARGET_SEL_L2[eCurTgt.l1] || []),
               ...(commonActionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[eCurTgt.l1] || []).filter((o) => !commonFromZoneExcludeCodes?.has(o.code)) : []),
             ]);
-            const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both');
+            const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both' || eCurTgt.l1 === 'both_other');
             const eIsOrMode = !!typeSelMulti(eCurTgt.l2, effectTargetFilter);
             const eTypeChecked = eHasDigimonTamer ? typeSelOf(eCurTgt.l2, effectTargetFilter) : [];
             const eExclusiveL2Options = eL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
@@ -9079,7 +9079,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
           const exclusiveL2Options = tgtL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
-          const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own' || curTgt.l1 === 'both');
+          const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own' || curTgt.l1 === 'both' || curTgt.l1 === 'both_other');
           const typeOptions = typeSelOptions(curTgt.l1);
           const digimonCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':digimon'];
           const tamerCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':tamer'];

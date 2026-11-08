@@ -221,6 +221,41 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     if (rule.groupsOp === 'or') {
       const orFilters = rule.designatedGroups.map(buildGroupFilter).filter((f) => Object.keys(f).length > 0);
       const first = rule.designatedGroups[0];
+      // 「グループごとに異なる」でグループの行き先が違う（「手札に加えるか、このデジモンの進化元の下に置く」P-167）:
+      // 1つの選択肢には行き先が1つしか書けないので、グループごとに選択肢を積み、同じ group 番号＋group_op:'or'
+      // （どれか1つのグループで合計N枚）の印を付ける。以前は先頭グループの行き先だけ保存され、2つ目以降が消えていた
+      if (rule.groupsShareAction !== true && rule.designatedGroups.length > 1) {
+        // 行き先を空にしたグループは先頭グループ（さらに空ならルール本体）と同じ（従来の OR の扱い）
+        const eff = (g: RuleGroup): MiniStep => (g.action ? {
+          ...rule,
+          action: g.action,
+          deckPosition: g.deckPosition ?? rule.deckPosition,
+          placeTarget: g.placeTarget ?? rule.placeTarget,
+          options: g.options ?? rule.options,
+        } : {
+          ...rule,
+          action: first?.action || rule.action,
+          deckPosition: first?.deckPosition ?? rule.deckPosition,
+          placeTarget: first?.placeTarget ?? rule.placeTarget,
+          options: first?.options ?? rule.options,
+        });
+        const sig = (r: MiniStep) => JSON.stringify([r.action, r.deckPosition, r.placeTarget, r.options || []]);
+        const effs = rule.designatedGroups.map(eff);
+        if (effs.some((r) => sig(r) !== sig(effs[0]))) {
+          const orCount = asNumberOrPass(first?.count) ?? asNumberOrPass(rule.value) ?? 1;
+          const _gidOr = 1 + Math.max(0, ...((Array.isArray(step.selections) ? step.selections : []).map((x: any) => (typeof x?.group === 'number' ? x.group : 0))));
+          rule.designatedGroups.forEach((g, gi) => {
+            const _n0 = Array.isArray(step.selections) ? step.selections.length : 0;
+            applyOneSelection(step, effs[gi], buildGroupFilter(g), orCount);
+            if (Array.isArray(step.selections) && step.selections.length > _n0) {
+              const sel = step.selections[step.selections.length - 1];
+              sel.group = _gidOr;
+              sel.group_op = 'or';
+            }
+          });
+          return;
+        }
+      }
       // groupsShareAction===true（「共通」指定）ならグループ側のaction指定は無視しルール本体を使う
       const effectiveRule: MiniStep = rule.groupsShareAction === true
         ? { ...rule }
@@ -540,10 +575,12 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
     if (gid !== undefined) {
       const parts: MiniStep[] = [];
       let partsGroupAction = false;
+      let partsOr = false;
       let j = i;
       while (j < sels.length && sels[j]?.group === gid) {
-        const { group, group_action, ...plain } = sels[j]; void group;
+        const { group, group_action, group_op, ...plain } = sels[j]; void group;
         if (group_action === true) partsGroupAction = true;
+        if (group_op === 'or') partsOr = true;
         const r = selectionToRule(plain, Array.isArray(legacyKindsList[j]) ? legacyKindsList[j] : null);
         if (!r) return null;
         parts.push(r);
@@ -567,6 +604,8 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
           ...(sameAction ? {} : { action: x.action, deckPosition: x.deckPosition, options: x.options, ...(x.placeTarget ? { placeTarget: x.placeTarget } : {}) }),
         })),
         ...(sameAction ? { groupsShareAction: true } : partsGroupAction ? { groupsShareAction: false } : {}),
+        // group_op:'or'＝グループごとに行き先が違う OR（どれか1つのグループで合計N枚。枚数は先頭グループの欄）
+        ...(partsOr ? { groupsOp: 'or' as const } : {}),
       };
       rules.push(merged);
       i = j - 1;

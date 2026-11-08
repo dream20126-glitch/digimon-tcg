@@ -130,8 +130,9 @@ export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'con
 // 参照「手札/トラッシュ」の枚数＋属性＝「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」。
 // 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
 // セキュリティも同じ形（「自分の表向きのセキュリティに特徴『ディープセイバーズ』があるなら」= cond_security_match_ge:1 ＋ cond_face_up ＋ cond_feature）
-const REF_ZONE_COUNT_RE = /^cond_(hand|trash|security|security_faceup|security_facedown)_(ge|le|eq|gt|lt)$/;
-const REF_ZONE_MATCH_RE = /^cond_(hand|trash|security|security_faceup|security_facedown)_match_(ge|le|eq|gt|lt)$/;
+// 直前の効果も同じ形（「この効果で特徴に『三銃士』を持つカードを破棄したなら」= cond_last_action_match_ge:1 ＋ cond_feature）
+const REF_ZONE_COUNT_RE = /^cond_(hand|trash|security|security_faceup|security_facedown|last_action)_(ge|le|eq|gt|lt)$/;
+const REF_ZONE_MATCH_RE = /^cond_(hand|trash|security|security_faceup|security_facedown|last_action)_match_(ge|le|eq|gt|lt)$/;
 // 参照「進化元」以下/完全一致/より多い/より少ない N ＋属性＝「進化元に『ゴツモン』『X抗体』がない」（完全一致0）。
 // 保存は cond_evo_match_{quant}:N@subject ＋兄弟の属性条件（以上N は従来どおり cond_evo_exists:N）
 const REF_EVO_COUNT_RE = /^cond_has_evo_(le|eq|gt|lt)$/;

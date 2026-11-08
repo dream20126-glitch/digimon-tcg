@@ -12526,8 +12526,8 @@ function ConditionsHybridEditor({
                       )}
                       {/* 「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」: 参照「手札/トラッシュ」の枚数に属性（タイプ/名称/特徴/色/Lv/コスト）を付ける。
                           保存は cond_trash_match_ge:7 ＋兄弟の属性条件（バトルエリア・進化元の参照行がある欄では出さない） */}
-                      {cat.code === 'ref' && /^cond_(hand|trash|security|security_faceup|security_facedown)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
-                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone />
+                      {cat.code === 'ref' && /^cond_(hand|trash|security|security_faceup|security_facedown|last_action)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
+                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone title={/^cond_last_action_/.test(c.base) ? '属性で絞り込む（直前の効果で処理したカードのうち、この条件に合う枚数で判定）' : undefined} />
                       )}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>

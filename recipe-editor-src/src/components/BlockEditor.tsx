@@ -11441,13 +11441,19 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
 
 // 色〔同じ色〕（cond_color_same）の値: 「このカードと同じ色」= 'self'、「自分のデジモンと同じ色」= 'own_digimon'、
 // 種類を複数選ぶとカンマ区切り（'own_digimon,own_tamer'）。種類を選ばない 自分/相手 は 'own' / 'opp'（カードの種類を問わない）。
-// 対象の色と、そのカードのどれか1枚の色が1色でも同じなら当てはまる（P-206「エリアの自分のデジモンと同じ色のテイマーカード」）
+// 対象の色と、そのカードのどれか1枚の色が1色でも同じなら当てはまる（P-206「エリアの自分のデジモンと同じ色のテイマーカード」）。
+// 「育成エリア含む」（「エリアの〜」）は末尾に 'breed' を付ける（'own_digimon,breed'）
 const COLOR_SAME_TYPES = [{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }, { code: 'option', label: 'オプション' }];
 function ColorSameEditor({ value, onChange, accent }: { value?: string; onChange: (v: string) => void; accent: string }) {
-  const parts = String(value || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const all = String(value || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const breed = all.includes('breed');
+  const parts = all.filter((x) => x !== 'breed');
   const side = parts[0] === 'self' ? 'self' : (parts[0] || '').startsWith('opp') ? 'opp' : parts.length > 0 ? 'own' : '';
   const types = parts.map((x) => x.replace(/^(own|opp)_?/, '')).filter((t) => COLOR_SAME_TYPES.some((o) => o.code === t));
-  const build = (sd: string, ts: string[]) => (sd === 'self' ? 'self' : !sd ? '' : ts.length === 0 ? sd : COLOR_SAME_TYPES.map((o) => o.code).filter((t) => ts.includes(t)).map((t) => sd + '_' + t).join(','));
+  const build = (sd: string, ts: string[], br: boolean = breed) => {
+    const base = sd === 'self' ? 'self' : !sd ? '' : ts.length === 0 ? sd : COLOR_SAME_TYPES.map((o) => o.code).filter((t) => ts.includes(t)).map((t) => sd + '_' + t).join(',');
+    return base && br && sd !== 'self' ? base + ',breed' : base;
+  };
   return (
     <div style={{ display: 'grid', gap: 4 }}>
       <ButtonGroup
@@ -11464,8 +11470,14 @@ function ColorSameEditor({ value, onChange, accent }: { value?: string; onChange
           accentColor={accent}
         />
       )}
+      {(side === 'own' || side === 'opp') && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555' }}>
+          <input type="checkbox" checked={breed} onChange={(e) => onChange(build(side, types, e.target.checked))} />
+          育成エリア含む（「エリアの〜」）
+        </label>
+      )}
       <div style={{ fontSize: 10, color: '#666' }}>
-        {side === 'self' ? 'このカードと1色でも同じ色' : side ? (side === 'own' ? '自分' : '相手') + 'の' + (types.length ? types.map((t) => COLOR_SAME_TYPES.find((o) => o.code === t)!.label).join('/') : 'カード') + 'のどれかと1色でも同じ色' : '誰と同じ色か選んでください'}
+        {side === 'self' ? 'このカードと1色でも同じ色' : side ? (breed ? 'エリアの' : '') + (side === 'own' ? '自分' : '相手') + 'の' + (types.length ? types.map((t) => COLOR_SAME_TYPES.find((o) => o.code === t)!.label).join('/') : 'カード') + 'のどれかと1色でも同じ色' : '誰と同じ色か選んでください'}
         <span style={{ color: '#c62828' }}>　⚠ エンジン未対応</span>
       </div>
     </div>

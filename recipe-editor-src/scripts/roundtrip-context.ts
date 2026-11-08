@@ -157,6 +157,7 @@ const cases: Case[] = [
   { name: '取得元: 自分のデジモンと同じ色のテイマー', blocks: [base({ action: 'summon', value: -4, target: 'own_tamer:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_color_same', value: 'own_digimon' }] })], check: ['0.fromFilter'], raw: (r: any) => J(r).includes('"color_same_as":"own_digimon"') },
   { name: '取得元: 自分のデジモン/テイマーと同じ色', blocks: [base({ action: 'summon', value: -4, target: 'own_tamer:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_color_same', value: 'own_digimon,own_tamer' }] })], check: ['0.fromFilter'] },
   { name: '対象の条件: このカードと同じ色', blocks: [base({ action: 'destroy', target: 'opponent:1', conditions: [{ base: 'cond_color_same', value: 'self' }] })], check: ['0.conditions'] },
+  { name: '取得元: エリアの自分のデジモンと同じ色', blocks: [base({ action: 'summon', value: -4, target: 'own_tamer:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_color_same', value: 'own_digimon,breed' }] })], check: ['0.fromFilter'], raw: (r: any) => J(r).includes('"color_same_as":"own_digimon,breed"') },
 ];
 
 let ng = 0;

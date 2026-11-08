@@ -4378,10 +4378,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       const a = altActions[k];
       const autoCant = !!a && a.target === 'same_target' && !a.thenBreak && !!CANT_TO_DOABLE_LIVE[a.action || ''];
       if (!a || a.thenBreak || !(a.bundle || autoCant)) break;
+      // 効果1が対象を取らない（ドロー等）のに対象が要る効果（破棄等）は、効果1にまとめず効果2のタブに出す（対象を選べるように）
+      if (bundleNeedsOwnTarget(block.action, a.action)) break;
       k++;
     }
     return k;
   })();
+  // 効果1が対象を取らないアクション（ドロー・メモリー等）で、追加するアクションは対象が要る
+  // （「1ドローし、自分の手札を1枚破棄する」）。「そのデジモン」にまとめると対象が選べないので別タブにする
+  function bundleNeedsOwnTarget(primary: string | undefined, code: string | undefined): boolean {
+    return !!primary && !!code && BUNDLE_VALUE_ONLY.has(primary) && !BUNDLE_VALUE_ONLY.has(code);
+  }
   function updateAltAction(i: number, patch: Partial<AltAction>) {
     const next = altActions.slice();
     next[i] = { ...next[i], ...patch };
@@ -7011,6 +7018,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const bundleMatches = (a: AltAction, code: string) => a.action === code || CANT_TO_DOABLE_LIVE[a.action || ''] === code;
           const bundleBlocked = !isEditingAlt && altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
           function addBundleAction(code: string) {
+            if (bundleNeedsOwnTarget(block.action, code)) {
+              // 効果2（AND）として追加し、そのタブを開く（対象は自分で選ぶ）
+              const na: AltAction = { action: code, value: '', target: '', conditions: [], options: [], fromZones: [] };
+              const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
+              onChange({ ...block, altActions: next, altActionsOp: 'and' });
+              setEditingEffect(leadBundleCount + 1);
+              return;
+            }
             const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
             const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
             onChange({ ...block, altActions: next, altActionsOp: 'and' });

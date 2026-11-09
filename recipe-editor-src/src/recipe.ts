@@ -2965,6 +2965,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     value: true,
     keyword: true,
     revert_at_turn_end: true,
+    at_turn_end: true,
     source_type: true,
     cost_free: true,
     ignore_evolve_condition: true,

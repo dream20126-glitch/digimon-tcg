@@ -255,7 +255,11 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     }
     (sc.tamerArea || []).forEach(name => {
       const card = findCardByName(name);
-      if (card) target.tamerArea.push(card);
+      if (!card) return;
+      // テイマー欄に置いたオプションは「バトルエリアに置かれたオプション」として扱う（【メイン】【ディレイ】を
+      // 長押しメニューから使えるように。置かれたターンの制限は無し＝最初のターンから使える）
+      if (card.type === 'オプション') card._placedInBattleArea = true;
+      target.tamerArea.push(card);
     });
     // 育成エリア（1体・進化元スタック対応）
     if (sc.ikusei) {

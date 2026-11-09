@@ -1536,6 +1536,13 @@ function executeQueueEntry(entry, context, callback0) {
     return;
   }
 
+  // バトルエリアに置かれたオプションの【メイン】【ディレイ】は、長押しメニューの「⚡ 効果」を押したこと自体が
+  // 使う選択なので、「効果を発動しますか？」「【ディレイ】しますか？」を出さない（レッド・メモリーブースト‼ P-035）
+  if (block.trigger && block.trigger.code === 'main' && card && card.type === 'オプション' && card._placedInBattleArea && actualSide === 'player') {
+    context.alreadyConfirmed = true;
+    ctx._effectConfirmed = true;
+  }
+
   // 強制効果 or 既に確認済み → 即実行
   if (context.alreadyConfirmed && block.isOptional) ctx._effectConfirmed = true;
   if (!block.isOptional || context.alreadyConfirmed) {

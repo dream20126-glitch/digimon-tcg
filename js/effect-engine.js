@@ -1541,6 +1541,12 @@ function executeQueueEntry(entry, context, callback0) {
   if (block.trigger && block.trigger.code === 'main' && card && card.type === 'オプション' && card._placedInBattleArea && actualSide === 'player') {
     context.alreadyConfirmed = true;
     ctx._effectConfirmed = true;
+    // 確認は出さないが、何の効果を発揮したかは効果発動のポップアップ（自分・相手の両画面）で見せる
+    // （ディレイの段落「【メイン】【ディレイ】メモリーを+2する。」。ユーザー指摘 2026-11-09）
+    const _dlStep = Array.isArray(_recipeStepsForLookup) ? _recipeStepsForLookup.find(st => st && st.action === 'delay') : null;
+    const _dlText = (_dlStep && _dlStep.display_text) || displayEffText;
+    showEffectAnnounce(card, _dlText, actualSide, () => runEffectNow(callback));
+    return;
   }
 
   // 強制効果 or 既に確認済み → 即実行

@@ -7220,7 +7220,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           />
                           🌙 ターン終了時に実行
                         </label>
-                        {on && (['opp', 'own', 'both'] as const).map(w => (
+                        {on && (['both', 'own', 'opp'] as const).map(w => (
                           <button
                             key={w}
                             type="button"
@@ -7228,7 +7228,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             title={w === 'both' ? '次に来るターン終了時（このターン終了時）' : w === 'own' ? '自分のターン終了時' : '相手のターン終了時'}
                             style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, cursor: 'pointer', border: '1px solid ' + (whose === w ? '#9333ea' : '#ccc'), background: whose === w ? '#9333ea' : '#fff', color: whose === w ? '#fff' : '#555', fontWeight: whose === w ? 'bold' : 'normal' }}
                           >
-                            {w === 'opp' ? '相手' : w === 'own' ? '自分' : 'お互い'}
+                            {w === 'opp' ? '相手' : w === 'own' ? '自分' : 'このターン'}
                           </button>
                         ))}
                       </span>

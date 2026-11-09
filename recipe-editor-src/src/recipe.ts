@@ -677,6 +677,12 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
       const kwEntry = keywordDict && entries[0].keyword ? keywordDict.find((k) => k.code === entries[0].keyword) : undefined;
       applyDesignatedGroupsTo(out, entries[0], kwEntry);
       out.keyword = entries.map((entry) => entry.keyword).join(',');
+      // 2つ目以降のキーワードに入れた数値（「【貫通】と【Sアタック+1】を得る」の 1）も保存する。
+      // 以前は1つ目の数値しか見ておらず、2つ目以降の数値は保存で消えていた（P-203）
+      if (out.value === undefined) {
+        const valued = entries.find((entry) => entry.value !== undefined && entry.value !== '' && entry.value !== null);
+        if (valued) { const n = Number(valued.value); out.value = isNaN(n) ? valued.value : n; }
+      }
     }
   } else if (out.action === 'grant_effect' && Array.isArray(a.grantedBlocks) && a.grantedBlocks.length > 0) {
     // 独自の効果を付与（カードの効果と同じ画面で組んだ効果ブロック）
@@ -2548,6 +2554,20 @@ function stepToBlockWithTiming(
 // 同じセグメントの後続項目（thenBreakなし）としてそのまま続けて吸収する
 // 以前の保存形（1体選択の複数キーワードを「2つ目以降は same_target の別 step」に分けたもの）を、読込時に1つの step（カンマ区切り）へ戻す。
 // 対象の絞り込み・値が無い単純なキーワードで、キーワード・対象以外が同じ step だけ（P-159「再起動」＋「ブロッカー」＋DP+2000）
+// カンマ区切りの複数キーワード（"penetrate,security_attack_plus"）を keywordEntries に戻す。
+// step の数値は、2つ目以降の数値を持つキーワード（Sアタック± 等）の欄に出す（1つ目の数値は今までどおり）。
+// 1つ目以外の欄に出しても、保存では out.value として同じ値に戻る
+const VALUE_KEYWORD_RE = /^(security_attack_(plus|minus)|assembly|digixros|overflow|partition)$/;
+function splitKeywordEntries(kw: any, value: any): KeywordEntry[] {
+  const list: KeywordEntry[] = String(kw).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }));
+  if (value !== undefined && value !== '' && value !== null && list.length > 0) {
+    const idx = list.findIndex((e) => VALUE_KEYWORD_RE.test(String(e.keyword)));
+    const n = Number(value);
+    if (idx > 0) list[idx] = { ...list[idx], value: isNaN(n) ? value : n };
+  }
+  return list;
+}
+
 function mergeSplitKeywordSteps(arr: any[]): any[] {
   const isKw = (x: any) => x && (x.action === 'grant_keyword' || x.action === 'grant_keyword_to');
   const isSimple = (x: any) => !x.designated && !x.designated_groups && !x.designated_common && (x.value === undefined || x.value === '' || x.value === null);
@@ -2642,7 +2662,7 @@ function stepObjectToAltAction(step: any): AltAction {
     byCauseSubject: step?.by_cause_subject ? String(step.by_cause_subject) : undefined,
     keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
     keywordEntries: String(step?.keyword || '').includes(',')
-      ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+      ? splitKeywordEntries(step.keyword, step.value)
       : undefined,
     keywordCount: _altSingleGroup ? _altSingleGroup.count : undefined,
     keywordParamConditions: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditions : undefined,
@@ -3150,7 +3170,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     // 個別に編集できるようにするため）。単一キーワードのときはkeywordのみで従来通り
     keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
     keywordEntries: String(step?.keyword || '').includes(',')
-      ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+      ? splitKeywordEntries(step.keyword, step.value)
       : undefined,
     // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元。
     // step.materialsが無く、step.names（進化可能判定専用のフラット配列）だけがある場合も、
@@ -3294,7 +3314,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             byCauseSubject: a?.by_cause_subject ? String(a.by_cause_subject) : undefined,
             keyword: String(a?.keyword || '').includes(',') ? '' : (a?.keyword || ''),
             keywordEntries: String(a?.keyword || '').includes(',')
-              ? String(a.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+              ? splitKeywordEntries(a.keyword, a.value)
               : undefined,
             keywordCount: _aaSingleGroup ? _aaSingleGroup.count : undefined,
             keywordParamConditions: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditions : undefined,

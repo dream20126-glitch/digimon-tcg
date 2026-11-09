@@ -162,6 +162,7 @@ const cases: Case[] = [
   { name: '「シードラモン」の記述がある自分のデジモン1体のLv.以下', blocks: [base({ action: 'return_deck', target: 'opponent:1', targetFilter: [{ base: 'cond_lv_le', value: 'own_pick_lv' }, { base: 'cond_description_contains', value: 'シードラモン', subject: '__lv_ref_filter__' }] })], check: ['0.targetFilter'], raw: (r: any) => J(r).includes('"lv_le":"own_pick_lv"') && J(r).includes('"lv_ref_filter":{"description_contains":"シードラモン"}') },
   { name: '相手のデジモンのLv.以上（参照・絞り込みなし）', blocks: [base({ action: 'destroy', target: 'opponent:1', targetFilter: [{ base: 'cond_lv_ge', value: 'opp_lv' }] })], check: ['0.targetFilter'] },
   { name: 'セキュリティから表向きのデジモンを登場', blocks: [base({ action: 'summon', target: 'own:1', fromZones: ['security'], costFree: true, fromFilter: [{ base: 'cond_feature', value: 'ダークマスターズ' }, { base: 'cond_face_up' }] })], check: ['0.fromFilter', '0.fromZones'], raw: (r: any) => J(r).includes('"face_up":true') },
+  { name: '効果2のキーワード付与（2つ目の数値）', blocks: [base({ altActionsOp: 'and', altActions: [alt({ action: 'grant_keyword', target: 'self_card', keyword: 'penetrate', keywordEntries: [{ keyword: 'penetrate' }, { keyword: 'security_attack_plus', value: 1 }] })] })], check: ['0.altActions.0.keywordEntries'] },
 ];
 
 let ng = 0;

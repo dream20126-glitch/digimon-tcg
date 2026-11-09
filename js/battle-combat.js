@@ -2573,13 +2573,14 @@ if (typeof window !== 'undefined') {
 export function startAttack(card, slotIdx, callback) {
   // ≪進撃≫: メモリーが相手側のとき（bs.memory < 0）でも進撃持ちならアタック可（公式ルール 18-16）
   var chargeAllowed = card && hasCharge(card) && bs.memory < 0;
-  if (bs.phase !== 'main' && !chargeAllowed) { callback && callback(false); return false; }
+  // 宣言できないときは理由をログに出す（以前は何も出ず、対象を選んでもアタックが始まらない理由が分からなかった）
+  if (bs.phase !== 'main' && !chargeAllowed) { addLog('🚨 アタックできません（メインフェイズではありません: ' + bs.phase + '）'); callback && callback(false); return false; }
   if (!card) { callback && callback(false); return false; }
-  if (_attackInProgress) { callback && callback(false); return false; }
+  if (_attackInProgress) { addLog('🚨 アタックできません（前のアタックの処理が終わっていません）'); console.warn('[startAttack] _attackInProgress が残っています', { atkState: _atkState && _atkState.card && _atkState.card.name, resolving: bs._attackResolving }); callback && callback(false); return false; }
   if (chargeAllowed) addLog('⚔ 【進撃】「' + card.name + '」がメモリー相手側でアタック宣言');
   // アタック宣言でレストする（長押しメニューを開いただけではレストしない）
   // 公式ルール1194: レストさせることができないデジモンはアタック宣言ができない
-  if (card.cantAttack || card.cantRest) { callback && callback(false); return false; }
+  if (card.cantAttack || card.cantRest) { addLog('🚨 「' + card.name + '」はアタックできません（' + (card.cantAttack ? 'アタックできない効果' : 'レストできない効果') + '）'); callback && callback(false); return false; }
 
   // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
   // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）

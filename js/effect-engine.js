@@ -20210,10 +20210,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (need === 1) {
           onSelectComplete(selectedCards ? [selectedCards] : null);
         } else {
-          // 複数枚選択のため自前ループ
-          const picked = [];
-          const remaining = carrier.stack.slice();
-          let r = 0;
+          // 複数枚選択のため自前ループ。最初の画面で選んだ1枚目もそのまま使う
+          // （以前は1枚目を捨てて最初から選び直させていたため、デジバースト2で選ぶ画面が3回出ていた）
+          if (!selectedCards) { onSelectComplete(null); return; }
+          const picked = [selectedCards];
+          const remaining = carrier.stack.filter((c) => c !== selectedCards);
+          let r = 1;
           function pickNext() {
             if (r >= need) { onSelectComplete(picked); return; }
             if (remaining.length === 0) { onSelectComplete(null); return; }

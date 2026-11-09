@@ -474,7 +474,15 @@ function _hasReboot(c) {
   return false;
 }
 
+// 自分のターンの始まりに、バトルエリアに置かれたオプションの「置かれたターン」の印を外す（≪ディレイ≫は置かれたターンには
+// 使えない。公式 16-17-3）。以前はターン数（bs.turn）で比べていたが、オンラインでは bs.turn が増えないため、
+// 次の自分のターンになっても「置かれたターン」のままで【メイン】【ディレイ】を使えなかった（レッド・メモリーブースト‼ P-035）
+function _clearPlacedTurnMarks(player) {
+  [...(player.tamerArea || []), ...(player.battleArea || [])].forEach(c => { if (c && c._placedTurnKey) delete c._placedTurnKey; });
+}
+
 function execUnsuspend() {
+  _clearPlacedTurnMarks(bs.player);
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
   // 育成エリアのデジモンも対象（【トレーニング】は育成エリアでもレストする）
@@ -1040,6 +1048,7 @@ function setOppPhase(phase) { bs._oppPhase = phase; updatePhaseBadge(); }
 // ----- AI アクティブフェイズ -----
 
 function aiPhaseUnsuspend() {
+  _clearPlacedTurnMarks(bs.ai);
   setOppPhase('unsuspend');
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}

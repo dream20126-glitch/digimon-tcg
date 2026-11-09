@@ -17740,7 +17740,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _delayTIdx = (_delayIdx === -1 && _delayCard) ? (player.tamerArea || []).indexOf(_delayCard) : -1;
       if (_delayIdx === -1 && _delayTIdx === -1) { callback(false); return; }
       // ≪ディレイ≫は、その効果を持つカードがバトルエリアに置かれたターンには発揮できない（公式ルール 16-17-3）
-      if (_delayCard && _delayCard._placedTurnKey && ctx.bs && _delayCard._placedTurnKey === (ctx.bs.turn + ':' + !!ctx.bs.isPlayerTurn)) {
+      if (_delayCard && _delayCard._placedTurnKey) {
         ctx.addLog && ctx.addLog('💨 「' + _delayCard.name + '」はバトルエリアに置かれたターンなので【ディレイ】できない');
         callback(false);
         return;
@@ -21995,7 +21995,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (!player.tamerArea) player.tamerArea = [];
       player.tamerArea.push(_pibCard);
       _pibCard._placedInBattleArea = true;
-      // ≪ディレイ≫は置かれたターンには発揮できない（公式ルール 16-17-3）ための印
+      // ≪ディレイ≫は置かれたターンには発揮できない（公式ルール 16-17-3）ための印。持ち主の次のターンの始まり
+      // （battle-phase.js _clearPlacedTurnMarks）で外す
       _pibCard._placedTurnKey = ctx.bs ? (ctx.bs.turn + ':' + !!ctx.bs.isPlayerTurn) : null;
       _pibCard.suspended = false;
       _pibCard.summonedThisTurn = true;
@@ -24354,7 +24355,7 @@ export function mainEffectButtonState(card) {
 // バトルエリアに置かれたオプションの【メイン】（【メイン】【ディレイ】）が今使えるか。置かれたターンは使えない
 export function placedOptionMainUsable(card, bs) {
   if (!card || card.type !== 'オプション' || !card._placedInBattleArea || !bs) return false;
-  if (card._placedTurnKey && card._placedTurnKey === (bs.turn + ':' + !!bs.isPlayerTurn)) return false;
+  if (card._placedTurnKey) return false; // 置かれたターン（持ち主の次のターンの始まりで外れる）
   return hasOwnMainEffect(card);
 }
 

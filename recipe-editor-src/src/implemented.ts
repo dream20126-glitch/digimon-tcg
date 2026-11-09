@@ -5,6 +5,8 @@
 // 更新方法: js/effect-engine.js の switch case を grep して反映:
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
+  // 2026-11-09: 効果でアプ合体（P-240）
+  'App_Fusion', 'app_fusion',
   // 2026-11-02: アタックされない（P-051）・手札のオープン
   'cant_be_attacked', 'hand_open',
   // 2026-10-31 LM弾の対応
@@ -84,6 +86,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
 // 新キーワードを passive として追加 → 既存と同じ動作なら flag 名を一致させる
 // 完全新規キーワード = Claude に実装依頼
 export const IMPLEMENTED_KEYWORDS = new Set<string>([
+  // 2026-11-09: パーティション（P-221）
+  'partition',
   'alt_use_color', 'ice_armor',
   'blocker', 'penetrate', 'piercing', 'rush', 'jamming', 'reboot',
   'michizure', 'armor_break', 'evade', 'barrier', 'indomitable',
@@ -106,6 +110,9 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
 // エンジンで実装済の条件コード
 // 更新方法: grep -E "case 'cond_[a-z_]+'" effect-engine.js
 export const IMPLEMENTED_CONDITIONS = new Set<string>([
+  // 2026-11-09: 育成エリア含む（P-205/P-225）・この効果で〜を破棄したなら（P-212）
+  'cond_include_breed',
+  'cond_last_action_match_ge', 'cond_last_action_match_le', 'cond_last_action_match_eq', 'cond_last_action_match_gt', 'cond_last_action_match_lt',
   'cond_picked_type', 'cond_not_exists', 'cond_has_keyword', 'cond_color_count', 'cond_dp_sum_le', 'cond_lv_sum_le', 'cond_cost_sum_le',
   'cond_assembly_eligible', 'cond_attack_target_digimon', 'cond_battle_win',
   'cond_color', 'cond_color_not', 'cond_cost_ge', 'cond_cost_le',

@@ -5952,7 +5952,7 @@ const _numOrNull = (v) => { const n = parseInt(v, 10); return Number.isFinite(n)
 const _LV_REF_KEYS = ['lv_le', 'lv_ge', 'lv'];
 const _COST_REF_KEYS = ['cost_le', 'cost_ge', 'cost'];
 const _DP_REF_KEYS = ['dp_le', 'dp_ge', 'dp'];
-function _filterRefMarkerValue(key, marker, bs, side, src, snapshotOnly) {
+function _filterRefMarkerValue(key, marker, bs, side, src, snapshotOnly, whole) {
   const m = String(marker);
   const own = bs && side ? bs[side] : null;
   const opp = bs && side ? bs[side === 'player' ? 'ai' : 'player'] : null;
@@ -5966,6 +5966,19 @@ function _filterRefMarkerValue(key, marker, bs, side, src, snapshotOnly) {
     if (m === 'own_security_count') return own ? (own.security || []).length : undefined;
     if (m === 'opp_security_count') return opp ? (opp.security || []).length : undefined;
     if (m === 'self_lv') return src ? _numOrNull(src.level) : undefined;
+    // 自分の／相手のデジモン（1体）の Lv.（own_lv・own_pick_lv・opp_lv・opp_pick_lv。filter.lv_ref_filter で比べるデジモンを絞る。
+    // ベタモンX抗体 P-214「『シードラモン』の記述がある自分のデジモン1体のLv.以下の相手のデジモン」）。
+    // 「1体を選んでそのLv.以下」は、選べるデジモンのうち最も高い Lv.以下と同じ（以上なら最も低い Lv.以上）
+    const _plm = /^(own|opp)_(?:pick_)?lv$/.exec(m);
+    if (_plm) {
+      const P = _plm[1] === 'own' ? own : opp;
+      if (!P) return undefined;
+      const rf = (whole && whole.lv_ref_filter && typeof whole.lv_ref_filter === 'object') ? whole.lv_ref_filter : null;
+      const lvs = (P.battleArea || []).filter(c => c && String(c.type || '') === 'デジモン' && c !== src
+        && (!rf || cardMatchesFilter(c, rf, bs, side, src))).map(c => _numOrNull(c.level)).filter(v => v != null);
+      if (lvs.length === 0) return null;
+      return /_ge$|_gt$/.test(key) ? Math.min(...lvs) : Math.max(...lvs);
+    }
     return undefined;
   }
   if (_COST_REF_KEYS.includes(key)) {
@@ -5986,7 +5999,7 @@ function _resolveFilterRefMarkers(filter, bs, side, src, snapshotOnly, deep) {
   const keys = _LV_REF_KEYS.concat(_COST_REF_KEYS, _DP_REF_KEYS);
   for (const k of keys) {
     if (typeof filter[k] !== 'string' || /^\d+$/.test(filter[k])) continue;
-    const v = _filterRefMarkerValue(k, filter[k], bs, side, src, snapshotOnly);
+    const v = _filterRefMarkerValue(k, filter[k], bs, side, src, snapshotOnly, filter);
     if (v === undefined) continue;
     if (!out) out = Object.assign({}, filter);
     // 参照先が無いとき: 以下/ちょうど は -1、以上 は最大値（どのカードも当てはまらない）
@@ -6049,6 +6062,41 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (filter.same_name_as_self) {
     if (!card || !sourceCard || !sourceCard.name) return false;
     if (card.name !== sourceCard.name && !cardHasName(card, sourceCard.name, true)) return false;
+  }
+  // filter.color_same_as:「〜と同じ色の」（デジタルゲートオープン P-206「エリアの自分のデジモンと同じ色のテイマーカード」）。
+  // 値: 'self'＝このカード / 'own'・'opp'・'both'＝そちらのデジモン / 'own_digimon,own_tamer' 等の並び。
+  // 末尾 ',breed' で育成エリアも含める。比べる先のどれか1枚と1色でも同じ色ならOK
+  if (filter.color_same_as) {
+    if (!card) return false;
+    const _csParts = String(filter.color_same_as).split(',').map(x => x.trim()).filter(Boolean);
+    const _csBreed = _csParts.includes('breed');
+    const _csCols = (c) => String((c && c.color) || '').split(/[\/,、・／]/).map(x => x.trim()).filter(Boolean);
+    const _csRefs = [];
+    const _csSideOf = (w) => (w === 'own' ? side : (side === 'player' ? 'ai' : 'player'));
+    _csParts.filter(x => x !== 'breed').forEach((x) => {
+      if (x === 'self') { if (sourceCard) _csRefs.push(sourceCard); return; }
+      const m = /^(own|opp|opponent|both)(?:_(digimon|tamer|option|card))?$/.exec(x);
+      if (!m || !bs) return;
+      const who = m[1] === 'opponent' ? 'opp' : m[1];
+      const kind = m[2] || 'digimon';
+      (who === 'both' ? ['own', 'opp'] : [who]).forEach((w) => {
+        const P = bs[_csSideOf(w)];
+        if (!P) return;
+        const pool = [...(P.battleArea || []), ...(P.tamerArea || [])];
+        if (_csBreed && P.ikusei) pool.push(P.ikusei);
+        pool.forEach((c) => {
+          if (!c || c === card) return;
+          const t = String(c.type || '');
+          if (kind === 'digimon' && t !== 'デジモン') return;
+          if (kind === 'tamer' && t !== 'テイマー') return;
+          if (kind === 'option' && t !== 'オプション') return;
+          if (kind === 'card' && t !== 'デジモン' && t !== 'テイマー') return;
+          _csRefs.push(c);
+        });
+      });
+    });
+    const _csMine = _csCols(card);
+    if (!_csRefs.some(r => _csCols(r).some(col => _csMine.includes(col)))) return false;
   }
   // filter.cost_kind: 'play'＝登場コストを持つカード（デジモン/テイマー）/ 'use'＝使用コストを持つカード（オプション）
   if ((filter.cost_kind === 'play' || filter.cost_kind === 'use') && !_costKindMatches(card, filter.cost_kind)) return false;
@@ -8710,12 +8758,12 @@ const _SUBJECT_EXISTS_RE = /^(own|opp|opponent)(_tamer|_card|_digimon|_any)?$/;
 // cond_evo_exists:N@self＝「このデジモンの進化元に『〇〇』がN枚以上ある」（P-008/P-010）、
 // cond_{hand|trash}_match_{ge|le|eq|gt|lt}:N@subject＝「トラッシュに〜なカードがN枚以上ある」（P-034）
 // セキュリティも同じ形（cond_security[_faceup|_facedown]_match_*。プクモン P-171「自分の表向きのセキュリティに『ディープセイバーズ』があるなら」）
-const _ZONE_MATCH_RE = /^cond_(hand|trash|security|security_faceup|security_facedown)_match_(ge|le|eq|gt|lt)$/;
+const _ZONE_MATCH_RE = /^cond_(hand|trash|security|security_faceup|security_facedown|last_action)_match_(ge|le|eq|gt|lt)$/;
 const _EXISTS_META_CODES = new Set(['cond_exists', 'cond_not_exists', 'cond_evo_exists',
   'cond_evo_match_le', 'cond_evo_match_eq', 'cond_evo_match_gt', 'cond_evo_match_lt',
   'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
   'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt',
-  ...['security', 'security_faceup', 'security_facedown'].flatMap((z) => ['ge', 'le', 'eq', 'gt', 'lt'].map((q) => 'cond_' + z + '_match_' + q))]);
+  ...['security', 'security_faceup', 'security_facedown', 'last_action'].flatMap((z) => ['ge', 'le', 'eq', 'gt', 'lt'].map((q) => 'cond_' + z + '_match_' + q))]);
 // 兄弟の属性条件をカード c に当てはめる（cond_evo_exists / cond_*_match 用。陣営の subject は外して評価）
 function _cardMatchesSiblingConds(c, otherConds, bs, cardSide) {
   if (!c) return false;
@@ -9425,12 +9473,15 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_trash_match_ge': case 'cond_trash_match_le': case 'cond_trash_match_eq': case 'cond_trash_match_gt': case 'cond_trash_match_lt':
       case 'cond_security_match_ge': case 'cond_security_match_le': case 'cond_security_match_eq': case 'cond_security_match_gt': case 'cond_security_match_lt':
       case 'cond_security_faceup_match_ge': case 'cond_security_faceup_match_le': case 'cond_security_faceup_match_eq': case 'cond_security_faceup_match_gt': case 'cond_security_faceup_match_lt':
-      case 'cond_security_facedown_match_ge': case 'cond_security_facedown_match_le': case 'cond_security_facedown_match_eq': case 'cond_security_facedown_match_gt': case 'cond_security_facedown_match_lt': {
+      case 'cond_security_facedown_match_ge': case 'cond_security_facedown_match_le': case 'cond_security_facedown_match_eq': case 'cond_security_facedown_match_gt': case 'cond_security_facedown_match_lt':
+      // 「この効果で〜を破棄したなら」等（直前の効果で処理したカード bs._lastActionCards のうち兄弟の条件に合う枚数。城木明日奈 P-212）
+      case 'cond_last_action_match_ge': case 'cond_last_action_match_le': case 'cond_last_action_match_eq': case 'cond_last_action_match_gt': case 'cond_last_action_match_lt': {
         if (!bs) return true;
         const _m = _ZONE_MATCH_RE.exec(cond.code);
         const _ts = resolveSubjectSide(cond.subject, side);
         const _isSec = _m[1].startsWith('security');
-        let _zone = (bs[_ts] && bs[_ts][_isSec ? 'security' : _m[1]]) || [];
+        let _zone = _m[1] === 'last_action' ? (Array.isArray(bs._lastActionCards) ? bs._lastActionCards.filter(Boolean) : [])
+          : ((bs[_ts] && bs[_ts][_isSec ? 'security' : _m[1]]) || []);
         // セキュリティの表向き/裏向き: コード（_faceup/_facedown）か兄弟の cond_face_up / cond_face_down で絞る
         if (_isSec) {
           const _fu = (c) => !!(c && (c._faceUp === true || c.faceUp === true));
@@ -9471,7 +9522,12 @@ function checkConditions(conditions, card, bs, side) {
         // （例: ウィザーモン「黄の自分のデジモンがいる間」= cond_exists@own）。
         if (!bs) break; // bsがない場合はスキップ（後方互換）
         const _existsNeg = cond.code === 'cond_not_exists';
-        const _existsSubj = String(cond.subject || 'opp').toLowerCase();
+        // 「エリアに」（育成エリアを含む。cond_include_breed の印。狂気の合成魔獣 P-205・デジラボ P-225）。
+        // 印の方に陣営（@own_card）が付いて保存されたレシピもあるので、cond_exists に陣営が無ければ印の陣営を使う
+        const _existsBreedMark = conditions.find(c => c && c.code === 'cond_include_breed');
+        const _existsSubj = String(cond.subject || (_existsBreedMark && _existsBreedMark.subject) || 'opp').toLowerCase();
+        // own_card / opp_card / both_card ＝デジモン／テイマー（オプションは含めない）
+        const _existsWantCard = /_card$/.test(_existsSubj);
         const _existsOwn = _existsSubj === 'own' || _existsSubj === 'own_any' || _existsSubj === 'own_card' || _existsSubj.startsWith('own_');
         // both / both_*：自分・相手どちらの場でもよい（「〜がいる間」で誰のと書かれていない。DIGIMON CON 2023 P-116）
         const _existsBoth = _existsSubj === 'both' || _existsSubj.startsWith('both_');
@@ -9483,15 +9539,19 @@ function checkConditions(conditions, card, bs, side) {
         // （tamerArea）も候補にする（LM-054「バトルエリアに自分の『トレッドミル・トレーニング』がない間」は
         // place_in_battle_area で tamerArea に置かれたオプションを探す）
         const _existsByName = !_existsWantTamer && otherConds.some(oc => oc.code === 'cond_name' || oc.code === 'cond_name_contains');
-        const _areaOf = (sd) => _existsWantTamer ? (bs[sd].tamerArea || [])
-          : _existsByName ? [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])]
-          : (bs[sd].battleArea || []);
+        const _areaOf = (sd) => {
+          const base = _existsWantTamer ? (bs[sd].tamerArea || [])
+            : (_existsByName || _existsWantCard) ? [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])]
+            : (bs[sd].battleArea || []);
+          return (_existsBreedMark && !_existsWantTamer && bs[sd].ikusei) ? [...base, bs[sd].ikusei] : base;
+        };
         const oppArea = _existsBoth ? [..._areaOf('player'), ..._areaOf('ai')] : _areaOf(oppSide);
         // cond_has_evo:self =「進化元枚数がこのデジモン以上」（このデジモン＝card の進化元枚数と比べる）
         const _selfEvoN = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
         const _matchOne = (otherConds) => oppArea.some(c => {
           if (!c) return false;
-          if (!_existsWantTamer && !_existsByName && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照・名称指定時は除く）
+          if (!_existsWantTamer && !_existsByName && !_existsWantCard && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照・名称指定時は除く）
+          if (_existsWantCard && !_existsByName && c.type !== 'デジモン' && c.type !== 'テイマー') return false; // デジモン／テイマー
           if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
           const _evalAttr = (oc) => {
             switch (oc.code) {
@@ -11485,6 +11545,18 @@ function _mergeDesignatedCommonJS(item, common) {
 function _expandDesignatedGroupsJS(step, groups, common, commonChain, mode) {
   if (!step || typeof step !== 'object') return step;
   const out = Object.assign({}, step);
+  // ステップ自身の条件が指定（cond_designated_name）で、指定が2組以上（【パーティション（黄Lv.6＆紫/黒Lv.6）】カオスモン P-221）:
+  // 組ごとの条件を partition_groups に入れる（進化元から登場させる処理が、各組1枚ずつそろうときだけ全部登場させる）
+  const _selfMarker = out.condition === 'cond_designated_name' || out.when === 'cond_designated_name'
+    || (Array.isArray(out.extra_conditions) && out.extra_conditions.includes('cond_designated_name'));
+  if (_selfMarker) {
+    delete out.condition; delete out.when; delete out.extra_conditions; delete out.condition_op;
+    out.partition_groups = groups.map((g) => {
+      const o = {};
+      ['condition', 'when', 'extra_conditions', 'condition_op', 'condition_chain'].forEach((k) => { if (g[k] !== undefined) o[k] = g[k]; });
+      return _mergeDesignatedCommonJS(o, common);
+    });
+  }
   if (Array.isArray(out.cost)) {
     const newCost = [];
     out.cost.forEach(c => {
@@ -11657,6 +11729,9 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
     // 避けるために出力する。参照先を1段だけ解決する（無限ループ防止のためネストは辿らない）
     const redirected = recipeObj[exact];
     if (Array.isArray(redirected)) result = redirected.slice();
+    // 【セキュリティ】で【メイン】と同じ効果（security:"main"）: 【メイン】の並びの【ディレイ】は、バトルエリアに置かれた後に
+    // 使う別の効果なので含めない（狂気の合成魔獣 P-205）
+    if (triggerCode === 'security' && exact === 'main' && Array.isArray(result)) result = result.filter(st => !(st && st.action === 'delay'));
   }
   const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
   if (aliasKey) {
@@ -11689,6 +11764,20 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
       const _add = _bl.filter((st) => st && ((st.block_role === 'blocked') === _wantBlocked));
       if (_add.length > 0) result = result ? result.concat(_add) : _add;
     }
+  }
+  // トリガー「進化元に置かれたとき」（evo_place。ユニークエンブレム：終焉の到達者 P-243「自分のデジモンの進化元に『ベムモン』が
+  // 効果で置かれた時」）は「進化元が増えたとき」（when_deck_increase ＋ zone_increase:evo_source）として拾う。
+  // trigger_conditions は置かれたカードで判定する
+  if (triggerCode === 'when_deck_increase') {
+    const _ep = [];
+    for (const key in recipeObj) {
+      if (!key.split(',').some((k) => k.trim() === 'evo_place')) continue;
+      if (key.split(',').some((k) => k.trim() === 'when_deck_increase')) continue; // 既に拾っている
+      (Array.isArray(recipeObj[key]) ? recipeObj[key] : []).forEach((st) => {
+        _ep.push(st && !st.zone_increase && !(Array.isArray(st.options) && st.options.includes('continue_on_fail')) ? Object.assign({}, st, { zone_increase: 'evo_source' }) : st);
+      });
+    }
+    if (_ep.length > 0) result = result ? result.concat(_ep) : _ep;
   }
   return result;
 }
@@ -12177,6 +12266,71 @@ function _fireBattleAreaSelfDiscard(cards, side, bs, ctxBase, done) {
       && (!st.cause || st.cause === 'effect'));
     if (steps.length === 0) { next(); return; }
     _runReactionEffect({ card: c, recipe: steps, sourceCard: c, triggerCode: 'discard' }, side, bs, ctxBase, next);
+  };
+  next();
+}
+// バトルエリアのオプションが効果で破棄されたとき、他のカードの「（自分の／相手の／）バトルエリアのオプションカードが
+// 破棄されたとき」（discard ＋ 発動主体 own_option / opp_option / both_option ＋ trigger_from:battle_area。
+// ジャスティモン：アクセルアーム P-203）を発揮する。discardedSide = 破棄されたオプションの持ち主。
+// オンラインでは自分の端末のカードだけ（相手の端末のカードへはまだ送らない）
+function _fireBattleAreaOptionDiscardOthers(cards, discardedSide, bs, ctxBase, done) {
+  const list = (cards || []).filter(Boolean);
+  if (!bs || list.length === 0) { done && done(); return; }
+  const filter = (step, reactSide, carrier) => {
+    if (!step) return false;
+    const tf = step.trigger_from;
+    const tfl = Array.isArray(tf) ? tf : (tf ? [tf] : []);
+    if (tfl.length > 0 && !tfl.includes('battle_area')) return false;
+    if (step.in_zone) return false;
+    if (step.cause && step.cause !== 'effect') return false;
+    return _resolveStepSubjectList(step, 'discard').some((subj) => {
+      const m = /^(own|opp|both|other_own|both_other)_option$/.exec(String(subj || ''));
+      if (!m) return false;
+      if (/other/.test(m[1]) && carrier && list.includes(carrier)) return false;
+      if (m[1] === 'both' || m[1] === 'both_other') return true;
+      return (m[1] === 'opp') ? reactSide !== discardedSide : reactSide === discardedSide;
+    });
+  };
+  const opts = { eventCards: list };
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  const sides = isOnline ? ['player'] : [bs.isPlayerTurn ? 'player' : 'ai', bs.isPlayerTurn ? 'ai' : 'player'];
+  let i = 0;
+  const next = () => {
+    if (i >= sides.length) { done && done(); return; }
+    _fireSidedReactionTriggers(sides[i++], 'discard', bs, ctxBase, next, filter, opts);
+  };
+  next();
+}
+// リンクカードが効果で破棄されたとき（discard ＋ 発動主体 own_linked / opp_linked / both_linked / self_linked。
+// 大空勇仁 P-233「自分のデジモンのリンクカードが効果で破棄されたとき」）。holder＝リンクしていたデジモン、holderSide＝その持ち主。
+// 原因は「効果」（cause:'effect' と cause_subject は破棄させた効果の側 bs._lastDestroyCause で判定）
+function _fireLinkedDiscardTriggers(cards, holder, holderSide, bs, ctxBase, done) {
+  const list = (cards || []).filter(Boolean);
+  if (!bs || list.length === 0) { done && done(); return; }
+  const filter = (step, reactSide, carrier) => {
+    if (!step || step.in_zone) return false;
+    const tf = step.trigger_from;
+    const tfl = Array.isArray(tf) ? tf : (tf ? [tf] : []);
+    if (tfl.length > 0 && !tfl.some((z) => z === 'linked' || z === 'battle_area')) return false;
+    return _resolveStepSubjectList(step, 'discard').some((subj) => {
+      const m = /^(own|opp|both|self|other_own)_linked$/.exec(String(subj || ''));
+      if (!m) return false;
+      if (m[1] === 'self') return carrier === holder;
+      if (m[1] === 'other_own') return reactSide === holderSide && carrier !== holder;
+      if (m[1] === 'both') return true;
+      return (m[1] === 'opp') ? reactSide !== holderSide : reactSide === holderSide;
+    });
+  };
+  const opts = { eventCards: list };
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  const sides = isOnline ? ['player'] : [bs.isPlayerTurn ? 'player' : 'ai', bs.isPlayerTurn ? 'ai' : 'player'];
+  const causerSide = (ctxBase && ctxBase.side) || holderSide;
+  const prevCause = bs._lastDestroyCause;
+  bs._lastDestroyCause = { type: 'effect', causerSide, causerCard: ctxBase && ctxBase.card };
+  let i = 0;
+  const next = () => {
+    if (i >= sides.length) { bs._lastDestroyCause = prevCause; done && done(); return; }
+    _fireSidedReactionTriggers(sides[i++], 'discard', bs, ctxBase, next, filter, opts);
   };
   next();
 }
@@ -13915,7 +14069,7 @@ function _runHandDiscardForSide(handSide, spec, ctx, done) {
     if (!picked) { ctx.addLog && ctx.addLog('☓ 手札を破棄しなかった'); done({ count: 0, declined: true }); return; }
     _moveHandCardsToTrash(handSide, picked, ctx, () => {
       if (picked.length > 0) _enqueueHandDiscardTriggers(ctx, handSide, null, picked);
-      done({ count: picked.length });
+      done({ count: picked.length, cards: picked.slice() });
     });
   }, title, !!spec.upTo && handSide === ctx.side);
 }
@@ -17123,8 +17277,14 @@ function executeRecipeStep(step, ctx, store, callback) {
     const _delayed = Object.assign({}, step);
     delete _delayed.at_turn_end; delete _delayed.limit; delete _delayed.display_text; delete _delayed.display_same;
     if (!Array.isArray(ctx.bs._turnEndDelayed)) ctx.bs._turnEndDelayed = [];
-    ctx.bs._turnEndDelayed.push({ side: ctx.side, step: _delayed, anchor: ctx.card, ctx });
-    ctx.addLog && ctx.addLog('⏳ このターン終了時に「' + (ctx.card ? ctx.card.name : '?') + '」の効果を行う');
+    // いつのターン終了時か: true＝このターン（今のターンの人のターン終了時）/ 'own'＝自分の / 'opp'＝相手のターン終了時
+    // （ワルもんざえモン P-216【消滅時】「自分のターン終了時、この効果で登場したデジモンを消滅させる」は相手のターンにも起きる）
+    const _teTurnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+    const _teWhen = step.at_turn_end === 'own' ? ctx.side : step.at_turn_end === 'opp' ? (ctx.side === 'player' ? 'ai' : 'player') : _teTurnSide;
+    // 「そのデジモン」（same_target）は予約したときのカード（ターン終了時に探し直すと、別の効果で選んだカードになっていた）
+    const _tePinned = /^same_target/.test(String(step.target || '')) ? (ctx.bs._lastPickedCard || null) : null;
+    ctx.bs._turnEndDelayed.push({ side: _teWhen, actSide: ctx.side, step: _delayed, anchor: ctx.card, pinned: _tePinned, ctx });
+    ctx.addLog && ctx.addLog('⏳ ' + (_teWhen === _teTurnSide ? 'このターン' : (_teWhen === ctx.side ? '自分のターン' : '相手のターン')) + '終了時に「' + (ctx.card ? ctx.card.name : '?') + '」の効果を行う');
     callback && callback();
     return;
   }
@@ -17587,6 +17747,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // このカード自身の「バトルエリアから効果で破棄されたとき」（ルーク・デヴァイス P-159）は、ディレイ効果のあとに
         // 発揮する（誘発した効果は今の効果が終わってから。保留にして callback の後で処理）
         enqueueReaction(ctx.bs, _fireBattleAreaSelfDiscard, [[_delayCard], ctx.side, ctx.bs, ctx]);
+        enqueueReaction(ctx.bs, _fireBattleAreaOptionDiscardOthers, [[_delayCard], ctx.side, ctx.bs, ctx]);
         callback();
       };
       if (ctx.side === 'player') {
@@ -17879,6 +18040,47 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     case 'summon':
+    // 効果でアプ合体（辞書のアクション「アプ合体」App_Fusion。大空勇仁 P-240「自分のデジモン1体を手札のデジモンカードに
+    // アプ合体できる」）: 手札のアプ合体を持つカードと、その条件のリンク状態の自分のデジモンを選び、アプ合体のコストを払って進化させる
+    case 'App_Fusion':
+    case 'app_fusion': {
+      if (ctx.side !== 'player' || typeof window._doAppGattaiFromEffect !== 'function') {
+        ctx.addLog && ctx.addLog('💨 アプ合体（効果）は相手側ではまだ行いません');
+        callback && callback();
+        break;
+      }
+      const _afF = _srcCardFilterOf(step);
+      const _afBaseF = step.filter && typeof step.filter === 'object' ? step.filter : null;
+      const _afPairs = [];
+      (player.battleArea || []).forEach((b, slotIdx) => {
+        if (!b || String(b.type || '') !== 'デジモン') return;
+        if (_afBaseF && !cardMatchesFilter(b, _afBaseF, ctx.bs, ctx.side, ctx.card)) return;
+        (player.hand || []).forEach((h) => {
+          if (!h || (_afF && !cardMatchesFilter(h, _afF, ctx.bs, ctx.side, ctx.card))) return;
+          let ag = null;
+          try { ag = getAppGattaiEvolve(h, b, ctx.bs, 'player'); } catch (_) { ag = null; }
+          if (ag && (ag.linkedPartners || []).length > 0) _afPairs.push({ hand: h, base: b, slotIdx });
+        });
+      });
+      if (_afPairs.length === 0) { ctx.addLog && ctx.addLog('💨 アプ合体できるデジモンがいません'); callback && callback(); break; }
+      const _afDo = (pair) => {
+        if (!pair) { ctx.addLog && ctx.addLog('☓ アプ合体しなかった'); callback && callback(); return; }
+        const hi = player.hand.indexOf(pair.hand);
+        if (hi === -1) { callback && callback(); return; }
+        window._doAppGattaiFromEffect(hi, pair.slotIdx, () => { ctx.renderAll && ctx.renderAll(); callback && callback(); });
+      };
+      const _afHands = [...new Set(_afPairs.map((x) => x.hand))];
+      showTrashCardPicker(_afHands, 1, !!step.optional, '🔗 アプ合体させる手札のカードを選んでください', (picked) => {
+        const h = picked && picked[0];
+        if (!h) { _afDo(null); return; }
+        const bases = _afPairs.filter((x) => x.hand === h);
+        if (bases.length === 1) { _afDo(bases[0]); return; }
+        showTrashCardPicker(bases.map((x) => x.base), 1, false, '🔗 アプ合体させる自分のデジモンを選んでください', (pb) => {
+          _afDo(bases.find((x) => x.base === (pb && pb[0])) || bases[0]);
+        }, bases.map((x) => x.base));
+      }, _afHands);
+      break;
+    }
     case 'summon_appear':
     case 'summon_use': {
       // 登場させなかった（「使わない」・候補なし）ときに、続く効果の「そのデジモン」（same_target）や
@@ -17941,6 +18143,55 @@ function executeRecipeStep(step, ctx, store, callback) {
           });
         });
         if (_esCands.length === 0) { ctx.addLog && ctx.addLog('💨 登場できるカードがありません'); callback(); break; }
+        // 【パーティション】（partition_groups。カオスモン P-221）: 指定のカードが進化元に1枚ずつあるときだけ、
+        // それぞれ1枚ずつ（同じカードを2つの指定に使わない）コストを支払わずに登場させる。一部だけは登場させない（16-29-4）
+        if (Array.isArray(step.partition_groups) && step.partition_groups.length > 0) {
+          const _ptEvo = _esCands.filter((c) => _esZoneOf.get(c) === 'evo_source');
+          const _ptLists = step.partition_groups.map((g) => _ptEvo.filter((c) => _evalStepConditionGate(g, c, ctx.bs, ctx.side)));
+          const _ptAssign = (gi, used) => {
+            if (gi >= _ptLists.length) return [];
+            for (const c of _ptLists[gi]) {
+              if (used.includes(c)) continue;
+              const rest = _ptAssign(gi + 1, used.concat([c]));
+              if (rest) return [c].concat(rest);
+            }
+            return null;
+          };
+          if (!_ptAssign(0, [])) { ctx.addLog && ctx.addLog('💨 進化元に指定のカードが1枚ずつそろっていません（パーティション）'); callback(); break; }
+          const _ptChosen = [];
+          let _ptGi = 0;
+          const _ptPickNext = () => {
+            if (_ptGi >= _ptLists.length) { _ptSummon(0); return; }
+            const gi = _ptGi++;
+            // 残りの指定もそろう選び方だけを候補にする
+            const cands = _ptLists[gi].filter((c) => !_ptChosen.includes(c) && _ptAssignFrom(gi + 1, _ptChosen.concat([c])));
+            if (ctx.side === 'ai' || cands.length === 1) { _ptChosen.push(cands[0]); _ptPickNext(); return; }
+            showTrashCardPicker(cands, 1, false, '🌟 パーティション: 進化元から登場させるカードを選んでください（' + (gi + 1) + '/' + _ptLists.length + '）', (picked) => {
+              _ptChosen.push((picked && picked[0]) || cands[0]);
+              _ptPickNext();
+            }, cands);
+          };
+          const _ptAssignFrom = (gi, used) => {
+            if (gi >= _ptLists.length) return true;
+            return _ptLists[gi].some((c) => !used.includes(c) && _ptAssignFrom(gi + 1, used.concat([c])));
+          };
+          const _ptSummon = (k) => {
+            if (k >= _ptChosen.length) {
+              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+              callback();
+              return;
+            }
+            const chosen = _ptChosen[k];
+            const _ptH = _esHolderOf.get(chosen) || _esHost;
+            const _si = _ptH && Array.isArray(_ptH.stack) ? _ptH.stack.indexOf(chosen) : -1;
+            if (_si === -1) { _ptSummon(k + 1); return; }
+            _ptH.stack.splice(_si, 1);
+            ctx.addLog && ctx.addLog('🌟 「' + _ptH.name + '」の進化元から「' + chosen.name + '」を登場（パーティション）');
+            _summonCardFromEffect(chosen, ctx, { payCost: null, enterSuspended: !!step.enter_suspended, skipOnPlay: !!step.skip_on_play }, () => _ptSummon(k + 1));
+          };
+          _ptPickNext();
+          break;
+        }
         const _esPay = step.cost_free ? null : Math.max(0, _cardPlayCostOf(_esCands[0]) + _effectPlayCostDelta(step, ctx));
         const _esDo = (chosen) => {
           if (!chosen) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
@@ -22897,6 +23148,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+        // 「自分のデジモンのリンクカードが効果で破棄されたとき」（大空勇仁 P-233）は、この効果のあと
+        if (_gone.length > 0) enqueueReaction(ctx.bs, _fireLinkedDiscardTriggers, [_gone, ctx.card, ctx.side, ctx.bs, ctx]);
         // 「〇〇のリンクカード → トラッシュ」の移動演出（相手の画面にも）
         const _from = '「' + (ctx.card.name || '') + '」のリンクカード';
         let _gi = 0;
@@ -23033,6 +23286,35 @@ function executeRecipeStep(step, ctx, store, callback) {
           + (step.action === 'cant_return_hand' ? '手札に戻らない' : step.action === 'cant_return_deck' ? 'デッキに戻らない' : '破棄されない'));
         ctx.renderAll();
         callback();
+        break;
+      }
+      // own:1 / opponent:1（「特徴に〜を持つ自分のデジモン1体は相手の効果で手札/デッキに戻らず」アイスモン P-215）:
+      // 条件（filter のうち位置指定以外）に合うデジモンから1体選んで付ける。以前はこのデジモン自身に付いていた
+      const _cxPickM = /^(own|opponent)(_card)?:(\d+)$/.exec(_cxTgtStr);
+      if (_cxPickM) {
+        const _cxPPool = _cxPickM[1] === 'own' ? player : opponent;
+        const _cxPF = (step.filter && typeof step.filter === 'object') ? Object.assign({}, step.filter) : null;
+        if (_cxPF) ['target_stack', 'target_stack_position', 'target_evo_source', 'target_evo_source_position'].forEach((k) => delete _cxPF[k]);
+        const _cxPCands = [...(_cxPPool.battleArea || []), ...(_cxPickM[2] ? (_cxPPool.tamerArea || []) : [])]
+          .filter((c) => c && (!_cxPF || Object.keys(_cxPF).length === 0 || cardMatchesFilter(c, _cxPF, ctx.bs, ctx.side, ctx.card))
+            && (_cxPickM[1] === 'own' || !_isImmuneToEffect(c, ctx)));
+        if (_cxPCands.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+        const _cxPDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        const _cxPLabel = step.action === 'cant_return_hand' ? '手札に戻らない' : step.action === 'cant_return_deck' ? 'デッキに戻らない' : '破棄されない';
+        const _cxPApply = (picked) => {
+          const c = picked && picked[0];
+          if (c) {
+            addBuffDirect(c, step.action, 0, _cxPDur, ctx);
+            if (ctx.bs) ctx.bs._lastPickedCard = c;
+            ctx.addLog('🛡 「' + c.name + '」は' + _cxPLabel);
+          }
+          ctx.renderAll();
+          callback();
+        };
+        const _cxPForced = (ctx._forceTargetIdx !== undefined) ? _cxPPool.battleArea[ctx._forceTargetIdx] : null;
+        if (_cxPForced && _cxPCands.includes(_cxPForced)) { _cxPApply([_cxPForced]); break; }
+        if (effectiveSide === 'ai' || _cxPCands.length === 1) { _cxPApply([_cxPCands[0]]); break; }
+        showCardListPicker(_cxPCands, 1, '🛡 ' + _cxPLabel + 'デジモンを選んでください', _cxPApply);
         break;
       }
       // same_target: 直前のアクション（cant_dp_minus 等）で選んだ対象をそのまま使う。
@@ -23210,17 +23492,20 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _dIsCost = _COST_STEP_SET.has(step);
       // バトルエリアの自分のオプション（own_option ＋ from:battle_area。「バトルエリアの赤以外の自分のオプションカード1枚を
       // 破棄することで」ポーン・デヴァイス P-155）: 条件（condition 等）に合うものから選んで破棄
-      if (_dSpec && _dSpec.zone === 'own_option') {
+      // 相手の／お互いのオプション（opponent_option / both_option。「バトルエリアのオプションカード1枚を破棄することで」
+      // ジャスティモン：アクセルアーム P-203）も同じく選んで破棄する
+      if (_dSpec && ['own_option', 'opponent_option', 'opp_option', 'both_option'].includes(_dSpec.zone)) {
         const _boGate = (step.condition || step.when || (Array.isArray(step.extra_conditions) && step.extra_conditions.length > 0)) ? step : null;
         const _boF = _srcCardFilterOf(step);
         const _boCands = [];
-        ['battleArea', 'tamerArea'].forEach((zone) => (player[zone] || []).forEach((c, idx) => {
+        const _boSides = _dSpec.zone === 'own_option' ? [true] : (_dSpec.zone === 'both_option' ? [true, false] : [false]);
+        _boSides.forEach((_boOwn) => ['battleArea', 'tamerArea'].forEach((zone) => ((_boOwn ? player : opponent)[zone] || []).forEach((c, idx) => {
           if (!c || String(c.type || '') !== 'オプション') return;
           if (c === ctx.card && _dIsCost) return; // 効果を使っているこのカード自身はコストに使わない
           if (_boF && !cardMatchesFilter(c, _boF, ctx.bs, ctx.side, ctx.card)) return;
           if (_boGate && !_evalStepConditionGate(_boGate, c, ctx.bs, ctx.side)) return;
-          _boCands.push({ card: c, own: true, zone, idx });
-        }));
+          _boCands.push({ card: c, own: _boOwn, zone, idx });
+        })));
         const _boN = _dSpec.all ? _boCands.length : _dSpec.count;
         if (_boCands.length === 0 || (_dIsCost && !_dSpec.upTo && _boCands.length < _boN)) {
           ctx.addLog && ctx.addLog('💨 破棄できるオプションがありません');
@@ -23230,20 +23515,25 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _boRun = (picked) => {
           const done = (picked || []).map((e) => e.card).filter(Boolean);
           if (done.length === 0) { callback && callback(_dIsCost ? false : undefined); return; }
+          const _boOppDone = [];
           done.forEach((c) => {
-            const bi = player.battleArea.indexOf(c);
+            const _boIsOwn = player.battleArea.includes(c) || (player.tamerArea || []).includes(c);
+            const _boP = _boIsOwn ? player : opponent;
+            if (!_boIsOwn) _boOppDone.push(c);
+            const bi = _boP.battleArea.indexOf(c);
+            const _boOnline = window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand;
             if (bi !== -1) {
-              player.battleArea[bi] = null;
-              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
-                try { window._onlineSendCommand({ type: 'own_card_removed', slotIdx: bi, reason: 'discard' }); } catch (_) {}
+              _boP.battleArea[bi] = null;
+              if (_boOnline) {
+                try { window._onlineSendCommand(_boIsOwn ? { type: 'own_card_removed', slotIdx: bi, reason: 'discard' } : { type: 'card_removed', zone: 'battle', slotIdx: bi, reason: 'discard' }); } catch (_) {}
               }
             } else {
-              const ti = (player.tamerArea || []).indexOf(c);
-              if (ti !== -1) player.tamerArea.splice(ti, 1);
+              const ti = (_boP.tamerArea || []).indexOf(c);
+              if (ti !== -1) _boP.tamerArea.splice(ti, 1);
             }
-            player.trash.push(c);
-            if (c.stack) c.stack.forEach((s) => player.trash.push(s));
-            ctx.addLog && ctx.addLog('🗑 「' + c.name + '」を破棄');
+            _boP.trash.push(c);
+            if (c.stack) c.stack.forEach((s) => _boP.trash.push(s));
+            ctx.addLog && ctx.addLog('🗑 ' + (_boIsOwn ? '' : '相手の') + '「' + c.name + '」を破棄');
           });
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendStateSync) {
             try { window._onlineSendStateSync(); } catch (_) {}
@@ -23251,7 +23541,12 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (ctx.bs) { ctx.bs._lastActionCount = done.length; ctx.bs._lastActionCards = done.slice(); }
           ctx.renderAll && ctx.renderAll();
           // 破棄したオプション自身の「バトルエリアから効果で破棄されたとき」（ルーク・デヴァイス P-159）は、この効果のあと
-          enqueueReaction(ctx.bs, _fireBattleAreaSelfDiscard, [done, ctx.side, ctx.bs, ctx]);
+          const _boOwnDone = done.filter((c) => !_boOppDone.includes(c));
+          if (_boOwnDone.length > 0) enqueueReaction(ctx.bs, _fireBattleAreaSelfDiscard, [_boOwnDone, ctx.side, ctx.bs, ctx]);
+          if (_boOppDone.length > 0 && !(window._isOnlineMode && window._isOnlineMode())) enqueueReaction(ctx.bs, _fireBattleAreaSelfDiscard, [_boOppDone, _flipSide(ctx.side), ctx.bs, ctx]);
+          // 他のカードの「バトルエリアのオプションカードが破棄されたとき」（P-203）
+          if (_boOwnDone.length > 0) enqueueReaction(ctx.bs, _fireBattleAreaOptionDiscardOthers, [_boOwnDone, ctx.side, ctx.bs, ctx]);
+          if (_boOppDone.length > 0) enqueueReaction(ctx.bs, _fireBattleAreaOptionDiscardOthers, [_boOppDone, _flipSide(ctx.side), ctx.bs, ctx]);
           callback && callback();
         };
         if (_boCands.length <= _boN && !_dSpec.upTo && !step.optional) { _boRun(_boCands); break; }
@@ -23285,9 +23580,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         : _dSpec.zone === 'opponent_hand' ? [_dOppSide]
         : [_dOwnSide, _dOppSide];
       let _dTotal = 0, _dDeclined = false, _di = 0;
+      const _dCards = [];
       const _dNext = () => {
         if (_di >= _dSides.length) {
-          if (ctx.bs) ctx.bs._lastActionCount = _dTotal;
+          // 破棄したカード（「この効果で特徴に『三銃士』『TS』を持つカードを破棄したなら」城木明日奈 P-212。
+          // cond_last_action_match_*）。相手の端末で選んだカードは中身が分からないので枚数だけ
+          if (ctx.bs) { ctx.bs._lastActionCount = _dTotal; ctx.bs._lastActionCards = _dCards.slice(); }
           ctx.renderAll && ctx.renderAll();
           if (_dIsCost && _dDeclined) { callback && callback(false); return; }
           callback && callback();
@@ -23295,6 +23593,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         _runHandDiscardForSide(_dSides[_di++], _dSpec, ctx, (res) => {
           _dTotal += (res && res.count) || 0;
+          if (res && Array.isArray(res.cards)) res.cards.forEach((c) => _dCards.push(c));
           if (res && res.declined) _dDeclined = true;
           _dNext();
         });
@@ -24350,11 +24649,18 @@ export function runTurnEndDelayedEffects(bsArg, side, callback) {
   const next = () => {
     if (i >= mine.length) { try { if (typeof window !== 'undefined' && window.renderAll) window.renderAll(); } catch (_) {} done(); return; }
     const e = mine[i++];
-    const pl = bsArg[side] || {};
+    const pl = bsArg[e.actSide || side] || {};
     const area = [...(pl.battleArea || []), ...(pl.tamerArea || [])];
     const now = area.find((c) => c && (c === e.anchor || (Array.isArray(c.stack) && c.stack.includes(e.anchor))));
     const selfTarget = /^self(_card)?$/.test(String(e.step.target || ''));
     if (!now && selfTarget) { next(); return; }
+    // 予約したときの「そのデジモン」: まだ場にいれば（進化していれば一番上のカードを）対象にする。場を離れていたら行わない
+    if (e.pinned) {
+      const _all = ['player', 'ai'].flatMap((sd) => [...((bsArg[sd] || {}).battleArea || []), ...((bsArg[sd] || {}).tamerArea || [])]);
+      const _pNow = _all.find((c) => c && (c === e.pinned || (Array.isArray(c.stack) && c.stack.includes(e.pinned))));
+      if (!_pNow) { next(); return; }
+      bsArg._lastPickedCard = _pNow;
+    }
     const ctx = Object.assign({}, e.ctx, { card: now || e.anchor, _forceTargetIdx: undefined });
     try { ctx.addLog && ctx.addLog('⏳ ターン終了時: 「' + (ctx.card ? ctx.card.name : '?') + '」の予約した効果'); } catch (_) {}
     try { executeRecipeStep(e.step, ctx, {}, () => next()); } catch (err) { console.error('[turn_end_delayed]', err); next(); }
@@ -24494,6 +24800,17 @@ const _COST_DISCOUNT_ACTIONS = new Set(['appear_or_evolve', 'evo_cost_minus', 's
 // 自分のセキュリティを3枚まで破棄できる。この効果で破棄したセキュリティ1枚ごとに、支払う進化コスト-1」）。
 // 絞り込み（発動主体・トリガー条件・取得元カードの条件・発動条件）は checkBeforeEvolveDiscount と同じ。
 // 効果2以降の「進化 コスト-N（直前の効果で処理した枚数ごと）」は、ここで軽減量として計算して callback(軽減量) で返す
+// 「進化するとき」の発動条件（trigger_conditions）: 名称・特徴などは進化先（evoCard）で判定し、レスト状態/アクティブ状態は
+// 進化する側のデジモン（base）で判定する（ティラノモン P-202「レスト状態の自分のデジモンが〜に進化するとき」）。base が分からなければ状態は見ない
+const _BEFORE_EVO_STATE_CONDS = new Set(['cond_rest', 'cond_active', 'cond_suspended', 'cond_self_rest', 'cond_self_active', 'cond_self_suspended']);
+function _evalBeforeEvolveTc(step, evoCard, base, bs, side) {
+  const tc = Array.isArray(step.trigger_conditions) ? step.trigger_conditions : [];
+  const isState = (x) => _BEFORE_EVO_STATE_CONDS.has(String(x || '').split(/[:@]/)[0]);
+  const stateConds = tc.filter(isState);
+  if (stateConds.length > 0 && base && !stateConds.every((x) => checkConditions(parseRecipeCondition(x), base, bs, side))) return false;
+  const rest = stateConds.length > 0 ? tc.filter((x) => !isState(x)) : step.trigger_conditions;
+  return _evalTriggerConditionsArray(rest, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain);
+}
 export function fireBeforeEvolveEffects(evoCard, bs, side, opts, callback) {
   opts = opts || {};
   const finish = (n) => { try { callback(n || 0); } catch (e) { console.error('[before_evolve effects]', e); } };
@@ -24508,7 +24825,7 @@ export function fireBeforeEvolveEffects(evoCard, bs, side, opts, callback) {
       if (subj === 'opp' || subj.indexOf('opp_') === 0 || subj === 'opponent') return;
       if ((subj === '' || subj === 'self' || subj === 'self_card') && opts.base && opts.base !== card) return;
       if (step.from_filter && !cardMatchesFilter(evoCard, step.from_filter, bs, side, card)) return;
-      if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain)) return;
+      if (!_evalBeforeEvolveTc(step, evoCard, opts.base, bs, side)) return;
       if (step.condition && !checkConditions(parseRecipeCondition(step.condition), card, bs, side)) return;
       if (_costStepsInfeasible(step.cost, card, bs, side)) return;
       jobs.push({ card, sourceCard, step });
@@ -24586,7 +24903,7 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
           const _inZ = _fz.some((z) => (z === 'hand' || z === 'trash') && Array.isArray(sidePl[z]) && sidePl[z].includes(evoCard));
           if (_fz.some((z) => z === 'hand' || z === 'trash') && !_inZ) continue;
         }
-        if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain)) continue;
+        if (!_evalBeforeEvolveTc(step, evoCard, opts.base, bs, side)) continue;
         if (step.condition) {
           const conds = parseRecipeCondition(step.condition);
           if (!checkConditions(conds, card, bs, side)) continue;

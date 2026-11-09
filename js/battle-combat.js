@@ -1829,7 +1829,17 @@ export function doAppGattaiEvolve(handIdx, slotIdx, chosenPartners) {
   _finishAppGattaiEvolve(card, base, handIdx, slotIdx, { cost: appGattai.cost, linkedPartners: partners });
 }
 
-function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai) {
+// 効果でアプ合体させる（「自分のデジモン1体を手札のデジモンカードにアプ合体できる」大空勇仁 P-240。公式 8-4-2-2）。
+// 自分（player）側のみ。コストはアプ合体のコストを支払う。【進化時】まで解決したら onDone（ターン終了の判定は効果の側で）
+export function doAppGattaiFromEffect(handIdx, slotIdx, onDone) {
+  const card = bs.player.hand[handIdx];
+  const base = bs.player.battleArea[slotIdx];
+  const appGattai = card && base ? _getAppGattaiEvolve(card, base, bs, 'player') : null;
+  if (!appGattai || !(appGattai.linkedPartners || []).length) { addLog('🚨 アプ合体の条件を満たしていません'); onDone && onDone(false); return; }
+  _finishAppGattaiEvolve(card, base, handIdx, slotIdx, { cost: appGattai.cost, linkedPartners: appGattai.linkedPartners }, () => onDone && onDone(true));
+}
+
+function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai, onDone) {
   const cost = appGattai.cost;
   const partners = appGattai.linkedPartners || [];
   if (_onlineMode && _sendCommand) {
@@ -1864,7 +1874,7 @@ function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai) {
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
     doDraw('player', 'アプ合体ドロー', async (dismissDraw) => {
       if (typeof dismissDraw === 'function') dismissDraw();
-      const finishEvolve = () => checkPlayerPendingTurnEnd();
+      const finishEvolve = () => (onDone ? onDone() : checkPlayerPendingTurnEnd());
       if (hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
           renderAll(true);

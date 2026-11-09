@@ -774,8 +774,9 @@ function startAttackModeUI(slotIdx, opts) {
       const def = bs.ai.battleArea[di]; if (!def) return;
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        // 効果によるアタックでは、選べない対象（アクティブ等）を離しても宣言しない
-        if (_fromEffect && !_atkTargetOk(def)) return;
+        // 選べない対象（アクティブ等。🚫表示）を離しても宣言しない（通常のアタックも。以前は宣言してから
+        // 「アクティブ状態のデジモンにはアタックできません」で止まり、レスト・アタック回数・相手への開始通知が残っていた）
+        if (!_atkTargetOk(def)) { resolved = true; addLog('🚨 このデジモンにはアタックできません'); if (_fromEffect && opts.onCancel) opts.onCancel(); return; }
         resolved = true;
         _declare('digimon', di);
       }

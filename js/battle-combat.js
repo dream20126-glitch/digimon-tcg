@@ -2843,7 +2843,16 @@ export function resolveAttackTarget(target, targetIdx) {
   } else if (target === 'digimon') {
     // デジモンアタック
     const def = bs.ai.battleArea[targetIdx];
-    if (!def) { cancelAttack(); return; }
+    // アタックが成立しないまま戻るときは「アタック中」を外す（残っていると、以後のアタックが全て
+    // 「前のアタックの処理が終わっていません」で断られていた）。相手には開始を送っているので終了も送る
+    const _abortAttack = () => {
+      atk.suspended = false;
+      _attackInProgress = false;
+      bs._attackResolving = false;
+      if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'attack_end' }); } catch (_) {} }
+      renderAll();
+    };
+    if (!def) { _abortAttack(); return; }
     // アクティブ状態のデジモンには宣言できない（公式ルール）。突進は宣言時の対象拡張ではなく
     // 「宣言後、任意でDP最大のアクティブなデジモンへ対象を差し替える」効果のため、ここでの
     // 例外は無い（redirect_attack アクション経由でafterAtkEffect後に差し替わる）
@@ -2852,7 +2861,7 @@ export function resolveAttackTarget(target, targetIdx) {
     // 「アタックされない」・継続効果の「アクティブ状態の相手にもアタックできる」（P-051 / P-058）もここで判定する
     if (!(window._canAttackDigimonTarget ? window._canAttackDigimonTarget(atk, def, bs, 'player') : (def.suspended || atk._executeAttacking))) {
       addLog(def.suspended ? '🚨 このデジモンにはアタックできません' : '🚨 アクティブ状態のデジモンにはアタックできません');
-      atk.suspended = false; renderAll();
+      _abortAttack();
       return;
     }
     // ★ チュートリアルAIブロック intent: スクリプトで指定されたブロッカーがAIバトルエリアに

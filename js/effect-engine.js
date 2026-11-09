@@ -8359,6 +8359,10 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
             }
+            // 対象がこのデジモン自身のときの「〜の間」（filter。例: 黒のDP13000以上の間）を満たさなければ付けない
+            // （スナリザモン P-033 の進化元効果で、DP11000 のムゲンドラモンも【Sアタック+1】を得ていた）
+            if (step.filter && (!step.target || step.target === 'self' || step.target === 'self_card')
+                && !cardMatchesFilter(card, step.filter, bs, side, card)) return;
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = _refWithCountMode(step);
@@ -8510,6 +8514,10 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
             }
+            // 対象がこのデジモン自身のときの「〜の間」（filter。例: 黒のDP13000以上の間）を満たさなければ付けない
+            // （スナリザモン P-033 の進化元効果で、DP11000 のムゲンドラモンも【Sアタック+1】を得ていた）
+            if (step.filter && (!step.target || step.target === 'self' || step.target === 'self_card')
+                && !cardMatchesFilter(card, step.filter, bs, side, card)) return;
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = _refWithCountMode(step);

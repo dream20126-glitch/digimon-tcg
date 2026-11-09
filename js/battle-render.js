@@ -728,6 +728,16 @@ function startAttackModeUI(slotIdx, opts) {
   inputLayer.style.cssText = 'position:fixed;inset:0;z-index:99997;cursor:crosshair;';
   document.body.appendChild(inputLayer);
 
+  // 相手のデジモンのスロットに当たったか。バトルエリアは横スクロールなので、スクロールで隠れている
+  // スロットは当たりにしない（隠れたスロットの位置がセキュリティと重なり、セキュリティを押したのに
+  // 見えていない相手のデジモンへのアタックになっていた）
+  function _slotHit(s, x, y) {
+    const r = s.getBoundingClientRect();
+    if (!(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) return false;
+    const v = aiRow.getBoundingClientRect();
+    return x >= v.left && x <= v.right && y >= v.top && y <= v.bottom;
+  }
+
   function onMove(e) {
     const t = e.touches ? e.touches[0] : e;
     const line = document.getElementById('atk-arrow-line');
@@ -737,8 +747,7 @@ function startAttackModeUI(slotIdx, opts) {
       const def = bs.ai.battleArea[i]; if (!def) return;
       const canTarget = _atkTargetOk(def);
       if (!canTarget) return; // アタック不可は浮かせない
-      const r = s.getBoundingClientRect();
-      const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+      const hit = _slotHit(s, t.clientX, t.clientY);
       s.style.transform = hit ? 'translateY(-4px) scale(1.05)' : '';
     });
     if (secArea && !_noSec) {
@@ -772,8 +781,7 @@ function startAttackModeUI(slotIdx, opts) {
     if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, di) => {
       if (resolved) return;
       const def = bs.ai.battleArea[di]; if (!def) return;
-      const r = s.getBoundingClientRect();
-      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+      if (_slotHit(s, cx, cy)) {
         // 選べない対象（アクティブ等。🚫表示）を離しても宣言しない（通常のアタックも。以前は宣言してから
         // 「アクティブ状態のデジモンにはアタックできません」で止まり、レスト・アタック回数・相手への開始通知が残っていた）
         if (!_atkTargetOk(def)) { resolved = true; addLog('🚨 このデジモンにはアタックできません'); if (_fromEffect && opts.onCancel) opts.onCancel(); return; }

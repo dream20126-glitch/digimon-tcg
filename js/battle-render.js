@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect, placedOptionMainUsable } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, mainEffectButtonState, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect, placedOptionMainUsable } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -615,10 +615,13 @@ function showLongpressMenu(card, slotIdx, el) {
   // 「⚡ 効果」ボタン自体を出さない
   // 【トレーニング】等、専用ボタンで起動するキーワードの【メイン】しか無いカードには出さない（hasOwnMainEffect）
   if (hasOwnMainEffect(card) && !card._noMainAbility) {
-    const used = card._usedEffects.includes('self');
-    html += used
+    // 「使用済み」は【ターンに1回】等の回数を使い切ったときだけ。払えないコスト（デジバーストの進化元不足）は「使用不可」
+    const _mst = mainEffectButtonState(card);
+    html += _mst.usedUp
       ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'
-      : `<button class="lp-action-btn lp-effect-btn" onclick="activateEffect(${slotIdx},'self')">⚡ 効果</button>`;
+      : _mst.unusable
+        ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用不可）</button>'
+        : `<button class="lp-action-btn lp-effect-btn" onclick="activateEffect(${slotIdx},'self')">⚡ 効果</button>`;
   }
   // 【トレーニング】: レシピ非依存のキーワード起動効果（このデジモンをレストさせることで
   // デッキの上1枚を進化元の下に裏向きで置く）。_wasAlreadySuspended で元々レスト中と分かる

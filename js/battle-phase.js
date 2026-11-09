@@ -234,6 +234,11 @@ export function showDrawEffect(card, isLv6Plus, callback, options) {
     nameEl.style.fontSize = '1rem';
   }
 
+  // バトルの途中（黒い背景 _combat-backdrop z-index:46999 が出ている間）のドローは、その上に出す。
+  // ピヨモン P-002「バトルで相手のデジモンだけを消滅させたとき【1ドロー】」で、ドロー演出が背景の下に隠れて
+  // 真っ黒な画面になっていた
+  const _bd = document.getElementById('_combat-backdrop');
+  overlay.style.zIndex = (_bd && _bd.style.display !== 'none') ? '47500' : '46000';
   overlay.style.display = 'flex';
 
   if (isLv6Plus) {

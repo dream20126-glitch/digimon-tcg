@@ -24308,6 +24308,34 @@ export function hasOwnMainEffect(card) {
   } catch (_) { return hasRecipeTrigger(card, 'main'); }
 }
 
+// 長押しメニューの「⚡ 効果」ボタンの状態。
+//   usedUp:   【ターンに1回】（limit once_per_turn / per_turn:N）を使い切った → 「使用済み」
+//   unusable: 【デジバーストN】の進化元が足りない等、今は払えない → 「使用不可」
+// 回数の制限が無い【メイン】は何回でも使える（グランクワガーモン P-025。以前は1回使うと「使用済み」になっていた）
+export function mainEffectButtonState(card) {
+  const res = { usedUp: false, unusable: false };
+  if (!card) return res;
+  let steps = [];
+  try {
+    steps = (getRecipeForTrigger(card, 'main') || []).slice();
+    if (Array.isArray(card._grantedRecipes)) card._grantedRecipes.forEach(g => { const st = _grantedStepsFor(g, 'main', card); if (Array.isArray(st)) steps = steps.concat(st); });
+  } catch (_) { return res; }
+  steps = steps.filter(x => x && !(x._kwFlag && _DEDICATED_BUTTON_KW.has(x._kwFlag)));
+  const used = (card._usedEffects || []).filter(k => k === 'self').length;
+  let max = 0;
+  steps.forEach(s => {
+    const lim = String(s.limit || '');
+    let n = 0;
+    if (lim === 'once_per_turn' || lim === 'limit_once_per_turn') n = 1;
+    else { const m = lim.match(/^per_turn:(\d+)$/); if (m) n = parseInt(m[1], 10); }
+    if (n > 0) max = max ? Math.min(max, n) : n;
+  });
+  res.usedUp = max > 0 && used >= max;
+  const evoN = (card.stack || []).length;
+  res.unusable = steps.length > 0 && steps.every(s => (Array.isArray(s.cost) ? s.cost : []).some(c => c && c.action === 'cost_digiburst' && evoN < (parseInt(c.value, 10) || 1)));
+  return res;
+}
+
 // バトルエリアに置かれたオプションの【メイン】（【メイン】【ディレイ】）が今使えるか。置かれたターンは使えない
 export function placedOptionMainUsable(card, bs) {
   if (!card || card.type !== 'オプション' || !card._placedInBattleArea || !bs) return false;

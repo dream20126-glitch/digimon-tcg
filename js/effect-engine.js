@@ -9200,6 +9200,16 @@ function checkConditions(conditions, card, bs, side) {
         if (len <= threshold) return false;
         break;
       }
+      // ちょうどN枚（バウトモン P-074 進化元「自分のセキュリティが3枚のとき」= cond_security_eq:3@own_any。
+      // 以前は未実装で常に満たした扱いになり、4枚でも発動していた）
+      case 'cond_security_eq': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'security') : (cond.value || 0);
+        if (len !== threshold) return false;
+        break;
+      }
       case 'cond_trash_ge': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
@@ -15373,9 +15383,12 @@ const _COST_STEP_SET = new WeakSet();
 //     （destroy 等が対象フィルタとして誤用しないように）。condition_op:'or' のときは全体がゲート
 function _resolveStepConditionGate(step) {
   if (!_stepHasGateConditions(step)) return null;
+  // 【ターンに1回】の使用回数キーは元のステップのものを引き継ぐ（条件を外したコピーで数えると、
+  // 事前判定（元のステップ）とキーがずれて、使い切った後も効果発動ポップアップが出ていた。バウトモン P-074 進化元）
   const strip = (s) => {
     const o = Object.assign({}, s);
     delete o.condition; delete o.when; delete o.extra_conditions; delete o.condition_op; delete o.condition_chain;
+    o._limitPart = _limitStepPart(s);
     return o;
   };
   if (Array.isArray(step.condition_chain) && step.condition_chain.length > 0) {
@@ -20490,6 +20503,28 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         _syncStateAfterCant();
         callback();
+        break;
+      }
+      // 2体以上（「3体まで」等）: 1体ずつ選ぶ。以前は下の単体選択に回していて1体しか選べなかった
+      // （ヴァイクモン P-052「進化元を持たない相手のデジモン3体まではアタックできない」）。「まで」は途中で選ぶのをやめられる
+      const _cmM = /^(opponent|own):(up_to_)?(\d+)$/.exec(_cantTgt);
+      if (_cmM && parseInt(_cmM[3], 10) > 1) {
+        const _cmOwn = _cmM[1] === 'own';
+        const _cmSideTag = _cmOwn ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+        const _cmConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        if (step.condition_op === 'or') _cmConds._op = 'or';
+        const _cmFilter = step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null;
+        const _cmCands = _collectSideTargets(ctx, { own: _cmOwn, opp: !_cmOwn, filter: { type: 'デジモン' },
+          pred: (c) => (!_cmFilter || cardMatchesFilter(c, _cmFilter, ctx.bs, ctx.side, ctx.card))
+            && !(_cmConds.length > 0 && !checkConditions(_cmConds, c, ctx.bs, _cmSideTag)) });
+        if (_cmCands.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(); break; }
+        const _cmLbl = step.action === 'cant_attack_block' ? 'アタック・ブロック不可' : step.action === 'cant_attack' ? 'アタック不可' : step.action === 'cant_block' ? 'ブロック不可' : '進化不可';
+        _pickSideTargets(_cmCands, parseInt(_cmM[3], 10), ctx, effectiveSide, _cmOwn, '🎯 ' + _cmLbl + 'にする対象を選んでください', (picked) => {
+          (picked || []).forEach((e) => { _applyCantState(e.card, !e.own); if (ctx.bs) ctx.bs._lastPickedCard = e.card; });
+          ctx.renderAll();
+          _syncStateAfterCant();
+          callback();
+        });
         break;
       }
       // 単体選択など → 既存エンジンに委譲（対象の条件 step.filter も渡す。シェルモン EX12-026「進化元が1枚以下の相手のデジモン」）

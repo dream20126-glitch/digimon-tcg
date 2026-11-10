@@ -6962,7 +6962,14 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     const matching = cardEls.filter(e => !e.removed && selMatch(e.card));
     if (matching.length === 0) {
       ctx.addLog && ctx.addLog('⏸ 条件を満たすカードがありません。次へ');
-      runSelectionPhase();
+      // オープンしたカードを数秒見せてから次へ（すぐ「手札に加える」等の演出に移り、何をめくったか分からなかった。P-070 ドルモン）
+      stepEl.innerText = '条件を満たすカードがありません';
+      clearButtons();
+      cardEls.forEach(e => { if (!e.removed) setCardDimmed(e); });
+      setTimeout(() => {
+        cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
+        runSelectionPhase();
+      }, 2500);
       return;
     }
 

@@ -6977,7 +6977,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         else setCardDimmed(e);
       });
       clearButtons();
-      const skipLabel = isOptional ? '⏭ スキップ' : (pickedCount > 0 ? '✓ 完了' : null);
+      // 任意の選択は「キャンセル」（選ばない）。「スキップ」は分かりにくい（P-070 ドルモン 11/10 指摘）
+      const skipLabel = isOptional ? (pickedCount > 0 ? '✓ 完了' : '✕ キャンセル') : (pickedCount > 0 ? '✓ 完了' : null);
       if (skipLabel) {
         const btn = document.createElement('button');
         btn.innerText = skipLabel;
@@ -7116,7 +7117,17 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         };
         // タップ → 詳細表示 →「✓ 決定」で選ぶ
         entry.wrap.onclick = () => { if (!entry.removed) _showOpenCardDetail(entry.card, _pick); };
+        entry._pick = _pick;
       });
+      // 選べるカードが1枚だけなら「登場」「手札に加える」等のボタンも出す（カードをタップしなくても決められる）
+      const _act = cardEls.filter(e => !e.removed && selMatch(e.card));
+      if (_act.length === 1 && pickedCount < maxCount && typeof _act[0]._pick === 'function') {
+        const ob = document.createElement('button');
+        ob.innerText = dest === 'play' && sel.action !== 'evolve' ? '登場' : _deckOpenDestLabel(sel);
+        ob.style.cssText = 'background:#00ff88;color:#002211;border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+        ob.onclick = () => { if (!_act[0].removed) _act[0]._pick(); };
+        buttonArea.insertBefore(ob, buttonArea.firstChild);
+      }
     }
 
     refreshSelectUI();

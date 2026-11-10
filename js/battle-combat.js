@@ -3279,9 +3279,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
         // 負けたときと同じ処理（≪ジャミング≫・≪防壁≫等の「消滅しない」の確認）を通す（以前は確認せずに消滅していた）
         const _secTie = atk.dp === sec.dp;
         if (atk.dp > sec.dp) {
-          bs.ai.trash.push(sec); renderAll(); _dispatchStateSync();
+          const _secToHand = _secDigimonToZone(sec, bs.ai, true); renderAll(); _dispatchStateSync();
           showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
-            showDestroyEffect(sec, () => {
+            showSecurityDigimonLeave(sec, true, _secToHand, 'ai', () => {
               addLog('✓ セキュリティ突破');
               // セキュリティデジモンとのバトルに勝った →「バトルに勝ったとき」（on_win_battle_any）
               _fireSecurityBattleWin(atk, 'player', sec, () => {
@@ -3296,11 +3296,11 @@ export function resolveSecurityCheck(atk, atkIdx) {
         } else {
           // ≪ジャミング≫: セキュリティデジモンとのバトル敗北時、消滅しない
           if (hasJamming(atk)) {
-            bs.ai.trash.push(sec);
+            const _secToHand = _secDigimonToZone(sec, bs.ai, true);
             renderAll(); _dispatchStateSync();
             addLog('🛡 【ジャミング】「' + atk.name + '」がセキュリティバトルで消滅回避');
             showBattleResult('ジャミング！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => {
-              showDestroyEffect(sec, () => {
+              showSecurityDigimonLeave(sec, _secTie, _secToHand, 'ai', () => {
                 if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
                 else { checkAttackEnd(atk, atkIdx); }
               });
@@ -3311,10 +3311,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
           // ≪回避≫/≪アーマー解除≫/【分離】もここで判定
           _tryCancelDestroyAsync(atk, bs.player, 'player', false, (cancelAtkInSec) => {
           if (cancelAtkInSec) {
-            bs.ai.trash.push(sec);
+            const _secToHand = _secDigimonToZone(sec, bs.ai, true);
             renderAll(); _dispatchStateSync();
             showBattleResult('回避！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => {
-              showDestroyEffect(sec, () => {
+              showSecurityDigimonLeave(sec, _secTie, _secToHand, 'ai', () => {
                 if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
                 else { checkAttackEnd(atk, atkIdx); }
               });
@@ -3322,15 +3322,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
             return;
           }
           removeOwnCard(atkIdx, 'destroy');
-          bs.ai.trash.push(sec);
+          const _secToHand = _secDigimonToZone(sec, bs.ai, true);
           renderAll(); _dispatchStateSync();
-          showBattleResult(_secTie ? '両者消滅' : 'Lost...', '#ff4444', _secTie ? '両者消滅！' : '「' + atk.name + '」が撃破された', () => {
-            showDestroyEffect(atk, () => {
+          showBattleResult(_secTie ? '両者負け' : 'Lost...', '#ff4444', _secTie ? '両方ともバトルに負けた' : '「' + atk.name + '」が撃破された', () => {
+            showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, _secTie, _secToHand, 'ai', () => {
               addLog('✗ セキュリティに敗北'); _dispatchStateSync();
               try {
                 _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
               } catch(_) { checkPendingTurnEnd(); }
-            });
+            }));
           }, 'Win!!', '#00ff88');
           });
         }
@@ -4664,24 +4664,24 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-          bs.player.trash.push(sec);
-          showDestroyEffect(atk, () => {
-            addLog('💥 両者消滅！'); renderAll();
+          const _secToHand = _secDigimonToZone(sec, bs.player, false);
+          showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, true, _secToHand, 'player', () => {
+            addLog('💥 両方ともバトルに負けた'); renderAll();
             _fireDestroyChain(['ai'], _afterOne, { ai: atk });
-          });
+          }));
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-          bs.player.trash.push(sec);
-          showDestroyEffect(atk, () => {
+          const _secToHand = _secDigimonToZone(sec, bs.player, false);
+          showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, false, _secToHand, 'player', () => {
             addLog('💥 「' + atk.name + '」が撃破された'); renderAll();
             _fireDestroyChain(['ai'], _afterOne, { ai: atk });
-          });
+          }));
         } else {
-          bs.player.trash.push(sec);
+          const _secToHand = _secDigimonToZone(sec, bs.player, false);
           renderAll();
-          showDestroyEffect(sec, () => {
+          showSecurityDigimonLeave(sec, true, _secToHand, 'player', () => {
             showBattleResult('Lost...', '#ff4444', 'セキュリティ突破された', () => {
               addLog('✓ セキュリティ突破');
               if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
@@ -5451,6 +5451,56 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
   setTimeout(() => { textEl.style.opacity = '1'; textEl.style.transform = 'scale(1)'; setTimeout(() => { subEl.style.opacity = '1'; }, 200); }, 50);
   setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 1500);
 }
+
+// ----- セキュリティデジモンのバトル後 -----
+// セキュリティデジモンはバトルに負けても消滅しない。勝っても負けても、チェックの最後にトラッシュに置かれる
+// （総合ルール 14-2-3 / 13-1-8-4）。【セキュリティ】効果で「このカードを手札に加える」（インプモン P-071 等）なら手札へ。
+// owner: セキュリティの持ち主（bs.ai / bs.player）。useOnlineFlag: オンラインで持ち主の端末が効果を処理したとき、
+// 手札に加えたかを security_effect_done（window._lastSecEffectReturnToHand）で受け取っている
+// 戻り値: 手札に加えたら true
+function _secDigimonToZone(sec, owner, useOnlineFlag) {
+  const onlineRTH = useOnlineFlag && window._lastSecEffectReturnToHand === true;
+  if (useOnlineFlag) window._lastSecEffectReturnToHand = false;
+  const toHand = !!sec._returnToHand || onlineRTH;
+  delete sec._returnToHand;
+  (toHand ? owner.hand : owner.trash).push(sec);
+  if (toHand) addLog('🃏 「' + sec.name + '」を手札に加えた');
+  return toHand;
+}
+// 演出: 負けたなら「LOSE」を見せてから、セキュリティ → トラッシュ（手札に加えるなら手札）への移動演出。消滅演出は出さない
+// ownerSide: セキュリティの持ち主（'ai'＝相手 / 'player'＝自分）。opts.remote: 相手から受信した演出（送り返さない）
+export function showSecurityDigimonLeave(sec, lost, toHand, ownerSide, callback, opts) {
+  opts = opts || {};
+  if (!opts.remote && _onlineMode && _sendCommand && !window._suppressFxSend) {
+    _sendCommand({ type: 'fx_secDigimonLeave', cardName: sec.name || '', cardNo: sec.cardNo || '', cardImg: cardImg(sec) || '', lost: !!lost, toHand: !!toHand, ownerSide: ownerSide === 'ai' ? 'player' : 'ai' });
+  }
+  const pre = ownerSide === 'ai' ? '相手の' : '';
+  const move = () => {
+    if (typeof window._fxCardMove === 'function') window._fxCardMove(sec, pre + 'セキュリティ', pre + (toHand ? '手札' : 'トラッシュ'), callback);
+    else callback && callback();
+  };
+  if (!lost) { move(); return; }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;';
+  const src = cardImg(sec);
+  if (src) {
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'width:120px;border-radius:8px;filter:grayscale(0.7) brightness(0.8);';
+    ov.appendChild(img);
+  }
+  const t = document.createElement('div');
+  t.style.cssText = 'font-size:clamp(2.2rem,11vw,3.6rem);font-weight:900;color:#ff4444;letter-spacing:6px;text-shadow:0 0 20px #ff4444,0 0 40px #ff4444;';
+  t.innerText = 'LOSE';
+  ov.appendChild(t);
+  const sub = document.createElement('div');
+  sub.style.cssText = 'color:#ddd;font-size:13px;text-align:center;padding:0 16px;';
+  sub.innerText = '「' + (sec.name || '') + '」はバトルに負けた（セキュリティデジモンは消滅しない）';
+  ov.appendChild(sub);
+  document.body.appendChild(ov);
+  setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); move(); }, 1300);
+}
+if (typeof window !== 'undefined') window._showSecurityDigimonLeave = showSecurityDigimonLeave;
 
 // ----- 消滅演出 -----
 

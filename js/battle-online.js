@@ -1039,11 +1039,21 @@ function onRemoteCommand(cmd) {
       // テキストマージは廃止。表示用に originalEffect は残す。
       const hasSecField = secCard.securityEffect && secCard.securityEffect.trim() && secCard.securityEffect !== 'なし';
       const originalEffect = secCard.effect || '';
+      // めくったカードは security_remove で先にトラッシュへ置かれているが、ルールでは効果・バトルを解決してから
+      // トラッシュに置く（総合ルール 13-1-8-4）。効果の処理中はトラッシュから外しておく（インプモン P-071
+      // 「トラッシュから紫のLv.3を登場」でインプモン自身が候補に出ていた）
+      let _secHeld = null;
+      for (let i = bs.player.trash.length - 1; i >= 0; i--) {
+        const c = bs.player.trash[i];
+        if (c && (c.cardNo || '') === (cmd.cardNo || '') && c.name === cmd.cardName) { _secHeld = bs.player.trash.splice(i, 1)[0]; break; }
+      }
       const afterEffect = () => {
         // セキュリティ効果欄の「なし」は空欄扱い（効果欄の文章を見る）
         const mentionsMain = /このカードの\s*【メイン】\s*効果/.test((secCard.securityEffect && secCard.securityEffect !== 'なし') ? secCard.securityEffect : secCard.effect);
         const doFinish = () => {
           secCard.effect = originalEffect;
+          // 効果の処理中に外していたカードをトラッシュへ戻す（手札に加えるなら下でトラッシュから手札へ移る）
+          if (_secHeld) { bs.player.trash.push(_secHeld); _secHeld = null; }
           // ヘブンズゲート/ヘブンズチャーム等: secCard._returnToHand が立っていれば
           // P2 のローカル状態でも、すでに security_remove でトラッシュに送られた実カードを
           // 探して手札へ戻す
@@ -2105,6 +2115,13 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_destroy': {
       if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg, _remoteFx: true }, done));
+      break;
+    }
+    // 相手のアタックでセキュリティデジモンのバトルが終わった →「LOSE」とトラッシュ/手札への移動演出（消滅ではない）
+    case 'fx_secDigimonLeave': {
+      if (typeof window._showSecurityDigimonLeave === 'function') {
+        enqueueFx((done) => window._showSecurityDigimonLeave({ name: cmd.cardName, cardNo: cmd.cardNo, imgSrc: cmd.cardImg, _remoteFx: true }, cmd.lost, cmd.toHand, cmd.ownerSide, done, { remote: true }));
+      }
       break;
     }
     // 相手がリンクした（手動 link / 効果 fx_linkEffect）→ リンク演出（盤面は state_sync で同期）

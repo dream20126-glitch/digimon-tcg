@@ -630,6 +630,23 @@ window.loadScenario = function() {
   document.getElementById('test-status').innerText = `📂「${name}」を読み込みました`;
 };
 
+// カスタムシナリオの入力を全部消して初期状態に戻す（保存済みシナリオ自体は消さない）
+window.resetCustomScenario = function() {
+  if (!confirm('配置したカードと設定を全部消しますか？（保存済みシナリオは消えません）')) return;
+  Object.keys(_customCards).forEach(z => { _customCards[z] = []; });
+  _customEvo = { p1: {}, p2: {} };
+  _customIkuseiEvo = { p1: [], p2: [] };
+  document.getElementById('custom-memory').value = 5;
+  document.getElementById('custom-p1-sec').value = 5;
+  document.getElementById('custom-p2-sec').value = 0;
+  document.getElementById('custom-p1-trash-dummy').value = 0;
+  document.getElementById('custom-p2-trash-dummy').value = 0;
+  document.getElementById('save-name-input').value = '';
+  document.getElementById('saved-scenario-select').value = '';
+  renderCustomCards();
+  document.getElementById('test-status').innerText = '🧹 カスタムシナリオをリセットしました';
+};
+
 window.deleteScenario = function() {
   const sel = document.getElementById('saved-scenario-select');
   const name = sel.value;

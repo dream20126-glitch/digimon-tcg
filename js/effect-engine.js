@@ -4235,6 +4235,78 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
   });
 }
 
+// ===== 「絞り込み無しのN体」か「絞り込みありのM体」を1体ずつ選ぶ（alt_actions_op:'or'。ヘラクルカブテリモン P-044） =====
+const _COUNT_OR_TARGET_RE = /^(opponent|own):(\d+)$/;
+function _isCountOrChoice(choices) {
+  if (!Array.isArray(choices) || choices.length !== 2) return false;
+  const [a, b] = choices;
+  if (!a || !b || a.action !== b.action || a.cost || b.cost || a.from || b.from) return false;
+  const ma = _COUNT_OR_TARGET_RE.exec(String(a.target || '')), mb = _COUNT_OR_TARGET_RE.exec(String(b.target || ''));
+  if (!ma || !mb || ma[1] !== mb[1]) return false;
+  const hasF = (x) => x.filter && Object.keys(x.filter).length > 0;
+  return parseInt(mb[2], 10) > parseInt(ma[2], 10) && hasF(b) && !hasF(a) && !a.condition && !b.condition;
+}
+function _runCountOrChoice(base, wide, ctx, store, callback) {
+  const side = _COUNT_OR_TARGET_RE.exec(String(base.target))[1];
+  const nBase = parseInt(_COUNT_OR_TARGET_RE.exec(String(base.target))[2], 10);
+  const nWide = parseInt(_COUNT_OR_TARGET_RE.exec(String(wide.target))[2], 10);
+  const wideFilter = resolveDpFilterMarkers(wide.filter, ctx.card, ctx.bs, ctx.side);
+  const isOwnSide = side === 'own';
+  const all = _collectSideTargets(ctx, {
+    own: isOwnSide, opp: !isOwnSide, filter: null,
+    pred: (c, isOwn) => !(!isOwn && !_stepAllowsImmunePick && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))),
+  }).filter((e) => e.zone === 'battleArea');
+  const fitsWide = (e) => cardMatchesFilter(e.card, wideFilter, ctx.bs, ctx.side, ctx.card);
+  const picked = [];
+  const apply = () => {
+    if (picked.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback && callback()); return; }
+    const one = Object.assign({}, base, { _costsResolved: true });
+    ['alt_actions', 'alt_actions_op', 'limit', 'trigger_conditions', 'filter'].forEach((k) => delete one[k]);
+    let i = 0, done = 0;
+    const next = () => {
+      if (i >= picked.length) { if (ctx.bs) ctx.bs._lastActionCount = done; callback && callback(); return; }
+      const e = _refreshSideEntry(picked[i++], ctx);
+      const owner = e.own ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai) : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
+      const idx = owner.battleArea.indexOf(e.card);
+      if (idx === -1) { next(); return; }
+      executeRecipeStep(Object.assign({}, one, { target: side + ':1' }), Object.assign({}, ctx, { _forceTargetIdx: idx }), store, (r) => { if (r !== false) done++; next(); });
+    };
+    next();
+  };
+  // 次に選べる候補: 選んだ数が base の数未満なら全員、それ以上なら（選んだ全てが絞り込みに合うときだけ）絞り込みに合う対象
+  const remaining = () => {
+    const rest = all.filter((e) => !picked.includes(e));
+    if (picked.length < nBase) return rest;
+    if (picked.length >= nWide || !picked.every(fitsWide)) return [];
+    return rest.filter(fitsWide);
+  };
+  if (all.length === 0) { apply(); return; }
+  const color = getUIColor(base.action, '#ffcc00', base.frame_color);
+  const pickNext = () => {
+    const rest = remaining();
+    if (rest.length === 0) { apply(); return; }
+    showTargetSelection('both', rest.map(_boardEnc), null, color, (v) => {
+      const e = rest.find((x) => _boardEnc(x) === v);
+      if (!e) { apply(); return; }
+      picked.push(e);
+      if (picked.length < nBase) { pickNext(); return; }
+      if (remaining().length === 0) { apply(); return; }
+      _askSumBudgetMore('もう1体選びますか？（' + _filterLabelForAlt(wideFilter) + 'の対象を' + nWide + '体まで）', color, pickNext, apply);
+    });
+  };
+  pickNext();
+}
+function _filterLabelForAlt(f) {
+  if (!f) return '';
+  const p = [];
+  if (f.dp_le != null) p.push('DP' + f.dp_le + '以下');
+  if (f.dp_ge != null) p.push('DP' + f.dp_ge + '以上');
+  if (f.lv_le != null) p.push('Lv.' + f.lv_le + '以下');
+  if (f.lv_ge != null) p.push('Lv.' + f.lv_ge + '以上');
+  if (f.cost_le != null) p.push('コスト' + f.cost_le + '以下');
+  return p.join('・') || '条件に合う';
+}
+
 // ===== 合計予算つきの対象選択（filter.dp_sum_le / lv_sum_le / cost_sum_le） =====
 // 「DP合計このデジモンのDPまで、相手のデジモンを消滅させる」（アグモン-勇気の絆-ACE LM-021
 // {"action":"destroy","target":"opponent:all","filter":{"dp_sum_le":"self"}}）等。対象を1体ずつ選び、
@@ -15334,7 +15406,13 @@ function _resolveStepConditionGate(step) {
   // （クオンタモン LM-020 の効果2「そのカードが宣言したカードカテゴリーなら〜効果を受けない」が、immune_effects が
   // condition を読まないため無条件で付いていた）
   const _isLastActC = (c) => !!(c && /^cond_(last_action_|picked_)/.test(String(c.code || '')));
-  const hasSubjAttr = (!all.some(c => c && _EXISTS_META_CODES.has(c.code)) && all.some(_isSubjectAttrCond)) || all.some(_isSelfC) || all.some(_isLastActC);
+  // 陣営つきの盤面の条件（cond_battle_area_ge:1@own_tamer＝「自分のテイマーがいるとき」等。対象の性質ではない）も
+  // 発動条件として先に判定する（ウォーグレイモン P-050 の【進化時】で、相手のデジモン1体ずつに「テイマーがいるか」を
+  // 当てはめてしまい、相手にテイマーがいないと「対象がいません」になっていた）
+  const _isBoardC = (c) => !!(c && c.subject && !TARGET_FILTER_COND_CODES.has(c.code) && !_EXISTS_META_CODES.has(c.code)
+    && !/^self(_card)?$/i.test(String(c.subject)));
+  const hasSubjAttr = (!all.some(c => c && _EXISTS_META_CODES.has(c.code)) && all.some(_isSubjectAttrCond)) || all.some(_isSelfC) || all.some(_isLastActC)
+    || (!all.some(c => c && _EXISTS_META_CODES.has(c.code)) && all.some(_isBoardC));
   // cond_not_exists（「～がいないなら」）は盤面全体を見る発動条件で、兄弟条件（when の cond_has_evo:self 等）は
   // その候補の絞り込み。各 case が when を対象フィルタとして誤用しないよう、全体をゲートとして先に評価する
   // （ヴァイクモン LM-040 condition:"cond_not_exists@opp" + when:"cond_has_evo:self" の active）
@@ -15352,7 +15430,7 @@ function _resolveStepConditionGate(step) {
   const gateStrs = [];
   const restStrs = [];
   parsed.forEach((g, i) => {
-    if (g.length > 0 && g.every((c) => _isSubjectAttrCond(c) || _isSelfC(c) || _isLastActC(c))) gateStrs.push(strs[i]);
+    if (g.length > 0 && g.every((c) => _isSubjectAttrCond(c) || _isSelfC(c) || _isLastActC(c) || _isBoardC(c))) gateStrs.push(strs[i]);
     else restStrs.push(strs[i]);
   });
   const stripped = strip(step);
@@ -15869,6 +15947,13 @@ function runWithAltActions(step, ctx, store, callback) {
 
   // OR: メインと alts のどれか1つを選択
   const choices = [mainOnly].concat(alts);
+  // 「相手のデジモン1体か、DP5000以下の相手のデジモン2体を〜」（ヘラクルカブテリモン P-044）のように、同じアクションで
+  // 「絞り込み無しのN体」か「絞り込みありのM体（M>N）」を選ぶ形は、どちらにするかを先に聞かず、1体ずつ選ばせる。
+  // 選んだ対象が全て絞り込みに合い、まだ合う対象が残っていれば M 体まで続けて選べる（合わない対象を選んだら N 体で終わり）
+  if (_isCountOrChoice(choices) && ctx.side === 'player' && ctx._forceTargetIdx === undefined && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+    _runCountOrChoice(choices[0], choices[1], ctx, store, callback);
+    return;
+  }
   const labels = _altChoiceLabels(choices, ctx);
 
   // 盤面状況で実行可能な選択肢が1つだけなら、選択UIを出さず自動実行する。

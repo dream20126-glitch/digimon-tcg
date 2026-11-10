@@ -4191,7 +4191,8 @@ function _refreshSideEntry(e, ctx) {
   if (!c) { const hits = arr.filter(same); if (hits.length === 1) c = hits[0]; }
   return c ? Object.assign({}, e, { card: c, idx: arr.indexOf(c) }) : e;
 }
-function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
+// upTo: 「N体まで」。候補がN体以下でも自動で全部は選ばず、2体目からは「ここまでで決定」で止められる
+function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0, upTo) {
   const cb = (list) => cb0((list || []).map((e) => _refreshSideEntry(e, ctx)));
   // 相手の「効果を受けない」カードは候補から外す
   if (!_stepAllowsImmunePick) cands = (cands || []).filter(e => !(e && !e.own && _isImmuneToEffect(e.card, ctx)));
@@ -4202,10 +4203,11 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
     cb(sorted.slice(0, want));
     return;
   }
-  if (cands.length <= want) { cb(cands.slice()); return; }
+  const _boardPick = cands.every(e => _boardEnc(e) !== -1) && typeof document !== 'undefined' && document.getElementById('pl-battle-row');
+  if (cands.length <= want && !(upTo && _boardPick)) { cb(cands.slice()); return; }
   // バトルエリア（盤面に見えている）のデジモンから選ぶなら、何体でも通常の対象選択（盤面のデジモンをタップ→確認）で
   // 1体ずつ選ぶ。カード一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
-  if (cands.every(e => _boardEnc(e) !== -1) && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+  if (_boardPick) {
     const _hasTamer = cands.some(e => e.zone === 'tamerArea');
     const what = String(title || '').replace(/^🎯\s*/, '').replace(/の?対象を選んでください$/, '').trim();
     const picked = [];
@@ -4221,7 +4223,8 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
         if (!e) { window._skipFxEffectClose = false; cb(picked); return; }
         picked.push(e);
         pickNext();
-      }, '（' + (what ? what + '・' : '') + nth + (_hasTamer ? '自分/相手の盤面から）' : '自分/相手のデジモンから）'));
+      }, '（' + (what ? what + '・' : '') + nth + (_hasTamer ? '自分/相手の盤面から）' : '自分/相手のデジモンから）'),
+      (upTo && picked.length >= 1) ? { stopLabel: '✓ ここまで（' + picked.length + '体）で決定' } : undefined);
     };
     pickNext();
     return;
@@ -4557,7 +4560,8 @@ function _stepPurposeLabel(step) {
   } catch (_) {}
   return '';
 }
-export function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel) {
+// opts.stopLabel: 指定すると「ここまでで決定」等のボタンを出し、押したら選ばずに callback(null) で終える（「N体まで」の途中で止める）
+export function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel, opts) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
   //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
   //   ※ AI が効果を使う時のみ消費する（AI のターン中、または targetSide='player' で AI が
@@ -4651,6 +4655,16 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   msgEl.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:60000;background:rgba(0,0,0,0.9);border:1px solid '+color+';border-radius:10px;padding:12px 24px;color:'+color+';font-size:14px;font-weight:bold;text-align:center;box-shadow:0 0 20px '+color+'44;pointer-events:none;';
   msgEl.innerText = '🎯 対象を選んでください' + (extraLabel || '');
   document.body.appendChild(msgEl);
+  let stopBtn = null;
+  if (opts && opts.stopLabel) {
+    stopBtn = document.createElement('button');
+    stopBtn.id = '_target-stop-btn';
+    stopBtn.innerText = opts.stopLabel;
+    stopBtn.style.cssText = 'position:fixed;top:calc(15% + 64px);left:50%;transform:translateX(-50%);z-index:60001;background:#222;border:1px solid '+color+';border-radius:8px;padding:8px 20px;color:'+color+';font-size:13px;font-weight:bold;cursor:pointer;';
+    // 止めたらそこで選択は終わりなので、相手画面の「対象選択中」も閉じる
+    stopBtn.onclick = (e) => { e.stopPropagation(); window._skipFxEffectClose = false; cleanup(); callback(null); };
+    document.body.appendChild(stopBtn);
+  }
 
   // 対象を光らせる＋ホバー演出
   // チュートリアルの tutorial-spotlight-mode が残っていても確実にタップ可能にする保険:
@@ -4674,7 +4688,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
 
   function onSelect(e) {
     // 発揮待ちの効果の表示（右下/右上・「他」の一覧）を押したときは、その裏にあるカードを選ばない
-    if (e.target && e.target.closest && e.target.closest('#_pending-hud-own, #_pending-hud-opp, [data-hud-list]')) return;
+    if (e.target && e.target.closest && e.target.closest('#_pending-hud-own, #_pending-hud-opp, [data-hud-list], #_target-stop-btn')) return;
     const cx = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
     const cy = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
     if (!cx || !cy) return;
@@ -4860,6 +4874,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     }
     if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'block';
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+    if (stopBtn && stopBtn.parentNode) stopBtn.parentNode.removeChild(stopBtn);
     validIndices.forEach(idx => {
       const slot = slots[idx];
       if (!slot) return;
@@ -20524,7 +20539,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           _syncStateAfterCant();
           callback();
-        });
+        }, !!_cmM[2]);
         break;
       }
       // 単体選択など → 既存エンジンに委譲（対象の条件 step.filter も渡す。シェルモン EX12-026「進化元が1枚以下の相手のデジモン」）
@@ -25306,14 +25321,21 @@ export function checkAbsorbEvolveDiscount(evoCard, bs, side, callback) {
     doRest(candidates[0].i);
     return;
   }
-  // 吸収進化は強制効果（「〜することで」の任意確認は不要）。レストできるデジモンが
-  // いれば、確認を挟まず直接対象選択に入る
+  // 「自分のデジモン1体をレストさせることで」は任意処理条件（総合ルール 16-10-3）なので、使うか確認してから
+  // レストさせるデジモンを選ぶ（以前は確認なしで選択に入り、使わない選択ができなかった。ロゼモン P-056）
   if (typeof showTargetSelection !== 'function') { finish(0); return; }
   const validIndices = candidates.map((x) => x.i);
-  showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
+  const pick = () => showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
     if (selectedIdx == null) { finish(0); return; }
     doRest(selectedIdx);
   }, '（吸収進化-' + amount + '：レストさせる自分のデジモンを選択）');
+  if (typeof showConfirmDialog !== 'function') { pick(); return; }
+  showConfirmDialog(evoCard, '【吸収進化-' + amount + '】自分のデジモン1体をレストさせることで、「' + evoCard.name + '」の進化コストを-' + amount + 'しますか？', (yes) => {
+    if (yes && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+    }
+    if (yes) pick(); else finish(0);
+  });
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか

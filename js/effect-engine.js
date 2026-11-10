@@ -4290,23 +4290,12 @@ function _runCountOrChoice(base, wide, ctx, store, callback) {
       if (!e) { apply(); return; }
       picked.push(e);
       if (picked.length < nBase) { pickNext(); return; }
-      if (remaining().length === 0) { apply(); return; }
-      _askSumBudgetMore('もう1体選びますか？（' + _filterLabelForAlt(wideFilter) + 'の対象を' + nWide + '体まで）', color, pickNext, apply);
+      // 絞り込みに合う対象がまだいれば、そのまま次の対象を選ぶ（強制効果なので「もう1体選びますか？」は聞かない）
+      pickNext();
     });
   };
   pickNext();
 }
-function _filterLabelForAlt(f) {
-  if (!f) return '';
-  const p = [];
-  if (f.dp_le != null) p.push('DP' + f.dp_le + '以下');
-  if (f.dp_ge != null) p.push('DP' + f.dp_ge + '以上');
-  if (f.lv_le != null) p.push('Lv.' + f.lv_le + '以下');
-  if (f.lv_ge != null) p.push('Lv.' + f.lv_ge + '以上');
-  if (f.cost_le != null) p.push('コスト' + f.cost_le + '以下');
-  return p.join('・') || '条件に合う';
-}
-
 // ===== 合計予算つきの対象選択（filter.dp_sum_le / lv_sum_le / cost_sum_le） =====
 // 「DP合計このデジモンのDPまで、相手のデジモンを消滅させる」（アグモン-勇気の絆-ACE LM-021
 // {"action":"destroy","target":"opponent:all","filter":{"dp_sum_le":"self"}}）等。対象を1体ずつ選び、

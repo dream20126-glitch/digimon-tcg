@@ -16465,7 +16465,13 @@ function _securityOpenPick(step, ctx, callback) {
   const _pickFilter = _sel0 && _sel0.filter && typeof _sel0.filter === 'object' ? _sel0.filter : null;
   const _pickOptional = !!((_sel0 && _sel0.optional) || step.pick_optional);
   const choose = (cb) => {
-    if (!dest) { cb(null); return; }
+    // 移さずに戻すだけ（エスピモン P-078「相手のセキュリティを上から1枚オープンする」）でも、オープンしたカードを見せてから進む
+    // （以前は何も表示せずに【1ドロー】へ進み、どのセキュリティをオープンしたのか分からなかった）
+    if (!dest) {
+      if (ctx.side !== 'player' || typeof document === 'undefined') { cb(null); return; }
+      _showOpenedSecurity(opened, lbl, getImg, () => cb(null));
+      return;
+    }
     const cands = _pickFilter ? opened.filter((c) => cardMatchesFilter(c, _pickFilter, bs, ownerSide, ctx.card)) : opened.slice();
     if (cands.length === 0) { ctx.addLog && ctx.addLog('💨 ' + destLbl + 'に置けるカードがありません'); cb(null); return; }
     if (ctx.side === 'ai') {
@@ -16553,6 +16559,38 @@ function _securityOpenPick(step, ctx, callback) {
     }
     doShuffleFx();
   });
+}
+// オープンしたセキュリティを表向きで見せる（タップか2.5秒で閉じる）。lbl: '相手の' / ''
+function _showOpenedSecurity(cards, lbl, getImg, done) {
+  let closed = false;
+  const ov = document.createElement('div');
+  const close = () => { if (closed) return; closed = true; if (ov.parentNode) ov.parentNode.removeChild(ov); done && done(); };
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;cursor:pointer;';
+  const t = document.createElement('div');
+  t.style.cssText = 'color:#00fbff;font-size:clamp(1rem,4.5vw,1.3rem);font-weight:900;text-align:center;text-shadow:0 0 12px #00fbff;';
+  t.innerText = '🛡 ' + lbl + 'セキュリティをオープン（上から' + cards.length + '枚）';
+  ov.appendChild(t);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:92vw;';
+  cards.forEach((c) => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:100px;';
+    const src = c ? getImg(c) : '';
+    if (src) { const img = document.createElement('img'); img.src = src; img.style.cssText = 'width:100px;border-radius:6px;box-shadow:0 0 12px #00fbff88;'; cell.appendChild(img); }
+    const nm = document.createElement('div');
+    nm.style.cssText = 'color:#fff;font-size:12px;text-align:center;';
+    nm.innerText = (c && c.name) || '?';
+    cell.appendChild(nm);
+    row.appendChild(cell);
+  });
+  ov.appendChild(row);
+  const hint = document.createElement('div');
+  hint.style.cssText = 'color:#aaa;font-size:11px;';
+  hint.innerText = 'タップで閉じる';
+  ov.appendChild(hint);
+  ov.onclick = close;
+  document.body.appendChild(ov);
+  setTimeout(close, 2500);
 }
 function _withOppSecuritySync(ctx, run, done) {
   const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;

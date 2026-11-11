@@ -1053,12 +1053,15 @@ function onRemoteCommand(cmd) {
         const doFinish = () => {
           secCard.effect = originalEffect;
           // 効果の処理中に外していたカードをトラッシュへ戻す（手札に加えるなら下でトラッシュから手札へ移る）
+          const _secReal = _secHeld;
           if (_secHeld) { bs.player.trash.push(_secHeld); _secHeld = null; }
           // ヘブンズゲート/ヘブンズチャーム等: secCard._returnToHand が立っていれば
           // P2 のローカル状態でも、すでに security_remove でトラッシュに送られた実カードを
           // 探して手札へ戻す
           if (secCard._returnToHand) {
-            const tIdx = bs.player.trash.findIndex(c =>
+            // めくったカード本体（同じカードの別の1枚がトラッシュにあっても、そちらは動かさない）
+            let tIdx = _secReal ? bs.player.trash.lastIndexOf(_secReal) : -1;
+            if (tIdx === -1) tIdx = bs.player.trash.findIndex(c =>
               c && (c.cardNo === (cmd.cardNo || secCard.cardNo) || c.name === (cmd.cardName || secCard.name))
             );
             if (tIdx !== -1) {

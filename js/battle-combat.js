@@ -5314,6 +5314,85 @@ function _showEvolveEffectBody(cost, baseName, baseCard, evolvedCard, onDone, op
 
 // ----- オプション使用演出 -----
 
+// 魔法を使ったような演出: カードの後ろで回る魔法陣、またたく星、はじける星、カードを横切る光
+function _optionMagicFx(layer, imgEl) {
+  if (!document.getElementById('_opt-magic-style')) {
+    const st = document.createElement('style');
+    st.id = '_opt-magic-style';
+    st.textContent = `
+@keyframes optMagicCircle { 0% { transform:translate(-50%,-50%) scale(0.2) rotate(0deg); opacity:0; } 25% { opacity:1; } 100% { transform:translate(-50%,-50%) scale(1) rotate(200deg); opacity:0.9; } }
+@keyframes optMagicSpin { from { transform:rotate(0deg); } to { transform:rotate(-360deg); } }
+@keyframes optTwinkle { 0%,100% { transform:translate(-50%,-50%) scale(0) rotate(0deg); opacity:0; } 50% { transform:translate(-50%,-50%) scale(1) rotate(90deg); opacity:1; } }
+@keyframes optStarBurst { 0% { transform:translate(-50%,-50%) scale(0.3) rotate(0deg); opacity:1; } 100% { transform:translate(calc(-50% + var(--sx)),calc(-50% + var(--sy))) scale(1) rotate(var(--sr)); opacity:0; } }
+@keyframes optStarFall { 0% { transform:translateY(0) rotate(0deg); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(var(--fy)) rotate(var(--sr)); opacity:0; } }
+@keyframes optShine { 0% { left:-80%; } 100% { left:130%; } }`;
+    document.head.appendChild(st);
+  }
+  const STAR = 'polygon(50% 0%,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0% 50%,39% 39%)';
+  const COLORS = ['#ffffff', '#fff3a8', '#e8c8ff', '#cc88ff', '#aee6ff'];
+  const star = (size, color) => {
+    const s = document.createElement('div');
+    s.style.cssText = `position:absolute;width:${size}px;height:${size}px;background:${color};clip-path:${STAR};filter:drop-shadow(0 0 ${Math.round(size / 3)}px ${color});pointer-events:none;`;
+    return s;
+  };
+  // 魔法陣（二重円＋六芒星＋外周の小円）。カードの後ろでゆっくり回る
+  const circle = document.createElement('div');
+  circle.style.cssText = 'position:absolute;left:50%;top:45%;width:min(78vw,340px);height:min(78vw,340px);transform:translate(-50%,-50%) scale(0.2);opacity:0;animation:optMagicCircle 1.1s ease-out forwards;pointer-events:none;';
+  const pts = (r, n, rot) => Array.from({ length: n }, (_, i) => { const a = (Math.PI * 2 * i) / n + rot; return [100 + r * Math.cos(a), 100 + r * Math.sin(a)]; });
+  const tri = (rot) => pts(70, 3, rot).map((p) => p.join(',')).join(' ');
+  const dots = pts(88, 12, 0).map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.5" fill="#fff3a8"/>`).join('');
+  circle.innerHTML = `<svg viewBox="0 0 200 200" width="100%" height="100%" style="animation:optMagicSpin 6s linear infinite;filter:drop-shadow(0 0 6px #aa66ff) drop-shadow(0 0 14px #cc88ff);">
+    <circle cx="100" cy="100" r="96" fill="none" stroke="#cc88ff" stroke-width="1.5"/>
+    <circle cx="100" cy="100" r="80" fill="none" stroke="#aa66ff" stroke-width="1" stroke-dasharray="4 3"/>
+    <circle cx="100" cy="100" r="70" fill="none" stroke="#e8c8ff" stroke-width="1.2"/>
+    <polygon points="${tri(-Math.PI / 2)}" fill="none" stroke="#e8c8ff" stroke-width="1.4"/>
+    <polygon points="${tri(Math.PI / 2)}" fill="none" stroke="#e8c8ff" stroke-width="1.4"/>
+    <circle cx="100" cy="100" r="36" fill="none" stroke="#cc88ff" stroke-width="1"/>
+    ${dots}</svg>`;
+  layer.appendChild(circle);
+  // またたく星（画面のあちこちで光っては消える）
+  for (let i = 0; i < 26; i++) {
+    const s = star(8 + Math.random() * 18, COLORS[i % COLORS.length]);
+    s.style.left = (5 + Math.random() * 90) + '%';
+    s.style.top = (5 + Math.random() * 85) + '%';
+    s.style.transform = 'translate(-50%,-50%) scale(0)';
+    s.style.animation = `optTwinkle ${0.7 + Math.random() * 0.6}s ease-in-out ${0.2 + Math.random() * 1.6}s 2 both`;
+    layer.appendChild(s);
+  }
+  // カードが出たところで、星が外へはじける
+  setTimeout(() => {
+    for (let i = 0; i < 18; i++) {
+      const a = (Math.PI * 2 * i) / 18 + Math.random() * 0.3;
+      const d = 110 + Math.random() * 120;
+      const s = star(10 + Math.random() * 14, COLORS[i % COLORS.length]);
+      s.style.left = '50%'; s.style.top = '45%';
+      s.style.setProperty('--sx', Math.round(Math.cos(a) * d) + 'px');
+      s.style.setProperty('--sy', Math.round(Math.sin(a) * d) + 'px');
+      s.style.setProperty('--sr', Math.round(180 + Math.random() * 360) + 'deg');
+      s.style.animation = `optStarBurst ${0.9 + Math.random() * 0.4}s cubic-bezier(.15,.7,.3,1) forwards`;
+      layer.appendChild(s);
+    }
+    // 星くずが降る
+    for (let i = 0; i < 14; i++) {
+      const s = star(5 + Math.random() * 8, COLORS[i % COLORS.length]);
+      s.style.left = (20 + Math.random() * 60) + '%';
+      s.style.top = (10 + Math.random() * 25) + '%';
+      s.style.setProperty('--fy', (120 + Math.random() * 200) + 'px');
+      s.style.setProperty('--sr', Math.round(Math.random() * 360) + 'deg');
+      s.style.animation = `optStarFall ${1.1 + Math.random() * 0.6}s ease-in ${Math.random() * 0.6}s both`;
+      layer.appendChild(s);
+    }
+  }, 450);
+  // カードの表面を光が横切る
+  if (imgEl) {
+    setTimeout(() => {
+      const sh = document.createElement('div');
+      sh.style.cssText = 'position:absolute;top:0;left:-80%;width:60%;height:100%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,0.75) 50%,transparent 100%);animation:optShine 0.7s ease-in-out forwards;pointer-events:none;';
+      imgEl.appendChild(sh);
+    }, 800);
+  }
+}
+
 export function showOptionEffect(card, onDone) {
   // 表示するコスト（効果で軽減したら軽減後）。相手の画面にも同じコストを出す
   const _shownCost = card._costReduction ? (card.playCost - card._costReduction) : card.playCost;
@@ -5342,6 +5421,7 @@ export function showOptionEffect(card, onDone) {
   setTimeout(() => { flash.style.opacity = '0'; label.style.opacity = '1'; }, 200);
   setTimeout(() => { imgEl.style.opacity = '1'; imgEl.style.transform = 'scale(1)'; }, 400);
   setTimeout(() => { nameEl.style.opacity = '1'; costEl.style.opacity = '1'; }, 700);
+  _optionMagicFx(particles, imgEl);
   setTimeout(() => {
     const colors = ['#aa66ff', '#cc88ff', '#7733ff', '#fff', '#ddaaff'];
     for (let i = 0; i < 20; i++) {

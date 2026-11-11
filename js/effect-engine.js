@@ -3728,11 +3728,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // target:"self" → セキュリティ効果で「このカードを手札に加える」
       if (ahTarget.code === 'target_self' && ctx.card) {
         ctx.card._returnToHand = true;
-        // ctx.card は dummy オブジェクトの可能性が高いため、実体を player.trash / player.security から探して移動する
-        const matchFn = (c) => c && (
-          (ctx.card.cardNo && c.cardNo === ctx.card.cardNo) ||
-          (ctx.card.name && c.name === ctx.card.name)
-        );
+        // セキュリティ効果の終わりに _returnToHand を見て手札へ移す（オフライン battle-combat.js / オンライン battle-online.js）。
+        // ここで動かすのは、このカード本体がトラッシュ/セキュリティにあるときだけ。名前やカード番号で探すと、
+        // 同じカードの別の1枚（先に使ってトラッシュにあった等）まで手札に加わり2枚になっていた（無効化プラグインP P-095）
+        const matchFn = (c) => c && c === ctx.card;
         let realCard = null;
         const trashIdx = player.trash.findIndex(matchFn);
         if (trashIdx >= 0) {

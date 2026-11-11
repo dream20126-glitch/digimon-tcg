@@ -5322,17 +5322,21 @@ function _optionMagicFx(layer, imgEl) {
     st.textContent = `
 @keyframes optMagicCircle { 0% { transform:translate(-50%,-50%) scale(0.2) rotate(0deg); opacity:0; } 25% { opacity:1; } 100% { transform:translate(-50%,-50%) scale(1) rotate(200deg); opacity:0.9; } }
 @keyframes optMagicSpin { from { transform:rotate(0deg); } to { transform:rotate(-360deg); } }
-@keyframes optTwinkle { 0%,100% { transform:translate(-50%,-50%) scale(0) rotate(0deg); opacity:0; } 50% { transform:translate(-50%,-50%) scale(1) rotate(90deg); opacity:1; } }
+@keyframes optTwinkle { 0%,100% { transform:translate(-50%,-50%) scale(0) rotate(0deg); opacity:0; } 40% { transform:translate(-50%,-50%) scale(1.25) rotate(45deg); opacity:1; } 55% { transform:translate(-50%,-50%) scale(0.85) rotate(60deg); opacity:1; } 70% { transform:translate(-50%,-50%) scale(1.15) rotate(80deg); opacity:1; } }
 @keyframes optStarBurst { 0% { transform:translate(-50%,-50%) scale(0.3) rotate(0deg); opacity:1; } 100% { transform:translate(calc(-50% + var(--sx)),calc(-50% + var(--sy))) scale(1) rotate(var(--sr)); opacity:0; } }
 @keyframes optStarFall { 0% { transform:translateY(0) rotate(0deg); opacity:0; } 15% { opacity:1; } 100% { transform:translateY(var(--fy)) rotate(var(--sr)); opacity:0; } }
 @keyframes optShine { 0% { left:-80%; } 100% { left:130%; } }`;
     document.head.appendChild(st);
   }
-  const STAR = 'polygon(50% 0%,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0% 50%,39% 39%)';
+  // 十字の光の筋が長い星（中心は白く光らせる）
+  const STAR = 'polygon(50% 0%,58% 42%,100% 50%,58% 58%,50% 100%,42% 58%,0% 50%,42% 42%)';
   const COLORS = ['#ffffff', '#fff3a8', '#e8c8ff', '#cc88ff', '#aee6ff'];
   const star = (size, color) => {
     const s = document.createElement('div');
-    s.style.cssText = `position:absolute;width:${size}px;height:${size}px;background:${color};clip-path:${STAR};filter:drop-shadow(0 0 ${Math.round(size / 3)}px ${color});pointer-events:none;`;
+    s.style.cssText = `position:absolute;width:${size}px;height:${size}px;pointer-events:none;filter:drop-shadow(0 0 ${Math.round(size / 5)}px #fff) drop-shadow(0 0 ${Math.round(size / 2.5)}px ${color}) drop-shadow(0 0 ${Math.round(size / 1.5)}px ${color});`;
+    const body = document.createElement('div');
+    body.style.cssText = `position:absolute;inset:0;clip-path:${STAR};background:radial-gradient(circle,#fff 0%,#fff 18%,${color} 45%,${color} 100%);`;
+    s.appendChild(body);
     return s;
   };
   // 魔法陣（二重円＋六芒星＋外周の小円）。カードの後ろでゆっくり回る
@@ -5351,12 +5355,12 @@ function _optionMagicFx(layer, imgEl) {
     ${dots}</svg>`;
   layer.appendChild(circle);
   // またたく星（画面のあちこちで光っては消える）
-  for (let i = 0; i < 26; i++) {
-    const s = star(8 + Math.random() * 18, COLORS[i % COLORS.length]);
+  for (let i = 0; i < 22; i++) {
+    const s = star(26 + Math.random() * 30, COLORS[i % COLORS.length]);
     s.style.left = (5 + Math.random() * 90) + '%';
     s.style.top = (5 + Math.random() * 85) + '%';
     s.style.transform = 'translate(-50%,-50%) scale(0)';
-    s.style.animation = `optTwinkle ${0.7 + Math.random() * 0.6}s ease-in-out ${0.2 + Math.random() * 1.6}s 2 both`;
+    s.style.animation = `optTwinkle ${0.9 + Math.random() * 0.5}s ease-in-out ${0.15 + Math.random() * 1.3}s 2 both`;
     layer.appendChild(s);
   }
   // カードが出たところで、星が外へはじける
@@ -5364,7 +5368,7 @@ function _optionMagicFx(layer, imgEl) {
     for (let i = 0; i < 18; i++) {
       const a = (Math.PI * 2 * i) / 18 + Math.random() * 0.3;
       const d = 110 + Math.random() * 120;
-      const s = star(10 + Math.random() * 14, COLORS[i % COLORS.length]);
+      const s = star(22 + Math.random() * 20, COLORS[i % COLORS.length]);
       s.style.left = '50%'; s.style.top = '45%';
       s.style.setProperty('--sx', Math.round(Math.cos(a) * d) + 'px');
       s.style.setProperty('--sy', Math.round(Math.sin(a) * d) + 'px');
@@ -5374,7 +5378,7 @@ function _optionMagicFx(layer, imgEl) {
     }
     // 星くずが降る
     for (let i = 0; i < 14; i++) {
-      const s = star(5 + Math.random() * 8, COLORS[i % COLORS.length]);
+      const s = star(12 + Math.random() * 12, COLORS[i % COLORS.length]);
       s.style.left = (20 + Math.random() * 60) + '%';
       s.style.top = (10 + Math.random() * 25) + '%';
       s.style.setProperty('--fy', (120 + Math.random() * 200) + 'px');

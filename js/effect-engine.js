@@ -8737,6 +8737,20 @@ function _applyPermanentEffectsImpl(bs, side, context) {
 
 // ===== レシピ条件パーサー =====
 
+// 対象を絞り込むときに使う step.condition。「@own_tamer」等の主語つきの条件は盤面・このカードについての発動条件
+// （ゲートで判定済み）なので、対象1体ずつには当てはめない。以前は相手のデジモンを対象にするとき相手側の視点で
+// 判定し直し、「赤の自分のテイマーがいるとき」が相手のテイマーを探して対象なしになっていた（アグモン P-079）。
+// OR 結合で主語つきが混ざるときは、残りだけで絞ると条件が厳しくなるので対象の絞り込みには使わない
+function _targetCondsOf(step) {
+  const all = parseRecipeCondition(step.condition);
+  const rest = all.filter(c => !c.subject);
+  if (step.condition_op === 'or') {
+    if (rest.length !== all.length) return [];
+    rest._op = 'or';
+  }
+  return rest;
+}
+
 function parseRecipeCondition(condStr) {
   if (!condStr) return [];
   // 「進化元を持たない相手デジモンがいる」の自然語ショートカット
@@ -12597,7 +12611,9 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
 //   （アンドロモン BT26-054「特徴CSを持つデジモンカードが置かれたとき」・
 //    ブルムロードモン BT26-048「裏向きの進化元が破棄されたとき」等）
 // opts.cause: 原因（{type, causerSide, causerCard}）。指定時は反応チェーンの間だけ bs._lastDestroyCause にセットする
-const _SIDED_GRANTED_KEYS = new Set(['on_main_phase_start', 'on_opp_main_phase_start']);
+// when_rest: 「【お互いのターン】このデジモンがレストしたとき、メモリー-1」を与える（オオクワモン P-075）。
+// レストしたときの反応はこの経路だけで拾うため、与えられた効果もここで拾う（以前はアタックでレストしても発動しなかった）
+const _SIDED_GRANTED_KEYS = new Set(['on_main_phase_start', 'on_opp_main_phase_start', 'when_rest']);
 function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter, opts) {
   opts = opts || {};
   if (opts.cause && bs) {
@@ -14219,6 +14235,15 @@ function _serializeSecurityCard(c) {
 function _runSecurityDiscard(secSide, spec, ctx, done) {
   const owner = ctx.bs[secSide];
   if (!owner || !Array.isArray(owner.security)) { done(0); return; }
+  // 「N枚まで」（own_security:up_to_N）は自分で枚数を選ぶ（バウトモン P-074「セキュリティを3枚まで破棄できる」で
+  // 発動すると必ず3枚破棄されていた）。CPU は上限まで
+  if (spec.upTo && !spec.all && !spec._countChosen && secSide === 'player' && ctx.side === 'player' && typeof document !== 'undefined') {
+    const max = Math.min(spec.count, owner.security.length);
+    if (max > 1) {
+      _askSecurityDiscardCount(max, (k) => _runSecurityDiscard(secSide, Object.assign({}, spec, { count: k, _countChosen: true }), ctx, done));
+      return;
+    }
+  }
   const n = spec.all ? owner.security.length : Math.min(spec.count, owner.security.length);
   const removed = owner.security.splice(0, n);
   removed.forEach(c => owner.trash.push(c));
@@ -14252,6 +14277,30 @@ function _runSecurityDiscard(secSide, spec, ctx, done) {
   _moveBatchIntro(ctx, removed, (isOwnSec ? '' : '相手の') + 'セキュリティ', (isOwnSec ? '' : '相手の') + 'トラッシュ', showNext, {
     remoteFrom: (isOwnSec ? '相手の' : '') + 'セキュリティ', remoteTo: (isOwnSec ? '相手の' : '') + 'トラッシュ',
   });
+}
+
+// セキュリティを何枚破棄するか（1〜max枚）を選ぶ。cb(枚数)
+function _askSecurityDiscardCount(max, cb) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:rgba(0,10,20,0.96);border:1px solid #00fbff;border-radius:12px;padding:18px 20px;max-width:360px;width:100%;text-align:center;box-shadow:0 0 24px #00fbff44;';
+  const t = document.createElement('div');
+  t.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:14px;';
+  t.innerText = '🛡 セキュリティを何枚破棄しますか？（' + max + '枚まで）';
+  box.appendChild(t);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
+  for (let k = 1; k <= max; k++) {
+    const b = document.createElement('button');
+    b.innerText = k + '枚';
+    b.style.cssText = 'background:#00ff88;color:#002211;border:none;padding:10px 18px;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;min-width:64px;';
+    b.onclick = () => { if (ov.parentNode) ov.parentNode.removeChild(ov); cb(k); };
+    row.appendChild(b);
+  }
+  box.appendChild(row);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
 }
 
 // オンライン対戦: 相手機から「手札をN枚（またはN枚になるまで）選んで破棄して」と依頼された
@@ -19104,7 +19153,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // store 未指定 → target 指定の destroy として default ハンドラに委譲（runOneAction経由）
       const _actionObj = { code: 'destroy', value: step.value || null };
-      if (step.condition) _actionObj.conditions = parseRecipeCondition(step.condition);
+      if (step.condition) _actionObj.conditions = _targetCondsOf(step);
       let _targetObj = null;
       const _t = step.target || '';
       // self / self_card: このデジモン自身（コスト「このデジモンを消滅させることで」レイヴモン BT26-082 等）
@@ -19145,9 +19194,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       if (step.condition) {
         if (!ctx.block) ctx.block = {};
-        const _dConds = parseRecipeCondition(step.condition);
-        if (step.condition_op === 'or') _dConds._op = 'or';
-        ctx.block.conditions = _dConds;
+        ctx.block.conditions = _targetCondsOf(step);
       }
       // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）もrunOneAction側の
       // destroyハンドラに引き継ぐ（これが無いとfilterが黙って無視されていた）
@@ -19340,8 +19387,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (!_rhFromTrash) {
         const _rhAction = { code: 'bounce', value: step.value || null };
         if (step.condition) {
-          _rhAction.conditions = parseRecipeCondition(step.condition);
-          if (step.condition_op === 'or') _rhAction.conditions._op = 'or';
+          _rhAction.conditions = _targetCondsOf(step);
           if (!ctx.block) ctx.block = {};
           ctx.block.conditions = _rhAction.conditions;
         }
@@ -20568,9 +20614,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // 条件をctx.blockに伝搬（対象フィルタリング用）
       if (step.condition) {
-        const _sConds = parseRecipeCondition(step.condition);
-        if (step.condition_op === 'or') _sConds._op = 'or';
-        ctx.block.conditions = _sConds;
+        ctx.block.conditions = _targetCondsOf(step);
       }
       runOneAction(action, null, ctx, callback);
       break;
@@ -20910,8 +20954,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 通常の bounce（相手デジモンを手札に戻す）→ 既存エンジンに委譲
       const _bAction = { code: 'bounce', value: step.value || null };
       if (step.condition) {
-        _bAction.conditions = parseRecipeCondition(step.condition);
-        if (step.condition_op === 'or') _bAction.conditions._op = 'or';
+        _bAction.conditions = _targetCondsOf(step);
         if (!ctx.block) ctx.block = {};
         ctx.block.conditions = _bAction.conditions;
       }

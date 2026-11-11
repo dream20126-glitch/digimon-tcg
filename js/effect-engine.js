@@ -3393,7 +3393,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           let _ri = 0;
           const _nextOwn = () => {
             if (_ri >= _owns.length) {
-              if (_anyOpp) fireWhenOppRestTriggers(ctx.side === 'player' ? 'ai' : 'player', ctx.bs, ctx, () => callback(true));
+              if (_anyOpp) fireWhenOppRestTriggers(ctx.side === 'player' ? 'ai' : 'player', ctx.bs, ctx, () => callback(true), picked.filter(e => !e.own).map(e => e.card));
               else callback(true);
               return;
             }
@@ -3456,8 +3456,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const restColor = uiColor;
       // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側。効果によるレストも含む）
       const restedSide = ctx.side === 'player' ? 'ai' : 'player';
-      const finishWithTrigger = () => {
-        fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, callback);
+      const finishWithTrigger = (restedCards) => {
+        fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, callback, restedCards);
       };
       // 自分側プレイヤーが相手のカードをレストさせた場合、両者の画面で suspended を同期する
       // - 自分側: state_sync で false に戻されないよう保護フラグ
@@ -3482,7 +3482,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           syncRest(idx);
         });
         ctx.renderAll();
-        finishWithTrigger();
+        finishWithTrigger(restTargets.map(i => opponent.battleArea[i]));
         break;
       }
       // テイマーも対象に含む、または複数体指定（count>1）の場合:
@@ -3524,7 +3524,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             }
           });
           ctx.renderAll();
-          finishWithTrigger();
+          finishWithTrigger(list);
         };
         if (effectiveSide === 'ai') { _rmApply(_rmCands.slice(0, _rmN)); break; }
         showCardListPicker(_rmCands, _rmN, '🎯 レストさせる対象を選んでください', (picked) => {
@@ -3538,7 +3538,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
         syncRest(ri);
         ctx.renderAll();
-        finishWithTrigger();
+        finishWithTrigger([opponent.battleArea[ri]]);
         break;
       }
       ctx.addLog('🎯 レストさせる対象を選んでください');
@@ -3549,7 +3549,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           ctx.addLog('💤 「' + opponent.battleArea[selectedIdx].name + '」をレスト');
           syncRest(selectedIdx);
           ctx.renderAll();
-          finishWithTrigger();
+          finishWithTrigger([opponent.battleArea[selectedIdx]]);
         } else {
           ctx.renderAll(); callback();
         }
@@ -12951,6 +12951,13 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     // 相手のデジモンがアタックした（こちら視点でアタックしたのは ai 側）→ こちらのカードが反応
     return fireOnAttackOppSubjectTriggers('ai', bs, ctxBase, done, { local: true });
   }
+  if (kind === 'rested_card') {
+    // 相手の効果でこちらのカードがレストした → そのカードの側の「レストしたとき」（バステモン P-093 等）
+    const me = bs.player || {};
+    const card = cmd.area === 'tamer' ? (me.tamerArea || [])[cmd.idx] : (me.battleArea || [])[cmd.idx];
+    if (!card) { done && done(); return; }
+    return fireWhenRestTriggers('player', card, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
+  }
   return _fireSidedReactionTriggers('player', recipeKey, bs, ctxBase, done);
 }
 
@@ -14488,8 +14495,11 @@ function _deferReactionDuringEffect(bs, ctxBase, run, done) {
   return false;
 }
 
-export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
-  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenOppRestTriggers(restedSide, bs, c, d), done)) return;
+// restedCards（省略可）: 効果でレストさせた相手のカード。渡すと、続けてそのカードの側の「レストしたとき」
+// （バステモン P-093「【お互いのターン】このデジモンがレストしたとき」等）も発火する。オンラインで相手のカードなら
+// 持ち主の端末に委譲する（kind:'rested_card'）
+export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done, restedCards) {
+  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenOppRestTriggers(restedSide, bs, c, d, restedCards), done)) return;
   // reactSide（レストしたデジモンの相手側）が発動主体。_fireSidedReactionTriggers に委譲する
   // ことで、evo_source ネストされた反応（ガルルモン等と同種の構造）も自動的に拾えるようになり、
   // アナウンス/確認/close送信の定型処理も他の反応系トリガーと完全に統一される
@@ -14511,8 +14521,32 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
     return true;
   };
   return _fireSidedReactionTriggers(reactSide, 'when_opp_rest', bs, ctxBase, () => {
-    _fireSidedReactionTriggers(reactSide, 'when_rest', bs, ctxBase, done, whenRestStepFilter);
+    _fireSidedReactionTriggers(reactSide, 'when_rest', bs, ctxBase,
+      () => _fireRestedCardsWhenRest(restedSide, restedCards, bs, ctxBase, done), whenRestStepFilter);
   });
+}
+
+// 効果でレストさせられたカードそれぞれの「レストしたとき」（レストした側の反応）を順に発火する
+function _fireRestedCardsWhenRest(restedSide, cards, bs, ctxBase, done) {
+  const list = (cards || []).filter(Boolean);
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (list.length === 0 || !bs) { finish(); return; }
+  const online = restedSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+  let i = 0;
+  const next = () => {
+    if (i >= list.length) { finish(); return; }
+    const c = list[i++];
+    if (online) {
+      const p = bs.ai || {};
+      const bIdx = (p.battleArea || []).indexOf(c);
+      const tIdx = bIdx >= 0 ? -1 : (p.tamerArea || []).indexOf(c);
+      if (bIdx < 0 && tIdx < 0) { next(); return; }
+      _delegateReactionToOpponent({ recipeKey: 'when_rest', kind: 'rested_card', area: bIdx >= 0 ? 'battle' : 'tamer', idx: bIdx >= 0 ? bIdx : tIdx, cardNo: c.cardNo || '' }, next);
+      return;
+    }
+    try { fireWhenRestTriggers(restedSide, c, bs, ctxBase, next); } catch (e) { console.error('[_fireRestedCardsWhenRest]', e); next(); }
+  };
+  next();
 }
 
 // ===== when_rest グローバル発火 =====
@@ -20037,10 +20071,12 @@ function executeRecipeStep(step, ctx, store, callback) {
       const rcArea = opponent.battleArea;
       const rcRow = ctx.side === 'player' ? 'ai' : 'pl';
       const rcActive = () => { const a = []; for (let i = 0; i < rcArea.length; i++) { const c = rcArea[i]; if (c && !c.suspended) a.push(i); } return a; };
+      const rcRested = [];
       const rcDoRest = (idx) => {
         const c = rcArea[idx];
         if (!c) return;
         c.suspended = true;
+        rcRested.push(c);
         ctx.addLog && ctx.addLog('💤 「' + c.name + '」をレスト');
         if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode()) {
           if (window._markSuspendChanged) window._markSuspendChanged('ai', idx, true);
@@ -20050,7 +20086,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const rcFinish = () => {
         ctx.renderAll && ctx.renderAll();
         const restedSide = ctx.side === 'player' ? 'ai' : 'player';
-        try { fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, () => callback()); return; } catch (_) {}
+        try { fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, () => callback(), rcRested); return; } catch (_) {}
         callback();
       };
       const rcV1 = rcActive();
@@ -23655,6 +23691,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog('🚫 「' + c.name + '」の' + _ngLabel + '効果は発揮しない');
       };
       const _ngRowId = _ngIsOpponent ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
+      // 対象が決まっている（「そのデジモンの【進化時】効果は発揮しない」same_target → _forceTargetIdx）ならそのカード
+      // （無効化プラグインP P-095。以前は先頭のデジモンに付いていた）
+      if (ctx._forceTargetIdx !== undefined) {
+        if (_ngCands.includes(ctx._forceTargetIdx)) _ngApply(ctx._forceTargetIdx);
+        ctx.renderAll();
+        callback();
+        break;
+      }
       if (effectiveSide === 'ai' || _ngCands.length === 1) {
         _ngApply(_ngCands[0]);
         ctx.renderAll();
@@ -23885,11 +23929,13 @@ function executeRecipeStep(step, ctx, store, callback) {
                                    : (ctx.side === 'player' ? 'ai' : 'player');
         const _restConds = step.condition ? parseRecipeCondition(step.condition) : [];
         let _restedAny = false;
+        const _restedList = [];
         (_restP.battleArea || []).forEach((c, i) => {
           if (!c || c.suspended) return;
           if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restTag)) return;
           c.suspended = true;
           _restedAny = true;
+          _restedList.push(c);
           ctx.addLog('💤 「' + c.name + '」をレスト');
           // 相手カードへのレストは state_sync で同期されないため fx_remoteSuspend を個別送信
           if (!_isOwnAll && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode()) {
@@ -23904,7 +23950,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!_isOwnAll && _restedAny) {
           // 相手デジモンをレストさせた → when_opp_rest 反応を発火
           const _restedSide = ctx.side === 'player' ? 'ai' : 'player';
-          try { fireWhenOppRestTriggers(_restedSide, ctx.bs, ctx, () => callback()); return; }
+          try { fireWhenOppRestTriggers(_restedSide, ctx.bs, ctx, () => callback(), _restedList); return; }
           catch (_) {}
         }
         callback();

@@ -25235,8 +25235,13 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
     // コスト（テイマーのレスト等）が無い = 強制効果なので確認なしで適用する。何の効果で減ったか分かるよう発動の表示は出す
     // （インフェルモン「手札のディアボロモンに進化するときコスト-1」等。以前は表示なしで、バステモン P-093 の進化元効果が
     // 発動したか分からなかった）
-    try { showEffectAnnounce(card, step.display_text || '', side, applyDiscount, src !== card ? src : undefined); }
-    catch (_) { applyDiscount(); }
+    // 相手の画面にも「効果発動（相手が効果を確認中…）」が出るので、OK のあと閉じてもらう（閉じないと出たまま残っていた）
+    const _afterAnnounce = () => {
+      if (online && window._onlineSendCommand) { try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
+      applyDiscount();
+    };
+    try { showEffectAnnounce(card, step.display_text || '', side, _afterAnnounce, src !== card ? src : undefined); }
+    catch (_) { _afterAnnounce(); }
     return;
   }
   const msg = '「' + card.name + '」をレストさせることで、「' + evoCard.name + '」の進化コストを-' + amount + 'しますか？';

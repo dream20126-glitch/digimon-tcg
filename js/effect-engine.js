@@ -15784,7 +15784,13 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
+  // コストつきのステップが発動しなかった（発火元の条件・回数制限・コストを払えない等）なら、そのコストを払ったことが前提の
+  // 続きのステップ（requires_prev_cost）も発動しない。以前は続きだけで判定し、鼓堂リツ P-087 の「セキュリティ3枚以下なら
+  // メモリー+1」が、パルスモン以外の登場やレスト中でも発動の表示を出していた
+  let _prevCostBlocked = false;
   for (const step of recipe) {
+    if (step && step.requires_prev_cost && _prevCostBlocked) continue;
+    if (step && Array.isArray(step.cost) && step.cost.length > 0) _prevCostBlocked = true;
     // trigger_conditions: 発火元カードへのフィルタ（NG なら次の step）
     if (!checkStepTriggerConditions(step, ctx)) continue;
     // limit 到達済みの step はスキップ（2回目/3回目のアタック等で効果説明ポップアップを出さないため）
@@ -25153,13 +25159,15 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
     const r = _parseCardRecipe(card);
     try {
       const list = r ? (_lookupTriggerSteps(r, 'before_evolve', card) || []).slice() : [];
+      // ステップごとの効果の持ち主（進化元の効果ならその進化元のカード。ターンに1回の記録と効果の表示に使う）
+      const srcOf = new Map();
       // 進化元効果の「このデジモンが手札の『〇〇』に進化するとき、支払う進化コストを-2」（アグニモン P-029 /
       // ヴォルフモン P-030）: 重なっている表向きのカードの evo_source.before_evolve も見る
       (Array.isArray(card.stack) ? card.stack : []).forEach((sc) => {
         if (!sc || sc._faceDown) return;
         const sr = _parseCardRecipe(sc);
         const es = sr && sr.evo_source && _lookupTriggerSteps(sr.evo_source, 'before_evolve');
-        if (Array.isArray(es)) es.forEach((x) => list.push(x));
+        if (Array.isArray(es)) es.forEach((x) => { list.push(x); if (x && typeof x === 'object') srcOf.set(x, sc); });
       });
       if (list.length === 0) continue;
       for (const step of list) {
@@ -25187,20 +25195,29 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
         }
         // コストfeasibility: 自身をレストするコストなのに既にレスト中なら不可
         if (_costStepsInfeasible(step.cost, card, bs, side)) continue;
-        found = { card, step };
+        // 【ターンに1回】: 使用済みなら軽減しない（バステモン P-093 進化元。以前は同じターンの2回目の進化でも減っていた）
+        const _src = srcOf.get(step) || card;
+        const _lMax = getLimitMaxUses(step);
+        if (_lMax > 0 && bs._usedLimits && (bs._usedLimits[_stepLimitKey(_src, card, step)] || 0) >= _lMax) continue;
+        found = { card, step, src: _src };
         break;
       }
     } catch (e) { console.error('[before_evolve]', e); }
     if (found) break;
   }
   if (!found) { finish(0); return; }
-  const { card, step } = found;
+  const { card, step, src } = found;
   // 軽減量は value の絶対値（appear_or_evolve は value:-2 のように負で持つ。以前は parseInt のままで
   // 進化コストが増えていた）
   const amount = _whenPlayAmountOf(step);
   const hasCost = Array.isArray(step.cost) && step.cost.length > 0;
   const online = side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
   const applyDiscount = () => {
+    if (getLimitMaxUses(step) > 0) {
+      if (!bs._usedLimits) bs._usedLimits = {};
+      const _k = _stepLimitKey(src, card, step);
+      bs._usedLimits[_k] = (bs._usedLimits[_k] || 0) + 1;
+    }
     const rests = hasCost ? step.cost.filter(c => c && c.action === 'rest') : [];
     if (rests.length === 0) { finish(amount); return; }
     _restSelfAsCost(card, side, bs, () => {
@@ -25215,9 +25232,11 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
     return;
   }
   if (!hasCost) {
-    // コスト（テイマーのレスト等）が無い = 強制効果なので確認なしで即座に適用
-    // （インフェルモン「手札のディアボロモンに進化するときコスト-1」等）
-    applyDiscount();
+    // コスト（テイマーのレスト等）が無い = 強制効果なので確認なしで適用する。何の効果で減ったか分かるよう発動の表示は出す
+    // （インフェルモン「手札のディアボロモンに進化するときコスト-1」等。以前は表示なしで、バステモン P-093 の進化元効果が
+    // 発動したか分からなかった）
+    try { showEffectAnnounce(card, step.display_text || '', side, applyDiscount, src !== card ? src : undefined); }
+    catch (_) { applyDiscount(); }
     return;
   }
   const msg = '「' + card.name + '」をレストさせることで、「' + evoCard.name + '」の進化コストを-' + amount + 'しますか？';

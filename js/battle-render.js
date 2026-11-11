@@ -205,6 +205,10 @@ function _buildGrantBadges(card) {
   if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
   if (card.cantRest) items.push({ label: 'レスト不可', color: '#9933ff' });
   if (card.cantRedirectAttack) items.push({ label: 'アタック対象変更不可', color: '#9933ff' });
+  // 効果で付いた「アタックされない」（シャコモン P-086。以前は付いても何も表示されなかった）
+  if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_be_attacked')) {
+    items.push({ label: 'アタックされない', color: '#9933ff' });
+  }
   if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) {
     items.push({ label: 'アクティブにならない', color: '#9933ff' });
   }
@@ -405,7 +409,9 @@ function renderBattleRows() {
         const _hasNegEvo = Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'negate_trigger');
         // 「レストできない」（cant_rest。メールモン BT26-019 の【リンク時】等）
         const _hasCantRest = !!card.cantRest || (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_rest'));
-        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo || _hasCantRest) {
+        // 「アタックされない」（cant_be_attacked。シャコモン P-086）
+        const _hasCantBeAtk = Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_be_attacked');
+        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo || _hasCantRest || _hasCantBeAtk) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
@@ -414,6 +420,7 @@ function renderBattleRows() {
           if (_hasPreventUnsuspend) mark += '🔄✖';
           if (_hasCantRest) mark += 'レスト✖';
           if (_hasNegEvo) mark += '進時✖';
+          if (_hasCantBeAtk) mark += '被⚔✖';
           html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${mark}</div>`;
         }
 

@@ -20499,7 +20499,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         (/:all$/.test(_cbTgt) ? _cbCands : [_cbCands[0]]).forEach((i) => _cbApply(_cbPl.battleArea[i]));
         _cbDone(); break;
       }
-      showTargetSelection(_cbOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide, _cbCands, null, uiColor, (idx) => {
+      // executeRecipeStep では opponentRowSide / uiColor が未定義（以前は ReferenceError で対象選択が出ず止まっていた。シャコモン P-086）
+      const _cbRow = _cbOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl');
+      showTargetSelection(_cbRow, _cbCands, null, getUIColor(step.action, '#00fbff', step.frame_color), (idx) => {
         if (idx !== null && idx !== undefined && _cbPl.battleArea[idx]) _cbApply(_cbPl.battleArea[idx]);
         _cbDone();
       });

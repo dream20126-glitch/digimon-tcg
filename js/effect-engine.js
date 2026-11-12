@@ -5021,7 +5021,10 @@ function _showCardConfirmDialog(card, onConfirm) {
 // 候補が全部自分の手札にあるときは、一覧の画面を出さずに画面下の手札そのものから選ばせる。
 // 手札以外を暗くし、対象のカードを光らせる。手札が横にスクロールするほど多いときは「対象が〇枚あります」を出す。
 // opts: { title, wantCount, optional（使わないボタン）, skipLabel, upTo（N枚まで・決定ボタン）, onBack, onSelectAll,
-//         onSkip(), onPicked(cards[]) }
+//         onSkip(), onPicked(cards[]),
+//         drag: { mode:'play' } … 場（バトルエリア/テイマーエリア）へドラッグして離すとそのカードを選ぶ（登場）
+//               { mode:'evolve', slots(card) => 進化できる自分のデジモンの添字[] } … そのデジモンの上で離すと進化
+//         onDropped(card, slotIdx)（evolve で離したとき） }
 // 手札が見えない（バトル画面の外・手札欄が無い）ときは false を返す（呼び出し側は今までの一覧で選ぶ）
 function _handInPlacePick(candidates, opts) {
   if (typeof document === 'undefined' || typeof window === 'undefined') return false;
@@ -5067,7 +5070,8 @@ function _handInPlacePick(candidates, opts) {
   bRow.style.cssText = 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:6px;';
   const arrow = document.createElement('div');
   arrow.style.cssText = 'color:#ffcc00;font-size:12px;margin-top:4px;';
-  arrow.textContent = '▼ 光っている手札をタップして選んでください ▼';
+  arrow.textContent = opts.drag ? (opts.drag.mode === 'evolve' ? '▼ 光っている手札をタップ、または進化させたいデジモンの上へドラッグ ▼' : '▼ 光っている手札をタップ、または場へドラッグして登場 ▼')
+    : '▼ 光っている手札をタップして選んでください ▼';
   panel.append(tEl, sEl, scEl, bRow, arrow);
   document.body.appendChild(panel);
 
@@ -5110,6 +5114,7 @@ function _handInPlacePick(candidates, opts) {
     const el = e.target && e.target.closest ? e.target.closest('.h-card') : null;
     if (!el || !hw.contains(el)) return;
     e.stopPropagation(); e.preventDefault();
+    if (Date.now() - _dragEndAt < 300) return;
     const c = b.player.hand[cardEls().indexOf(el)];
     if (!c || !candSet.has(c)) return;
     const pi = picked.indexOf(c);
@@ -5122,9 +5127,93 @@ function _handInPlacePick(candidates, opts) {
       paint();
     });
   };
+  // ドラッグ（opts.drag）: 対象の手札を上へ引き出すとドラッグ開始。横に動かしたときは手札のスクロールとして扱う。
+  // 登場は場に、進化は光っている（進化できる）デジモンの上で離すと決定。それ以外の所で離したら元に戻る
+  let _dragEndAt = 0;
+  let _marks = [];
+  const _clearMarks = () => { _marks.forEach(m => m.parentNode && m.parentNode.removeChild(m)); _marks = []; };
+  const _dropZones = (c) => {
+    const zones = [];
+    if (opts.drag.mode === 'evolve') {
+      const row = document.getElementById('pl-battle-row');
+      const sl = row ? row.querySelectorAll('.b-slot') : [];
+      (opts.drag.slots(c) || []).forEach(i => { if (sl[i]) zones.push({ el: sl[i], slot: i }); });
+    } else {
+      const isTamer = String(c.type || '') === 'テイマー';
+      const el = document.getElementById(isTamer ? 'pl-tamer-row' : 'pl-battle-row') || document.getElementById('pl-battle-row');
+      if (el) zones.push({ el, slot: -1 });
+    }
+    return zones;
+  };
+  const _markZones = (zones) => {
+    _clearMarks();
+    zones.forEach(z => {
+      const r = z.el.getBoundingClientRect();
+      const m = document.createElement('div');
+      m.style.cssText = 'position:fixed;z-index:62002;pointer-events:none;border:3px solid #ffcc00;border-radius:8px;box-shadow:0 0 18px #ffcc00,inset 0 0 14px #ffcc0066;animation:hpPulse 0.6s ease-in-out infinite alternate;'
+        + 'left:' + (r.left - 3) + 'px;top:' + (r.top - 3) + 'px;width:' + r.width + 'px;height:' + r.height + 'px;';
+      document.body.appendChild(m);
+      _marks.push(m);
+    });
+  };
   const block = (e) => {
     const el = e.target && e.target.closest ? e.target.closest('.h-card') : null;
-    if (el && hw.contains(el)) e.stopPropagation();
+    if (!el || !hw.contains(el)) return;
+    e.stopPropagation();
+    if (!opts.drag || done) return;
+    const c = b.player.hand[cardEls().indexOf(el)];
+    if (!c || !candSet.has(c) || picked.includes(c)) return;
+    const isTouch = e.type === 'touchstart';
+    const p0 = isTouch ? e.touches[0] : e;
+    const sx = p0.clientX, sy = p0.clientY;
+    let ghost = null, zones = null, over = null, aborted = false;
+    const move = (ev) => {
+      if (aborted) return;
+      const t = ev.touches ? ev.touches[0] : ev;
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (!ghost) {
+        // マウスは少し動かせばドラッグ。タッチは上へ引き出したらドラッグ、先に横へ動いたら手札のスクロール
+        if (!isTouch && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (isTouch && dy > -10) { if (Math.abs(dx) > 24 || dy > 24) aborted = true; return; }
+        const r = el.getBoundingClientRect();
+        ghost = el.cloneNode(true);
+        ghost.classList.remove('hp-cand', 'hp-dim', 'hp-on');
+        ghost.style.cssText = 'position:fixed;z-index:62003;pointer-events:none;width:' + r.width + 'px;height:' + r.height + 'px;margin:0;transform:scale(1.15);opacity:0.92;box-shadow:0 0 18px #ffcc00;border:2px solid #ffcc00;border-radius:6px;overflow:hidden;';
+        document.body.appendChild(ghost);
+        el.style.opacity = '0.3';
+        zones = _dropZones(c);
+        _markZones(zones);
+        topOv.style.background = 'rgba(0,0,0,0.45)';
+      }
+      if (ev.cancelable) ev.preventDefault();
+      ghost.style.left = (t.clientX - ghost.offsetWidth / 2) + 'px';
+      ghost.style.top = (t.clientY - ghost.offsetHeight / 2) + 'px';
+      over = null;
+      zones.forEach((z, zi) => {
+        const r = z.el.getBoundingClientRect();
+        const pad = opts.drag.mode === 'evolve' ? 6 : 20;
+        const inside = t.clientX >= r.left - pad && t.clientX <= r.right + pad && t.clientY >= r.top - pad && t.clientY <= r.bottom + pad;
+        if (inside) over = z;
+        if (_marks[zi]) _marks[zi].style.borderColor = inside ? '#00ff88' : '#ffcc00';
+      });
+    };
+    const up = () => {
+      document.removeEventListener(isTouch ? 'touchmove' : 'mousemove', move);
+      document.removeEventListener(isTouch ? 'touchend' : 'mouseup', up);
+      if (!ghost) return;
+      _dragEndAt = Date.now();
+      if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      el.style.opacity = '';
+      _clearMarks();
+      topOv.style.background = 'rgba(0,0,0,0.72)';
+      if (!over || done) return;
+      if (opts.drag.mode === 'evolve') { finish(); opts.onDropped(c, over.slot); return; }
+      picked.push(c);
+      if (picked.length >= want) { finish(); opts.onPicked(picked.slice()); return; }
+      paint();
+    };
+    document.addEventListener(isTouch ? 'touchmove' : 'mousemove', move, { passive: false });
+    document.addEventListener(isTouch ? 'touchend' : 'mouseup', up);
   };
   hw.addEventListener('click', onClick, true);
   hw.addEventListener('mousedown', block, true);
@@ -5148,6 +5237,7 @@ function _handInPlacePick(candidates, opts) {
     hw.removeEventListener('touchstart', block, true);
     window.removeEventListener('resize', onResize);
     [topOv, botOv, panel].forEach(o => { if (o.parentNode) o.parentNode.removeChild(o); });
+    _clearMarks();
     cardEls().forEach(el => el.classList.remove('hp-cand', 'hp-dim', 'hp-on'));
     if (_bdWas && _bd) _bd.style.display = 'block';
     if (_online) {
@@ -5622,7 +5712,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   const _zTabs = (opts && Array.isArray(opts.zoneTabs) && opts.zoneTabs.length > 1) ? opts.zoneTabs : null;
   let _zTab = _zTabs ? Math.max(0, Math.min(_zTabs.length - 1, (opts && opts.zoneTab) || 0)) : 0;
   // 候補が全部自分の手札なら、一覧ではなく手札の上で直接選ぶ
-  if (!_zTabs && _handInPlacePick(candidates, { title, wantCount, optional, upTo: _upTo, onBack: _onBack, onSelectAll: _selAll,
+  if (!_zTabs && _handInPlacePick(candidates, { title, wantCount, optional, upTo: _upTo, onBack: _onBack, onSelectAll: _selAll, drag: opts && opts.handDrag,
     onSkip: () => callback([]), onPicked: (p) => callback(p) })) return;
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
@@ -18904,12 +18994,12 @@ function executeRecipeStep(step, ctx, store, callback) {
                   const za = zi === 0 ? player.hand : player.trash;
                   if (za.length === 0) { _choose(); return; }
                   showTrashCardPicker(zc, 1, _canStop, _bTitle(zi === 0 ? '手札' : 'トラッシュ') + (zc.length === 0 ? '（対象のカードがありません）' : ''),
-                    (picked) => _onPick(picked && picked[0]), za, { onBack: _choose });
+                    (picked) => _onPick(picked && picked[0]), za, { onBack: _choose, handDrag: { mode: 'play' } });
                 }, '🌟 どこから登場させますか？（残りコスト' + _budget + '）');
                 _choose();
                 return;
               }
-              showTrashCardPicker(_cands, 1, _canStop, _bTitle(''), (picked) => _onPick(picked && picked[0]), _cands);
+              showTrashCardPicker(_cands, 1, _canStop, _bTitle(''), (picked) => _onPick(picked && picked[0]), _cands, { handDrag: { mode: 'play' } });
             };
             _budgetNext();
             return;
@@ -18933,7 +19023,7 @@ function executeRecipeStep(step, ctx, store, callback) {
                 return;
               }
               _summonSequential(picked, 0, callback);
-            }, _all, onBack ? Object.assign({ onBack }, _zt || {}) : (_zt || undefined));
+            }, _all, Object.assign({ handDrag: { mode: 'play' } }, onBack ? { onBack } : {}, _zt || {}));
           };
           if (effectiveSide === 'ai') {
             const _aiPicks = [..._handCands, ..._trashCands].slice(0, _summonCount);
@@ -19148,6 +19238,28 @@ function executeRecipeStep(step, ctx, store, callback) {
           _doEvolveWith(picked && picked[0], slotIdx);
         }, _cands);
       };
+      // 手札からの進化（プレイヤー）: 先に手札の上で進化先を選ぶ。進化させたいデジモンの上へドラッグして離しても進化できる
+      // （ドラッグ中は、そのカードが進化できるデジモンだけ光る）。タップで選んだときは、進化できるデジモンが
+      // 2体以上なら続けてどのデジモンを進化させるか選ぶ
+      if (effectiveSide !== 'ai' && step.evolve_into !== 'self_card' && _evoCands.every(c => player.hand.includes(c))) {
+        const _basesFor = (c) => _evoBaseIdxs.filter(i => _evoOk(c, i));
+        const _handEvo = () => _handInPlacePick(_evoCands, {
+          title: '⬆ 進化させるカードを選んでください', wantCount: 1,
+          optional: _evoOptional || _evoIsCost, onSkip: () => _doEvolveWith(null),
+          drag: { mode: 'evolve', slots: _basesFor },
+          onDropped: (c, slot) => _doEvolveWith(c, slot),
+          onPicked: (p) => {
+            const c = p[0];
+            const bases = _basesFor(c);
+            if (bases.length === 1) { _doEvolveWith(c, bases[0]); return; }
+            showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', bases, null, '#00fbff', (idx) => {
+              if (idx === null || idx === undefined) { _handEvo(); return; }
+              _doEvolveWith(c, idx);
+            }, '（「' + c.name + '」に進化させるデジモン）');
+          },
+        });
+        if (_handEvo()) break;
+      }
       // 進化元を選ぶ（候補1体・CPU・対象確定済みなら自動）
       if (_evoBaseIdxs.length === 1 || effectiveSide === 'ai') {
         _pickEvoCard(_evoBaseIdxs[0]);

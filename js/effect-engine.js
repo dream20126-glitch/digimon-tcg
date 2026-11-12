@@ -5017,6 +5017,164 @@ function _showCardConfirmDialog(card, onConfirm) {
   document.body.appendChild(conf);
 }
 
+// ===== 手札の上で直接選ぶ（手札から選ぶ効果の共通UI）=====
+// 候補が全部自分の手札にあるときは、一覧の画面を出さずに画面下の手札そのものから選ばせる。
+// 手札以外を暗くし、対象のカードを光らせる。手札が横にスクロールするほど多いときは「対象が〇枚あります」を出す。
+// opts: { title, wantCount, optional（使わないボタン）, skipLabel, upTo（N枚まで・決定ボタン）, onBack, onSelectAll,
+//         onSkip(), onPicked(cards[]) }
+// 手札が見えない（バトル画面の外・手札欄が無い）ときは false を返す（呼び出し側は今までの一覧で選ぶ）
+function _handInPlacePick(candidates, opts) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+  const b = window._lastBattleState;
+  const hw = document.getElementById('hand-wrap');
+  if (!b || !b.player || !Array.isArray(b.player.hand) || !hw) return false;
+  if (!Array.isArray(candidates) || candidates.length === 0) return false;
+  if (!candidates.every(c => c && b.player.hand.includes(c))) return false;
+  const host = hw.closest('.scroll-wrap') || hw;
+  const r0 = host.getBoundingClientRect();
+  if (!hw.offsetParent || r0.height < 20 || r0.width < 50) return false;
+
+  if (!document.getElementById('_hand-pick-style')) {
+    const st = document.createElement('style');
+    st.id = '_hand-pick-style';
+    st.textContent = '#hand-wrap .h-card.hp-cand{border:2px solid #ffcc00 !important;animation:hpPulse 0.9s ease-in-out infinite alternate;}'
+      + '#hand-wrap .h-card.hp-dim{opacity:0.3;filter:grayscale(0.7);cursor:not-allowed;}'
+      + '#hand-wrap .h-card.hp-on{border:2px solid #00ff88 !important;box-shadow:0 0 16px #00ff88 !important;transform:translateY(-10px) !important;animation:none;}'
+      + '@keyframes hpPulse{from{box-shadow:0 0 4px #ffcc0088;}to{box-shadow:0 0 14px #ffcc00;}}';
+    document.head.appendChild(st);
+  }
+  const want = Math.max(1, opts.wantCount || 1);
+  const picked = [];
+  const candSet = new Set(candidates);
+  let done = false;
+
+  // 手札の上と下を暗くする（手札の部分だけ穴を開ける）。バトル演出の黒背景は選んでいる間だけ隠す
+  const _bd = document.getElementById('_combat-backdrop');
+  const _bdWas = !!(_bd && _bd.style.display !== 'none');
+  if (_bdWas) _bd.style.display = 'none';
+  const topOv = document.createElement('div');
+  const botOv = document.createElement('div');
+  [topOv, botOv].forEach(o => { o.style.cssText = 'position:fixed;left:0;right:0;background:rgba(0,0,0,0.72);z-index:62000;'; document.body.appendChild(o); });
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);z-index:62001;width:max-content;max-width:94vw;box-sizing:border-box;background:rgba(0,15,25,0.95);border:1px solid #ffcc00aa;border-radius:10px;padding:8px 12px;text-align:center;box-shadow:0 0 18px #ffcc0055;';
+  const tEl = document.createElement('div');
+  tEl.style.cssText = 'color:#ffcc00;font-size:13px;font-weight:bold;text-shadow:0 0 6px #ffcc00;';
+  const sEl = document.createElement('div');
+  sEl.style.cssText = 'color:#ddd;font-size:11px;margin-top:3px;';
+  const scEl = document.createElement('div');
+  scEl.style.cssText = 'color:#00fbff;font-size:12px;font-weight:bold;margin-top:4px;display:none;';
+  const bRow = document.createElement('div');
+  bRow.style.cssText = 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:6px;';
+  const arrow = document.createElement('div');
+  arrow.style.cssText = 'color:#ffcc00;font-size:12px;margin-top:4px;';
+  arrow.textContent = '▼ 光っている手札をタップして選んでください ▼';
+  panel.append(tEl, sEl, scEl, bRow, arrow);
+  document.body.appendChild(panel);
+
+  const mkBtn = (label, bg, fn) => {
+    const bt = document.createElement('button');
+    bt.innerText = label;
+    bt.style.cssText = 'background:' + bg + ';color:#fff;border:1px solid #888;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;';
+    bt.onclick = fn;
+    bRow.appendChild(bt);
+  };
+
+  const cardEls = () => Array.from(hw.querySelectorAll('.h-card'));
+  const paint = () => {
+    if (done) return;
+    const hand = b.player.hand;
+    cardEls().forEach((el, i) => {
+      const c = hand[i];
+      el.classList.remove('hp-cand', 'hp-dim', 'hp-on');
+      if (!c || !candSet.has(c)) el.classList.add('hp-dim');
+      else el.classList.add(picked.includes(c) ? 'hp-on' : 'hp-cand');
+    });
+    tEl.innerText = opts.title || '🎯 手札からカードを選んでください';
+    sEl.innerText = (want > 1 || opts.upTo) ? ('選択中 ' + picked.length + '/' + want + '枚' + (opts.upTo ? '（' + want + '枚まで）' : '')) : '';
+    sEl.style.display = sEl.innerText ? '' : 'none';
+    // 手札が横にスクロールするほど多いときは、対象の枚数を出す（見えていない対象に気づけるように）
+    const scrollable = hw.scrollWidth > hw.clientWidth + 2;
+    scEl.style.display = scrollable ? '' : 'none';
+    if (scrollable) scEl.innerText = '◀ 対象が' + candidates.length + '枚あります（手札を横にスクロールして選べます）▶';
+  };
+  const layout = () => {
+    if (done) return;
+    const r = host.getBoundingClientRect();
+    topOv.style.top = '0'; topOv.style.height = Math.max(0, r.top) + 'px';
+    botOv.style.top = r.bottom + 'px'; botOv.style.bottom = '0';
+    panel.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  };
+
+  // 手札のタップ・ドラッグを横取りする（選んでいる間は普段のカード詳細・ドラッグ登場を動かさない）
+  const onClick = (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('.h-card') : null;
+    if (!el || !hw.contains(el)) return;
+    e.stopPropagation(); e.preventDefault();
+    const c = b.player.hand[cardEls().indexOf(el)];
+    if (!c || !candSet.has(c)) return;
+    const pi = picked.indexOf(c);
+    if (pi >= 0) { picked.splice(pi, 1); paint(); return; }
+    if (picked.length >= want) return;
+    _showCardConfirmDialog(c, () => {
+      if (done || picked.includes(c) || picked.length >= want) return;
+      picked.push(c);
+      if (picked.length >= want) { finish(); opts.onPicked(picked.slice()); return; }
+      paint();
+    });
+  };
+  const block = (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('.h-card') : null;
+    if (el && hw.contains(el)) e.stopPropagation();
+  };
+  hw.addEventListener('click', onClick, true);
+  hw.addEventListener('mousedown', block, true);
+  hw.addEventListener('touchstart', block, true);
+  const mo = new MutationObserver(() => paint());
+  mo.observe(hw, { childList: true });
+  const onResize = () => { layout(); paint(); };
+  window.addEventListener('resize', onResize);
+
+  // オンライン: 選んでいる間は相手画面の「効果発動」ポップアップを閉じない（トラッシュ選択と同じ）
+  const _online = !!(window._isOnlineMode && window._isOnlineMode());
+  if (_online) window._skipFxEffectClose = true;
+  _effectUiOpen++;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    _effectUiOpen = Math.max(0, _effectUiOpen - 1);
+    mo.disconnect();
+    hw.removeEventListener('click', onClick, true);
+    hw.removeEventListener('mousedown', block, true);
+    hw.removeEventListener('touchstart', block, true);
+    window.removeEventListener('resize', onResize);
+    [topOv, botOv, panel].forEach(o => { if (o.parentNode) o.parentNode.removeChild(o); });
+    cardEls().forEach(el => el.classList.remove('hp-cand', 'hp-dim', 'hp-on'));
+    if (_bdWas && _bd) _bd.style.display = 'block';
+    if (_online) {
+      window._skipFxEffectClose = false;
+      const g = window._remotePopupGen || 0;
+      setTimeout(() => {
+        if ((window._remotePopupGen || 0) !== g) return;
+        try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+      }, 50);
+    }
+  };
+
+  if (opts.onSelectAll) mkBtn('✅ 全て選択する', '#00aa66', () => { finish(); opts.onSelectAll(); });
+  if (opts.upTo) mkBtn('✅ 選んだカードで決定', '#00aa66', () => { if (picked.length === 0) return; finish(); opts.onPicked(picked.slice()); });
+  if (opts.onBack) mkBtn('↩ 戻る', '#224466', () => { finish(); opts.onBack(); });
+  if (opts.optional) mkBtn(opts.skipLabel || '⏭ 使わない', '#555', () => { finish(); opts.onSkip(); });
+  if (!bRow.children.length) bRow.style.display = 'none';
+
+  layout(); paint();
+  // 最初の対象が見えるように手札をスクロールする
+  const fe = cardEls()[b.player.hand.findIndex(c => candSet.has(c))];
+  if (fe && (fe.offsetLeft < hw.scrollLeft || fe.offsetLeft + fe.offsetWidth > hw.scrollLeft + hw.clientWidth)) {
+    hw.scrollLeft = Math.max(0, fe.offsetLeft - 20);
+  }
+  return true;
+}
+
 // 手札からN枚選んで破棄する UI（cost_discard 用）
 // hand: プレイヤーの手札配列のスナップショット
 // wantCount: 破棄枚数
@@ -5024,6 +5182,10 @@ function _showCardConfirmDialog(card, onConfirm) {
 // opts: { optional: true なら「破棄しない」ボタンを出す（押すと callback(null)）,
 //         title: 上部の見出し（省略時「🗑 手札から N 枚破棄」） }
 function showHandDiscardPicker(hand, wantCount, callback, opts) {
+  // 手札の上で直接選ぶ（手札が見えないときだけ下の一覧）
+  if (_handInPlacePick(hand, { title: (opts && opts.title) || ('🗑 手札から ' + wantCount + ' 枚破棄'), wantCount,
+    optional: !!(opts && opts.optional), skipLabel: '破棄しない', upTo: !!(opts && opts.upTo),
+    onSkip: () => callback(null), onPicked: (p) => callback(p) })) return;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
   const titleEl = document.createElement('div');
@@ -5459,6 +5621,9 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   // 選んだカードはゾーンを移っても保持し、合わせて wantCount 枚まで選べる（「手札/トラッシュから2枚」等）
   const _zTabs = (opts && Array.isArray(opts.zoneTabs) && opts.zoneTabs.length > 1) ? opts.zoneTabs : null;
   let _zTab = _zTabs ? Math.max(0, Math.min(_zTabs.length - 1, (opts && opts.zoneTab) || 0)) : 0;
+  // 候補が全部自分の手札なら、一覧ではなく手札の上で直接選ぶ
+  if (!_zTabs && _handInPlacePick(candidates, { title, wantCount, optional, upTo: _upTo, onBack: _onBack, onSelectAll: _selAll,
+    onSkip: () => callback([]), onPicked: (p) => callback(p) })) return;
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
@@ -7411,6 +7576,9 @@ function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
 // ===== 手札選択UI =====
 
 export function showHandSelection(hand, validIndices, borderColor, callback) {
+  // 手札の上で直接選ぶ（手札が見えないときだけ下の一覧）
+  if (_handInPlacePick(validIndices.map(i => hand[i]), { title: '🎯 手札からカードを選んでください', wantCount: 1,
+    optional: true, skipLabel: '✕ キャンセル', onSkip: () => callback(null), onPicked: (p) => callback(hand.indexOf(p[0])) })) return;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:70000;display:flex;flex-direction:column;align-items:center;justify-content:center;';
 

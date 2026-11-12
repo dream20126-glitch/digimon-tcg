@@ -11132,9 +11132,20 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
   // 無ければ従来通りフラットな subject を見る（_resolveStepSubjectと同じ優先順位）。
   // 反応するステップ（＋「その後」で連結された後続）だけを返す（そのカード自身の通常の
   // 【登場時】等のステップまで他カードのイベントで実行されないように）
+  // 「効果で登場したとき」（cause:'effect'。シードラモン P-098 進化元・ディアボロモンACE P-114）は、効果で登場したときだけ。
+  // 以前は原因を見ておらず、コストを払った通常の登場でも発動していた。効果で登場したカードには _enteredByEffect が付く
+  // （付かない経路＝トークン等は、効果の処理中に登場したかで判定）
+  const _byEffect = triggerCode === 'on_play' && !!(sourceCard && (sourceCard._enteredByEffect || _curEffectCtx));
+  const causeOk = (s) => {
+    if (triggerCode !== 'on_play') return true;
+    const cs = (s.cause_by_code && s.cause_by_code[triggerCode]) || s.cause;
+    if (cs === 'effect') return _byEffect;
+    if (cs === 'not_effect') return !_byEffect;
+    return true;
+  };
   const reactiveSteps = (steps, cardSide) => {
     if (!Array.isArray(steps)) return [];
-    return _filterStepChains(steps, (s) => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide));
+    return _filterStepChains(steps, (s) => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide) && causeOk(s));
   };
 
   // オンライン対戦で反応するのが相手（ai＝カードの持ち主は相手機）のカードなら、実行時に持ち主の端末へ委譲する
@@ -15233,8 +15244,10 @@ let _cardUidCounter = 0;
 // 場に出たカードは新しいカードとして扱う（公式ルール: 場を離れたカードは新しいカード）。【ターンに1回】の使用回数の識別子（_uid）と
 // 【メイン】の使用済み（_usedEffects）を新しくする（ナイトキロプモン BT26-070 が、【メイン】を使ってから進化元になり、
 // トラッシュから再び登場したときに「効果（使用済み）」のままだった）
-function freshOnFieldEnter(card) {
+// byEffect: 効果で登場した（「他のデジモンが効果で登場したとき」cause:'effect' の判定用。通常の登場・進化は false）
+function freshOnFieldEnter(card, byEffect) {
   if (!card) return;
+  card._enteredByEffect = !!byEffect;
   delete card._leftGrantedRecipes;
   delete card._uid;
   card._usedEffects = [];
@@ -16882,7 +16895,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   // 【登場時】は発揮しない。自分の育成エリアは state_sync で相手へ同期される
   if (opts.toBreed && !player.ikusei && String(c.type || '') === 'デジモン') {
     player.ikusei = c;
-    freshOnFieldEnter(c);
+    freshOnFieldEnter(c, true);
     c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = []; c._grantedRecipes = [];
     if (Array.isArray(opts._assemblyStack)) c.stack = opts._assemblyStack.slice();
     c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
@@ -16925,7 +16938,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   }
   // アルゴモン(BT2-047)「レスト状態で登場できる」等、レスト状態での登場を
   // 指定できるようにする（enterSuspended）。省略時は従来通り活動状態で登場
-  freshOnFieldEnter(c);
+  freshOnFieldEnter(c, true);
   c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = []; c._grantedRecipes = [];
   if (Array.isArray(opts._assemblyStack)) c.stack = opts._assemblyStack.slice();
   // 前に場にいたときの状態（DP0 の「消滅予定」の印・DP 修正）を持ち越さない（トラッシュから再登場したカード）
@@ -19657,7 +19670,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // type別に配置先を決定
           const isTamer = String(c.type || '') === 'テイマー';
-          freshOnFieldEnter(c);
+          freshOnFieldEnter(c, true);
           if (isTamer) {
             player.tamerArea.push(c);
           } else {
@@ -19775,7 +19788,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // battleArea 空きスロットへ配置（テイマーは tamerArea へ。ただし通常はデジモンのみ）
           const isTamer = String(c.type || '') === 'テイマー';
-          freshOnFieldEnter(c);
+          freshOnFieldEnter(c, true);
           if (isTamer) {
             player.tamerArea.push(c);
           } else {

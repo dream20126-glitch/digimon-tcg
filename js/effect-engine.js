@@ -1573,6 +1573,7 @@ function executeQueueEntry(entry, context, callback0) {
       // 効果全体で「はい」を選んだので、効果の中の「〜しますか？」（トラッシュから手札に戻すか・アタックするか・
       // 【ディレイ】するか）は出さない（グレイモン EX12-010 で2回確認していた）
       ctx._effectConfirmed = true;
+      _markConfirmedHead(ctx, _recipeStepsForLookup);
       runEffectNow(callback);
     } else {
       // 【メイン】を使わなかったら「⚡ 効果」ボタンの使用済み表示を戻す（battle-render.js activateEffect）
@@ -10807,7 +10808,13 @@ function checkPendingDestroys(ctx, callback) {
       // 次にcheckPendingDestroysが呼ばれた時に再度この処理の対象になる）。
       // リンクカードが尽きればキャンセルできなくなり、最終的に消滅する
       const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+      // 離れるときの判定でも、原因はルール（【守護】「相手の効果で離れるとき」等は発揮しない。メタルエンパイア EX12-072）
+      // （原因の判定は _lastDestroyCause を先に見るので、前の消滅の原因が残っていても使われないよう両方をルールにする）
+      const _pdPrevLeave = ctx.bs ? ctx.bs._leaveCause : undefined;
+      const _pdPrevDc = ctx.bs ? ctx.bs._lastDestroyCause : undefined;
+      if (ctx.bs) { ctx.bs._leaveCause = { type: 'rule', causerSide: null, causerCard: null }; ctx.bs._lastDestroyCause = ctx.bs._leaveCause; }
       tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
+        if (ctx.bs) { ctx.bs._leaveCause = _pdPrevLeave; ctx.bs._lastDestroyCause = _pdPrevDc; }
         delete card._destroyInProgress;
         if (canceled) { _canceledDp0.push(card); processNext(); return; }
       _pdShow(card, () => {
@@ -10838,9 +10845,9 @@ function checkPendingDestroys(ctx, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         window._onlineSendStateSync();
       }
-      // 共通の消滅トリガーチェーン。「原因」追跡: DP0等、効果起因の消滅として扱う
-      // （どの効果がDPを0まで下げたかまでは追跡していないベストエフォートな近似）
-      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card, grp: _pdGrp };
+      // 共通の消滅トリガーチェーン。DP0 の消滅はルールによる消滅（効果による消滅ではない。公式Q&A BT17-068 Q2828
+      // 「DPをマイナスする効果ではなく、ルールによって消滅している」）。「効果で消滅したとき」「効果で消滅させたとき」等は満たさない
+      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'rule', causerSide: null, causerCard: null, grp: _pdGrp };
       if (_deferToNonTurn) {
         const _cause = ctx.bs._lastDestroyCause;
         _deferNonTurn((done) => {
@@ -11207,6 +11214,21 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
 // ===== 効果不発ポップアップ =====
 
 // 対象（選べるデジモン/カード）がいないために効果を発揮できなかったときのメッセージ
+// 「効果を発動しますか？」で「はい」を選んだ効果の、最初の任意のステップ（「〜できる」の本体）を覚える。
+// そのステップの選択画面では「使わない」を出さない（発動する意思は確認済み。ナイトモン P-111 の進化元効果
+// 「手札から〜を登場できる」で、「はい」の後の手札の選択に「使わない」が出ていた）。「その後、〜できる」等の
+// 2つ目以降の任意のステップは、そこで初めて使うかを選ぶので「使わない」を残す
+function _markConfirmedHead(ctx, recipe) {
+  if (!ctx) return;
+  const head = Array.isArray(recipe) ? recipe.find(s => s && s.optional === true) : null;
+  ctx._confirmedHead = head ? { action: head.action, text: head.display_text || '' } : null;
+}
+function _pickOptional(ctx, step, opt) {
+  if (!opt) return false;
+  const h = ctx && ctx._effectConfirmed && ctx._confirmedHead;
+  if (h && step && step.action === h.action && (step.display_text || '') === h.text) return false;
+  return true;
+}
 const EFFECT_FAILED_NO_TARGET = '対象がいませんでした';
 // トラッシュ等のゾーンに選べるカードが無かったとき（「〜を手札に戻す」等、対象がカードの場合）
 const EFFECT_FAILED_NO_CARD = '対象がありませんでした';
@@ -11688,7 +11710,9 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理（レシピのみ）
     // === NEW: 加えて、盤面の他カードで subject='other_own' / 'opp' 等の反応レシピがあればキューに追加 ===
     // 例: ダルクモン「他の自分のデジモンが登場した時に発動」
-    if (sourceCard && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack')) {
+    // 「自分のデジモンが育成エリアからバトルエリアに移動したとき」（on_move＋発動主体。ウッコモン P-123・大和田ルイ P-130）も
+    // 移動したデジモン以外の場のカードが反応する（以前は移動したデジモン自身の【移動時】しか見ていなかった）
+    if (sourceCard && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack' || triggerCode === 'on_move')) {
       _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer);
     }
     // on_battle_win の trigger_conditions（例: cond_lv_ge:6@opp「Lv6以上の相手だけを
@@ -12832,6 +12856,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
           // 確認ダイアログでカード名・効果テキストは既に見せているので、承諾後に
           // 同じ内容のアナウンス演出を重ねて出さずそのまま実行する
           ctx._effectConfirmed = true; // 効果の中の「〜しますか？」は出さない（二重確認の防止）
+          _markConfirmedHead(ctx, recipe);
           logActivated();
           runNow();
           return;
@@ -18633,7 +18658,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         window._doAppGattaiFromEffect(hi, pair.slotIdx, () => { ctx.renderAll && ctx.renderAll(); callback && callback(); });
       };
       const _afHands = [...new Set(_afPairs.map((x) => x.hand))];
-      showTrashCardPicker(_afHands, 1, !!step.optional, '🔗 アプ合体させる手札のカードを選んでください', (picked) => {
+      showTrashCardPicker(_afHands, 1, _pickOptional(ctx, step, !!step.optional), '🔗 アプ合体させる手札のカードを選んでください', (picked) => {
         const h = picked && picked[0];
         if (!h) { _afDo(null); return; }
         const bases = _afPairs.filter((x) => x.hand === h);
@@ -18780,7 +18805,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _esAllEvo = _esCands.every((c) => _esZoneOf.get(c) === 'evo_source');
         if (ctx.side === 'ai' || (_esCands.length === 1 && !step.optional && _esAllEvo)) { _esDo(_esCands[0]); break; }
         void _esPay;
-        showTrashCardPicker(_esCands, 1, !!step.optional, _esAllEvo ? '🌟 進化元から登場させるカードを選んでください' : '🌟 登場させるカードを選んでください', (picked) => _esDo(picked && picked[0]), _esCands,
+        showTrashCardPicker(_esCands, 1, _pickOptional(ctx, step, !!step.optional), _esAllEvo ? '🌟 進化元から登場させるカードを選んでください' : '🌟 登場させるカードを選んでください', (picked) => _esDo(picked && picked[0]), _esCands,
           _esAllEvo ? undefined : { labelOf: (c) => ({ hand: '手札', trash: 'トラッシュ', evo_source: '進化元' })[_esZoneOf.get(c)] || '' });
         break;
       }
@@ -19040,7 +19065,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const _all = (Array.isArray(zoneAll) && zoneAll.length > 0) ? zoneAll : zoneCands;
             if (_all.length === 0) { onBack && onBack(); return; }
             const _zt = _zoneTabsForSummon ? Object.assign({ zoneTabs: _zoneTabsForSummon, zoneTab: zoneName === 'トラッシュ' ? 1 : 0 }) : null;
-            showTrashCardPicker(_zt ? [..._handCands, ..._trashCands] : zoneCands, _summonCount, _optional,
+            showTrashCardPicker(_zt ? [..._handCands, ..._trashCands] : zoneCands, _summonCount, _pickOptional(ctx, step, _optional),
               '🌟 ' + (zoneName && !_zt ? zoneName + 'から' : '') + '登場させるカードを選んでください' + (zoneCands.length === 0 ? '（対象のカードがありません）' : ''), (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
@@ -19259,7 +19284,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           _chooseZ();
           return;
         }
-        showTrashCardPicker(_cands, 1, _evoOptional, '⬆ 進化させるカードを選んでください', (picked) => {
+        showTrashCardPicker(_cands, 1, _pickOptional(ctx, step, _evoOptional), '⬆ 進化させるカードを選んでください', (picked) => {
           _doEvolveWith(picked && picked[0], slotIdx);
         }, _cands);
       };
@@ -19426,7 +19451,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (effectiveSide === 'ai' || ctx.side === 'ai' || step.evolve_into === 'self_card') { // 進化先がこのカードに決まっている（ブラストジョグレス）なら選ぶ画面は出さない
         _jgChoosePair(_jgCands[0]); break; }
       const _jgBoth = _jgZones.includes('hand') && _jgZones.includes('trash');
-      showTrashCardPicker(_jgCands, 1, _jgOptional || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください' + (_jgBoth ? '（手札/トラッシュ）' : _jgZones.includes('trash') ? '（トラッシュ）' : ''), (picked) => {
+      showTrashCardPicker(_jgCands, 1, _pickOptional(ctx, step, _jgOptional) || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください' + (_jgBoth ? '（手札/トラッシュ）' : _jgZones.includes('trash') ? '（トラッシュ）' : ''), (picked) => {
         const c = picked && picked[0];
         if (!c) { _jgDo(null, null); return; }
         _jgChoosePair(c);
@@ -20291,21 +20316,35 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === 育成エリアからバトルエリアに移動 (breed → battle, 進化なし) ===
     case 'battle_area_make': {
       if (!player.ikusei) { ctx.addLog && ctx.addLog('⚠ 育成エリアにカードがありません'); callback(); break; }
+      // 移動できるデジモンの絞り込み（大和田ルイ P-130「育成エリアのLv.3以上の自分のデジモン」）。デジタマ等も移動できない
+      {
+        const _bamC = player.ikusei;
+        const _bamDigi = !_bamC.type || _bamC.type === 'デジモン' || _bamC.type === 'デュアル';
+        if (!_bamDigi || (step.filter && !cardMatchesFilter(_bamC, step.filter, ctx.bs, ctx.side, ctx.card))) {
+          ctx.addLog && ctx.addLog('💨 育成エリアに移動できるデジモンがいません');
+          callback();
+          break;
+        }
+      }
       // 空きスロットを探す
       let slot = -1;
       for (let i = 0; i < player.battleArea.length; i++) {
         if (!player.battleArea[i]) { slot = i; break; }
       }
       if (slot < 0) slot = player.battleArea.length;
-      player.battleArea[slot] = player.ikusei;
-      ctx.addLog && ctx.addLog('🐾 「' + player.ikusei.name + '」をバトルエリアへ');
+      const _bamMoved = player.ikusei;
+      player.battleArea[slot] = _bamMoved;
+      ctx.addLog && ctx.addLog('🐾 「' + _bamMoved.name + '」をバトルエリアへ');
       player.ikusei = null;
       ctx.renderAll && ctx.renderAll();
       // オンライン: 育成エリア／バトルエリアの変化を相手画面へ同期
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         try { window._onlineSendStateSync(); } catch (_) {}
       }
-      callback();
+      // 効果で移動したときも【移動時】と「自分のデジモンが育成エリアからバトルエリアに移動したとき」を誘発する
+      // （育成フェイズの移動と同じ。大和田ルイ P-130 の【登場時】で移動 → 大和田ルイ自身・ウッコモン P-123 が反応）
+      try { scanTriggers('on_move', _bamMoved, ctx.side, ctx); processQueue(ctx, () => callback()); }
+      catch (e) { console.error('[battle_area_make on_move]', e); callback(); }
       break;
     }
     // === トークンを生成して登場（コスト不要） ===
@@ -20838,7 +20877,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback(true);
       };
       if (effectiveSide === 'ai' || ctx.side !== 'player') { _hoDone(_hoCands.slice(0, _hoN)); break; }
-      showTrashCardPicker(_hoCands, Math.min(_hoN, _hoCands.length), !!step.optional, '👁 オープンする手札を選んでください', _hoDone, player.hand);
+      showTrashCardPicker(_hoCands, Math.min(_hoN, _hoCands.length), _pickOptional(ctx, step, !!step.optional), '👁 オープンする手札を選んでください', _hoDone, player.hand);
       break;
     }
     // === 「アタックされない」（cant_be_attacked）。継続効果のものは canAttackDigimonTarget がレシピから判定する。
@@ -21346,7 +21385,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 『巨神兵器』1枚を手札に戻せる」。以前は確認なしで「使わない」付きの選択画面が出ていた）
           _confirmOptionalTrashToHand(ctx, _btFilter, _btCands, _btWant, _doBounceTrash, () => callback(true));
         } else {
-          showTrashCardPicker(_btCands, _btWant, upTo || !!step.optional, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
+          showTrashCardPicker(_btCands, _btWant, upTo || _pickOptional(ctx, step, !!step.optional), '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
         }
         return;
       }
@@ -22304,7 +22343,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           next();
         };
         if (effectiveSide === 'ai') { _phPlace(_phCands.slice(0, _phWant)); break; }
-        showTrashCardPicker(_phCands, Math.min(_phWant, _phCands.length), !!step.optional,
+        showTrashCardPicker(_phCands, Math.min(_phWant, _phCands.length), _pickOptional(ctx, step, !!step.optional),
           '🛡 セキュリティの' + (step.position === 'bottom' ? '下' : '上') + 'に置く手札のカードを選んでください', (picked) => _phPlace(picked), _phCands);
         break;
       }
@@ -22658,7 +22697,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const cands = _dgPool.filter((c) => !_dgPicked.includes(c) && _evalStepConditionGate(g, c, ctx.bs, ctx.side));
           if (cands.length < need) { ctx.addLog && ctx.addLog('💨 「' + _dgCondLabel(g) + '」のカードが足りません'); _dgFailCb(); return; }
           if (effectiveSide === 'ai' || ctx.side !== 'player') { cands.slice(0, need).forEach((c) => _dgPicked.push(c)); _dgNext(); return; }
-          showTrashCardPicker(cands, need, _dgIsCost || !!step.optional, '🔄 「' + _dgCondLabel(g) + '」を' + need + '枚選んでください', (picked) => {
+          showTrashCardPicker(cands, need, _dgIsCost || _pickOptional(ctx, step, !!step.optional), '🔄 「' + _dgCondLabel(g) + '」を' + need + '枚選んでください', (picked) => {
             if (!picked || picked.length < need) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); _dgFailCb(); return; }
             picked.forEach((c) => _dgPicked.push(c));
             _dgNext();
@@ -25956,5 +25995,28 @@ export function checkOverflow(bs, ctxBase) {
     if (side === 'player' && bs.memory < 0 && bs.isPlayerTurn) bs._pendingTurnEnd = true;
     if (side === 'ai' && bs.memory > 0 && !bs.isPlayerTurn) bs._pendingTurnEnd = true;
     try { if (typeof window !== 'undefined' && window._sendMemoryUpdate) window._sendMemoryUpdate(); } catch (_) {}
+    // ポップアップ: この画面から見たメモリーの増減で出す（自分のカードなら-N、相手のカードなら+N）。
+    // オンラインでは相手の画面にも「メモリー+N」で出してもらう（P-113 ラストティラノモンACE）
+    _showOverflowNotice(card.name || '', n, side === 'player' ? -n : n);
+    if (online && side === 'player') {
+      try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_overflowNotice', cardName: card.name || '', n }); } catch (_) {}
+    }
   });
 }
+// 《オーバーフロー》でメモリーが動いたことを知らせるポップアップ（描画中に呼ばれるので待たない。2.5秒で消える）
+// delta: この画面のプレイヤーから見たメモリーの増減（-4＝自分のメモリー-4 / +4＝自分のメモリー+4）
+function _showOverflowNotice(cardName, n, delta) {
+  if (typeof document === 'undefined' || !document.body) return;
+  try {
+    const el = document.createElement('div');
+    const minus = delta < 0;
+    el.style.cssText = 'position:fixed;top:32%;left:50%;transform:translate(-50%,-50%);z-index:56000;background:rgba(20,20,35,0.94);'
+      + 'border:2px solid ' + (minus ? '#ff6b6b' : '#5fd394') + ';border-radius:12px;padding:14px 26px;color:#fff;font-size:15px;font-weight:bold;'
+      + 'text-align:center;pointer-events:none;box-shadow:0 0 18px ' + (minus ? 'rgba(255,107,107,0.5)' : 'rgba(95,211,148,0.5)') + ';animation:fadeIn 0.2s ease;';
+    el.innerHTML = '<div style="font-size:12px;color:#ccc;margin-bottom:4px;">《オーバーフロー（-' + n + '）》「' + String(cardName).replace(/[<>&]/g, '') + '」</div>'
+      + '<div style="font-size:20px;color:' + (minus ? '#ff8a8a' : '#7be0a8') + ';">オーバーフローでメモリー' + (minus ? '-' : '+') + Math.abs(delta) + '</div>';
+    document.body.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2500);
+  } catch (_) {}
+}
+if (typeof window !== 'undefined') window._showOverflowNotice = _showOverflowNotice;

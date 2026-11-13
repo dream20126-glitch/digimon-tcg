@@ -1004,6 +1004,11 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'fx_overflowNotice': {
+      // 相手のカードの《オーバーフロー》で相手のメモリーが減った＝こちらから見るとメモリー+N
+      try { window._showOverflowNotice && window._showOverflowNotice(cmd.cardName || '', cmd.n || 0, cmd.n || 0); } catch (_) {}
+      break;
+    }
     case 'fx_effectDeclined': {
       const el = document.createElement('div');
       el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:56000;background:rgba(30,30,40,0.9);border:1px solid #888;border-radius:10px;padding:12px 24px;color:#aaa;font-size:13px;font-weight:bold;text-align:center;pointer-events:none;animation:fadeIn 0.2s ease;';

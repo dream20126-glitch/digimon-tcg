@@ -7229,6 +7229,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     }
 
     let pickedCount = 0;
+    const _autoAll = sel.count === 'all' && !isOptional && !sel.action && dest !== 'play' && !_slots;
+    let _autoTok = null;
 
     function refreshSelectUI() {
       stepEl.innerText = 'ステップ ' + selIdx + '/' + selections.length + ': '
@@ -7383,6 +7385,16 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       });
       // 選べるカードが1枚だけなら「登場」「手札に加える」等のボタンも出す（カードをタップしなくても決められる）
       const _act = cardEls.filter(e => !e.removed && selMatch(e.card));
+      // 「その中の〜全てを手札に加える」（count:'all'・任意でない・手札/トラッシュ等）は選ぶ余地が無いので、
+      // 条件を満たすカードを少し見せてから自動で全て加える（DIGIMON CON 2023 P-116。以前は1枚ずつタップしていた）
+      if (_autoAll && _act.length > 0 && typeof _act[0]._pick === 'function') {
+        clearButtons();
+        stepEl.innerText = describeFilter(filter) + ' を全て' + _deckOpenDestLabel(sel) + '（' + _act.length + '枚）';
+        cardEls.forEach(e => { if (!e.removed) e.wrap.onclick = null; });
+        const _tok = (_autoTok = {});
+        setTimeout(() => { if (_autoTok === _tok && !_act[0].removed) _act[0]._pick(); }, pickedCount === 0 ? 1200 : 250);
+        return;
+      }
       if (_act.length === 1 && pickedCount < maxCount && typeof _act[0]._pick === 'function') {
         const ob = document.createElement('button');
         ob.innerText = dest === 'play' && sel.action !== 'evolve' ? '登場' : _deckOpenDestLabel(sel);

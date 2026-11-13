@@ -13035,6 +13035,9 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     pushReaction(card, card, recipe);
     if (reactions.length > before) reactions[reactions.length - 1].zone = zone;
   });
+  // 呼び出し側が用意した反応（手札の［手札］【カウンター】【ブラスト進化】等。場の【カウンター】と同じ
+  // カウンタータイミングの候補として一緒に選ばせる）
+  if (Array.isArray(opts.extraReactions)) opts.extraReactions.forEach((r) => { if (r && r.card) reactions.push(r); });
   if (reactions.length === 0) { finish(); return; }
   // 原因（bs._lastDestroyCause）はスキャン時点の値を各反応の実行直前に書き戻す
   // （先に解決した反応の中で別の消滅チェーン等が走ると、その終了時にクリアされてしまい、
@@ -13082,6 +13085,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   const runOneReaction = (reaction) => {
     // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない
     if ((reaction.zone === 'trash' || reaction.zone === 'security') && !_cardStillInZone(bs, reactSide, reaction.card, reaction.zone)) { nextReaction(); return; }
+    if (reaction.zone === 'hand' && reaction.extra && !((bs[reactSide].hand || []).includes(reaction.card))) { nextReaction(); return; }
     // 発揮する前に場を離れた／効果を持たなくなったら発揮しない（公式ルール 15-4-4-3〜15-4-4-5）
     if (!_reactionStillValid(reaction, bs, recipeKey)) {
       const _n = (reaction.sourceCard && reaction.sourceCard !== reaction.card) ? reaction.sourceCard.name : (reaction.card && reaction.card.name);
@@ -13124,7 +13128,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         card: r.card,
         block: {
           trigger: { code: recipeKey },
-          raw: r.sourceCard === r.card ? (r.card.effect || '') : '',
+          raw: r.extra && r.effectText ? r.effectText : (r.sourceCard === r.card ? (r.card.effect || '') : ''),
           _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined,
           _grantedSteps: r.recipe,
         },
@@ -14187,6 +14191,21 @@ function _blastStepsFor(card, p) {
   });
   return steps;
 }
+// 手札の［手札］【カウンター】【ブラスト〇〇】を、場の【カウンター】と一緒に選ぶための反応にする
+// （公式ルール 11-3: カウンタータイミングでは使える【カウンター】の中から1つを選んで発揮する。以前は場の【カウンター】を
+// 先に1つずつ確認してから手札の【ブラスト進化】を確認していたので、一緒に選べなかった。ムゲンドラモンACE EX12-059）
+function _blastCounterReactions(reactSide, bs) {
+  const p = bs && bs[reactSide];
+  if (!p) return [];
+  const kwOf = (st) => st.action === 'jogress_evolve' ? '【ブラストジョグレス】' : '【ブラスト進化】';
+  const out = [];
+  (p.hand || []).forEach((c) => {
+    if (!c) return;
+    _blastStepsFor(c, p).forEach((st) => out.push({ card: c, sourceCard: c, recipe: [Object.assign({}, st, { counter: true })],
+      zone: 'hand', extra: true, triggerCode: 'on_attack', effectText: '［手札］【カウンター】' + kwOf(st) }));
+  });
+  return out;
+}
 function _fireBlastCounters(reactSide, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch (_) {} };
   if (!bs || (bs._attackSeq && bs._counterUsedSeq === bs._attackSeq)) { finish(); return; }
@@ -14233,7 +14252,13 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
     if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', _isCounterStep)) { afterBoard(); return; }
     // also_counter のステップを【カウンター】として扱う（1回のアタックに1つ）ための印
     bs._inCounterPass = true;
-    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => { bs._inCounterPass = false; afterBoard(); }, _isCounterStep);
+    // 手札の【ブラスト進化】等も同じ選択肢に入れる（場の【カウンター】と一緒に選ぶ）。入れたら後で別に確認しない
+    const _blastExtras = (bs._attackSeq && bs._counterUsedSeq === bs._attackSeq) ? [] : _blastCounterReactions(reactSide, bs);
+    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => {
+      bs._inCounterPass = false;
+      if (_blastExtras.length > 0) { done && done(); return; }
+      afterBoard();
+    }, _isCounterStep, { extraReactions: _blastExtras });
   }, (step) => !!step && step.counter !== true && _isOppOrBothAttackStep(step));
 }
 

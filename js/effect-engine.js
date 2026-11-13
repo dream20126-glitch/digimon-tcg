@@ -12484,8 +12484,13 @@ function _getKeywordOnAttackSteps(card, flagsOut, bs, side, holdersOut) {
     // passive の gate（「〜の間」条件）を満たさない間は使わない
     if (bs && side && typeof _passiveGateOk === 'function' && !_passiveGateOk(p, card, bs, side)) continue;
     _seenKw.add(p.flag);
-    const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
-    if (!tplSteps) continue;
+    // ［手札］のキーワード（【ブラスト進化】等。テンプレートの in_zone:'hand' のステップ）は手札にあるときの効果なので、
+    // 場のデジモンのアタックでは使わない（ラストティラノモンACE P-113 でアタックすると「【ブラスト〇〇】の効果を
+    // 発動しますか？」が出ていた。手札の【ブラスト進化】は fireOnAttackOppSubjectTriggers のカウンタータイミングで扱う）
+    if (p.in_zone === 'hand') continue;
+    const _tplAll = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
+    const tplSteps = Array.isArray(_tplAll) ? _tplAll.filter(st => !(st && st.in_zone === 'hand')) : _tplAll;
+    if (!tplSteps || (Array.isArray(tplSteps) && tplSteps.length === 0)) continue;
     let filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common, p.designated_common_chain, p.designated_mode);
     // ≪突進≫は「最もDPの高い“アクティブ状態の”相手のデジモン1体に変更“できる”」（公式説明）。
     // 辞書のテンプレートに任意・アクティブ条件が無くても、任意効果（はい/いいえの確認）として扱い、
@@ -24284,11 +24289,16 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _restTag = _isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai')
                                    : (ctx.side === 'player' ? 'ai' : 'player');
         const _restConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        // 対象の絞り込み（filter）も見る（ラストティラノモンACE P-113「このデジモンのDP以下の相手のデジモン全て」の
+        // dp_le:'self'。以前は filter を見ておらず、DPが上回るデジモンまでレストしていた）
+        const _restFilter = step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null;
         let _restedAny = false;
         const _restedList = [];
         (_restP.battleArea || []).forEach((c, i) => {
-          if (!c || c.suspended) return;
+          if (!c || c.suspended || c.cantRest) return;
           if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restTag)) return;
+          if (_restFilter && !cardMatchesFilter(c, _restFilter, ctx.bs, ctx.side, ctx.card)) return;
+          if (!_isOwnAll && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return;
           c.suspended = true;
           _restedAny = true;
           _restedList.push(c);

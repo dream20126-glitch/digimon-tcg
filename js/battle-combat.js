@@ -5851,7 +5851,11 @@ function _clashFinish(textHint, cb) {
   // 【道連れ】: 負けた側がバトルで消滅するなら、勝った側も続けて吹き飛ばされる
   if (p.winner !== 'tie') {
     const ls = p.winner === 'atk' ? 'def' : 'atk';
-    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && hasMichizure(p[ls])) out[p.winner] = 'recoil';
+    // 勝った側が場のデジモンのときだけ（セキュリティのデジモンとのバトルでは【道連れ】は発揮しない。セキュリティのデジモンは
+    // 通常どおり勝ち）。相手の画面では作り直したカードなので名前でも探す
+    const _wc = p[p.winner];
+    const _onField = (c) => !!c && ['player', 'ai'].some(sd => (bs[sd].battleArea || []).some(x => x && (x === c || (x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo)))));
+    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && hasMichizure(p[ls]) && _onField(_wc)) out[p.winner] = 'recoil';
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });

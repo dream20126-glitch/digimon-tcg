@@ -3962,13 +3962,14 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
 export function runWhenDestroyLocal(card, cause, cb) {
   const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
   const done = (v) => { try { cb && cb(!!v); } catch (e) { console.error('[runWhenDestroyLocal]', e); } };
-  if (!bs || !card || !whenDestroyApplies(card, 'when_destroy', 'effect')) { done(false); return; }
+  if (!bs || !card || !whenDestroyApplies(card, 'when_destroy', 'effect', { causerSide: (cause && cause.causerSide) || 'ai', carrierSide: 'player' })) { done(false); return; }
   const ctx = Object.assign({}, _buildBaseCtx(null, bs), { side: 'player', card });
   const prevCause = bs._lastDestroyCause;
   bs._lastDestroyCause = { type: (cause && cause.type) || 'effect', causerSide: (cause && cause.causerSide) || 'ai', causerCard: null };
   const before = new Set(Array.isArray(card.buffs) ? card.buffs : []);
   const wasActive = !card.suspended;
   const stack0 = Array.isArray(card.stack) ? card.stack.slice() : [];
+  const field0 = (bs.player.battleArea || []).slice();
   window._fxMoveHold = (window._fxMoveHold || 0) + 1;
   triggerEffect('when_destroy', card, 'player', ctx, () => {
     window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1);
@@ -3979,12 +3980,13 @@ export function runWhenDestroyLocal(card, cause, cb) {
     if (!prevented) { done(false); return; }
     const byEvade = wasActive && cur.suspended && !!(card._permEffects && card._permEffects.evade);
     const purged = !!card._armorPurgedTo;
-    const gone = purged ? [card] : stack0.filter(c => c && c !== cur && !(Array.isArray(cur.stack) && cur.stack.includes(c)));
+    const scape = field0.filter(c => c && c !== card && c !== cur && !(bs.player.battleArea || []).includes(c));
+    const gone = purged ? [card] : scape.length ? scape : stack0.filter(c => c && c !== cur && !(Array.isArray(cur.stack) && cur.stack.includes(c)));
     let isFrag = false;
-    try { isFrag = !purged && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, 'player'); } catch (_) {}
-    const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : isFrag ? '【フラグメント】' : '回避！';
-    const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
-    _ddDodgeFx(ctx, cur, 'player', { label: lbl, sub, substitute: gone.length ? gone : null, subColor: '#a8ff4a', peel: purged }, () => done(true));
+    try { isFrag = !purged && !scape.length && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, 'player'); } catch (_) {}
+    const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : scape.length ? '【スケープゴート】' : isFrag ? '【フラグメント】' : '回避！';
+    const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : scape.length ? '身代わりで消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+    _ddDodgeFx(ctx, cur, 'player', { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged }, () => done(true));
   });
 }
 if (typeof window !== 'undefined') window._runWhenDestroyLocal = (card, cause, cb) => runWhenDestroyLocal(card, cause, cb);
@@ -4024,21 +4026,23 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // ここでも判定する必要がある＝原因を指定しないレシピは両方の消滅で発動する）
   // オンラインの相手のカードの「消滅するとき〜することで消滅しない」（【アーマー解除】【フラグメント】等）は、持ち主の端末で
   // 確認・コストの支払い・演出をしてもらう（以前はこちらの端末で処理していて、確認がこちらの画面に出ていた）
+  const _wdInfo = { causerSide: ctx.side, carrierSide: _ddSide };
   if (_ddSide === 'ai' && causeType !== 'battle' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()
-      && typeof window._requestWhenDestroyDelegate === 'function' && whenDestroyApplies(destroyed, 'when_destroy', 'effect')) {
+      && typeof window._requestWhenDestroyDelegate === 'function' && whenDestroyApplies(destroyed, 'when_destroy', 'effect', _wdInfo)) {
     window._requestWhenDestroyDelegate(slotIdx, { type: causeType, causerSide: ctx.side }, (canceled) => {
       if (canceled) { ctx.addLog('🛡 相手の「' + destroyed.name + '」は消滅を回避！'); ctx.renderAll && ctx.renderAll(); callback && callback(); return; }
       _doDestroyProceed();
     });
     return;
   }
-  if (whenDestroyApplies(destroyed, 'when_destroy', causeType === 'battle' ? 'battle' : 'effect')) {
+  if (whenDestroyApplies(destroyed, 'when_destroy', causeType === 'battle' ? 'battle' : 'effect', _wdInfo)) {
     const gateCtx = { bs: ctx.bs, side: _ddSide, card: destroyed, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
     // 「〜することで、消滅しない」（【フラグメント】等の置換効果）で付いた「消滅しない」は、この消滅を防ぐだけ。
     // 防いだら外す（以前はターン終了まで残り、ゴクモン BT26-077 が【エグゼキュート】の自壊でも消滅しなかった）
     const _wdBefore = new Set(Array.isArray(destroyed.buffs) ? destroyed.buffs : []);
     const _wdWasActive = !destroyed.suspended;
     const _wdStack0 = Array.isArray(destroyed.stack) ? destroyed.stack.slice() : [];
+    const _wdField0 = (targetSide.battleArea || []).slice();
     // 効果での消滅を回避するとき、代わりに破棄するカード（【アーマー解除】【フラグメント】）は稲妻の演出で見せるので、
     // その間はトラッシュへの移動演出を出さない
     const _wdHold = causeType !== 'battle' && typeof window !== 'undefined';
@@ -4059,12 +4063,14 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
           const _byEvade = _wdWasActive && _wdCur.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
           // 代わりに破棄したカード: 【アーマー解除】は一番上のこのカード自身、それ以外は減った進化元（【フラグメント】等）
           const _purged = !!destroyed._armorPurgedTo;
-          const _gone = _purged ? [destroyed] : _wdStack0.filter(c => c && c !== _wdCur && !(Array.isArray(_wdCur.stack) && _wdCur.stack.includes(c)));
+          // 身代わりに消滅した他のデジモン（【スケープゴート】）
+          const _scape = _wdField0.filter(c => c && c !== destroyed && c !== _wdCur && !(targetSide.battleArea || []).includes(c));
+          const _gone = _purged ? [destroyed] : _scape.length ? _scape : _wdStack0.filter(c => c && c !== _wdCur && !(Array.isArray(_wdCur.stack) && _wdCur.stack.includes(c)));
           let _isFrag = false;
-          try { _isFrag = !_purged && _gone.length > 0 && !!cardHasActivePassiveFlag(_wdCur, 'fragment', ctx.bs, _ddSide); } catch (_) {}
-          const _lbl = _byEvade ? '【回避】' : _purged ? '【アーマー解除】' : _isFrag ? '【フラグメント】' : '回避！';
-          const _sub = _byEvade ? 'レストして消滅しない' : _gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
-          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _purged ? '一番上のカードをはがして消滅しない' : _sub, substitute: _gone.length ? _gone : null, subColor: '#a8ff4a', peel: _purged }, () => { callback && callback(); });
+          try { _isFrag = !_purged && !_scape.length && _gone.length > 0 && !!cardHasActivePassiveFlag(_wdCur, 'fragment', ctx.bs, _ddSide); } catch (_) {}
+          const _lbl = _byEvade ? '【回避】' : _purged ? '【アーマー解除】' : _scape.length ? '【スケープゴート】' : _isFrag ? '【フラグメント】' : '回避！';
+          const _sub = _byEvade ? 'レストして消滅しない' : _purged ? '一番上のカードをはがして消滅しない' : _scape.length ? '身代わりで消滅しない' : _gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _sub, substitute: _gone.length ? _gone : null, subColor: _scape.length ? '#ff8adf' : '#a8ff4a', peel: _purged }, () => { callback && callback(); });
           return;
         }
         callback && callback();
@@ -4107,7 +4113,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       return;
     }
   }
-  if (window._tryScapegoat) {
+  // 【スケープゴート】はここでは処理しない（任意＝公式ルール 16-32-3。キーワードのレシピ「消滅するとき」で確認・身代わりの選択）
+  if (false && window._tryScapegoat) {
     const _sgBefore = (targetSide.battleArea || []).slice();
     if (window._tryScapegoat(destroyed, targetSide)) {
       const _sgSub = _sgBefore.find(c => c && c !== destroyed && !(targetSide.battleArea || []).includes(c)) || null;
@@ -19120,6 +19127,18 @@ function executeRecipeStep(step, ctx, store, callback) {
           break;
         }
       }
+      // 【不屈】でトラッシュから登場し直すとき: 先に「不屈！」→ 光の柱と一緒に戻ってくる →「復活！」の演出（両方の画面）
+      if ((step.target === 'self' || step.target === 'self_card') && _summonSelfIgnoreCost && step._kwFlag === 'indomitable' && !step._reviveFxDone
+          && ctx.card && typeof window !== 'undefined' && typeof window._fxIndomitableRevive === 'function') {
+        const _rvP = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        if ((_rvP.trash || []).includes(ctx.card)) {
+          if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            try { window._onlineSendCommand({ type: 'fx_indomitable', cardName: ctx.card.name || '', cardImg: ctx.card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(ctx.card) : '') || '' }); } catch (_) {}
+          }
+          window._fxIndomitableRevive(ctx.card, ctx.side === 'ai', () => executeRecipeStep(Object.assign({}, step, { _reviveFxDone: true }), ctx, store, callback));
+          break;
+        }
+      }
       if ((step.target === 'self' || step.target === 'self_card') && _summonSelfIgnoreCost) {
         const cardToSummon = ctx.card;
         if (!cardToSummon) { callback(); break; }
@@ -26322,14 +26341,20 @@ export function checkAbsorbEvolveDiscount(evoCard, bs, side, callback) {
 // 「このデジモンが（バトルで/効果で）消滅するとき」（when_destroy）のうち、この消滅の原因（'battle' / 'effect'）で発揮する
 // ステップがあるか。このデジモン自身と、表向きの進化元の進化元効果を見る（充填プラグインQ P-146 の進化元「バトルで消滅するとき」）。
 // step.cause が無いものは原因を問わない。not_battle / not_effect（「〜以外で」）にも対応
-export function whenDestroyApplies(card, triggerCode, causeType) {
+export function whenDestroyApplies(card, triggerCode, causeType, info) {
   if (!card) return false;
   const ok = (st) => {
     if (!st) return false;
     const c = (st.cause_by_code && st.cause_by_code[triggerCode]) || st.cause;
     if (!c || !causeType) return true;
-    if (/^not_/.test(String(c))) return String(c).slice(4) !== causeType;
-    return c === causeType;
+    // 原因の主体（cause_subject: own=自分の / opp=相手の）。info={causerSide, carrierSide} があるときだけ見る
+    // （【スケープゴート】「自分の効果以外で消滅するとき」= not_effect + own: 相手の効果なら発揮できる）
+    const cs = st.cause_subject;
+    const subjOk = !info || !cs || cs === 'both' ? true
+      : cs === 'own' ? info.causerSide === info.carrierSide
+      : cs === 'opp' ? info.causerSide !== info.carrierSide : true;
+    if (/^not_/.test(String(c))) return !(String(c).slice(4) === causeType && subjOk);
+    return c === causeType && subjOk;
   };
   const lists = [];
   try { const own = getRecipeForTrigger(card, triggerCode); if (Array.isArray(own)) lists.push(own); } catch (_) {}

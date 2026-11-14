@@ -2865,3 +2865,63 @@ export function fxEffectDodge(card, opts, callback) {
   setTimeout(done, 5000);
 }
 if (typeof window !== 'undefined') window._fxEffectDodge = fxEffectDodge;
+
+
+// =====================================================
+//  【不屈】でトラッシュから戻ってくる演出:「【不屈】」→ トラッシュから光の柱が立ち、カードが昇ってくる →「復活！」
+// =====================================================
+export function fxIndomitableRevive(card, remote, callback) {
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  if (!document.getElementById('fx-revive-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-revive-style';
+    st.textContent = [
+      '@keyframes rvPillar{0%{transform:translateX(-50%) scaleY(0);opacity:0}25%{opacity:1}70%{transform:translateX(-50%) scaleY(1);opacity:1}100%{transform:translateX(-50%) scaleY(1);opacity:0}}',
+      '@keyframes rvTitle{0%{transform:translate(-50%,0) scale(2);opacity:0}45%{transform:translate(-50%,0) scale(0.95);opacity:1}100%{transform:translate(-50%,0) scale(1);opacity:1}}',
+      '@keyframes rvGlow{0%,100%{box-shadow:0 0 30px #ffb000,0 0 60px #ff6a00}50%{box-shadow:0 0 50px #fff,0 0 100px #ffb000}}',
+      '@keyframes rvEmber{0%{transform:translate(0,0);opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.5;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:66000;background:radial-gradient(ellipse at center,rgba(40,18,0,0.9) 0%,rgba(0,0,0,0.92) 70%);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.25s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  // ①「【不屈】」
+  const title = add('position:absolute;left:50%;top:' + Math.max(16, cy - CH / 2 - 110) + 'px;white-space:nowrap;font-size:clamp(2rem,9vw,3.2rem);font-weight:900;font-style:italic;color:#fff2c0;text-shadow:0 0 14px #ffb000,0 0 30px #ff6a00,0 0 3px #000;animation:rvTitle 0.45s ease-out forwards;',
+    '【不屈】');
+  // 下にトラッシュ
+  const by = H - Math.max(80, H * 0.15);
+  const bin = add('position:absolute;left:' + cx + 'px;top:' + by + 'px;width:80px;height:80px;margin:-40px 0 0 -40px;border-radius:50%;background:radial-gradient(circle,#ff4d4d55 0%,#0a0a0a 72%);border:3px solid #ff4d4d;box-shadow:0 0 24px #ff4d4d;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:28px;',
+    '🗑<div style="font-size:9px;font-weight:bold;">トラッシュ</div>');
+  // ② トラッシュから光の柱
+  setTimeout(() => {
+    add('position:absolute;left:' + cx + 'px;top:0;height:' + H + 'px;width:' + (CW * 1.8) + 'px;transform-origin:center bottom;background:linear-gradient(to right,rgba(255,200,80,0) 0%,rgba(255,240,170,0.85) 40%,#fff 50%,rgba(255,240,170,0.85) 60%,rgba(255,200,80,0) 100%);animation:rvPillar 1.4s ease-out forwards;');
+    bin.style.transition = 'transform 0.25s'; bin.style.transform = 'scale(1.25)';
+    for (let i = 0; i < 18; i++) {
+      add('position:absolute;left:' + cx + 'px;top:' + by + 'px;width:6px;height:6px;border-radius:50%;background:#ffd84a;box-shadow:0 0 8px #ffb000;--dx:' + ((Math.random() - 0.5) * 160) + 'px;--dy:' + (-80 - Math.random() * H * 0.5) + 'px;animation:rvEmber ' + (0.8 + Math.random() * 0.7) + 's ease-out forwards;');
+    }
+  }, 500);
+  // ③ カードが昇ってくる
+  const src = card ? (card.imgSrc || cardImg(card) || '') : '';
+  const c = add('position:absolute;left:' + (cx - CW / 2) + 'px;top:' + (cy - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid #ffd84a;background:#111;opacity:0;transform:translateY(' + (by - cy) + 'px) scale(0.2);transition:transform 0.8s cubic-bezier(.2,.9,.3,1.15),opacity 0.4s;',
+    src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:12px;">' + ((card && card.name) || '') + '</div>');
+  setTimeout(() => { c.style.opacity = '1'; c.style.transform = 'translateY(0) scale(1.05)'; c.style.animation = 'rvGlow 0.9s ease-in-out 0.8s infinite'; bin.style.transform = ''; }, 800);
+  // ④「復活！」
+  setTimeout(() => {
+    title.innerHTML = '復活！';
+    title.style.animation = 'none'; void title.offsetWidth; title.style.animation = 'rvTitle 0.45s ease-out forwards';
+    add('position:absolute;left:50%;top:' + (cy + CH / 2 + 16) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:bold;color:#ffe9a0;text-shadow:0 0 6px #000;',
+      (remote ? '相手の' : '') + '「' + ((card && card.name) || '') + '」がトラッシュから登場');
+  }, 1650);
+  setTimeout(() => { ov.style.opacity = '0'; }, 2700);
+  setTimeout(() => { ov.remove(); done(); }, 2950);
+  setTimeout(done, 6000);
+}
+if (typeof window !== 'undefined') window._fxIndomitableRevive = fxIndomitableRevive;

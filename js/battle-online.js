@@ -1375,6 +1375,13 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_indomitable': {
+      // 相手のデジモンが【不屈】でトラッシュから戻ってくる演出
+      if (typeof window._fxIndomitableRevive === 'function') {
+        enqueueFx((done) => window._fxIndomitableRevive({ name: cmd.cardName || '', imgSrc: cmd.cardImg || '' }, true, done));
+      }
+      break;
+    }
     case 'fx_clashFinish': {
       // 相手の端末で決着の演出が始まった → こちらのVS画面も同時に決着の演出を始める（終わるまで次の演出を待たせる）
       enqueueFx((done) => {

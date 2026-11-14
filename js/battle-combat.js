@@ -244,10 +244,9 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle, skipBarrier) {
   }
   // 【不屈】は消滅のキャンセルではない（公式ルール 16-27: 進化元を持つこのデジモンが消滅したとき、このカードを登場させる）。
   // 一度消滅させ、キーワードのレシピ（on_destroy の「トラッシュのこのカードを登場」）で登場し直す。【消滅時】等も誘発する
-  // スケープゴート（自分の効果以外で消滅時、他デジモンを身代わりに消滅させて回避）
-  if (_tryScapegoat(card, ownerSidePlayer)) {
-    return { canceled: true, reason: 'scapegoat' };
-  }
+  // 【スケープゴート】はここでは処理しない（任意＝公式ルール 16-32-3。キーワードのレシピ「消滅するとき、他の自分のデジモン
+  // 1体を消滅させることで、消滅しない」を _runWhenBattleDestroy / doDestroy が確認つき・身代わりを選んで発揮する）。
+  // 以前は確認なしで、場の先頭のデジモンを身代わりにしていた
   return null;
 }
 
@@ -5778,6 +5777,8 @@ function _clashNoteAndSend(card, kind, imgs, swapImg) {
 // 回避の前後の差から決める演出の種類（リンクカードが減った＝分離／進化元が減った＝フラグメント／場所が移った／それ以外は「消滅しない」）
 function _clashKindByDiff(snap, card) {
   if (card && card._armorPurgedTo) return 'armor_break';
+  // 場の他の自分のデジモンが減った（身代わりに消滅した）
+  if ((snap.field || []).some(c => c && c !== card && !(bs.player.battleArea || []).includes(c) && !(bs.ai.battleArea || []).includes(c))) return 'scapegoat';
   // 減った進化元がトラッシュではなくセキュリティへ行った（充填プラグインQ P-146「進化元から…セキュリティの下に置くことで消滅しない」）
   // なら、代わりのカードが弾き飛ぶのではなく光のバリア（消滅しない）
   const _goneStack = (snap.stack || []).filter(c => c && !((card && card.stack) || []).includes(c));
@@ -5844,7 +5845,7 @@ function _clashFinish(textHint, cb) {
     if (!loserOf(side)) { out[side] = 'win'; return; }
     let kind = p.notes[side] || _clashKindByZone(card);
     if (!kind && avoidedHint && p.winner !== 'tie') kind = 'shield';
-    if (!kind) kind = (hasIndomitable(card) && Array.isArray(card.stack) && card.stack.length > 0) ? 'indomitable' : 'trash';
+    if (!kind) kind = 'trash'; // 【不屈】もここではトラッシュへ（消滅時の効果の後、不屈で登場するときに戻ってくる演出を出す）
     out[side] = kind;
   });
   // 【道連れ】: 負けた側がバトルで消滅するなら、勝った側も続けて吹き飛ばされる
@@ -5965,6 +5966,12 @@ if (typeof window !== 'undefined') window._showSecurityDigimonLeave = showSecuri
 // ----- 消滅演出 -----
 
 export function showDestroyEffect(card, callback) {
+  // VS画面の押し合い中・効果での消滅回避（稲妻）の判定中に消滅したカード（【スケープゴート】の身代わり）は、
+  // 決着・稲妻の演出で見せるので、消滅演出を重ねない
+  if (typeof window !== 'undefined' && window._fxMoveHold > 0 && !(_clashPending && _clashSideOf(card))) {
+    if (_onlineMode && _sendCommand && !window._suppressFxSend && card && !card._remoteFx) { /* 相手の画面も同じ演出が出るので送らない */ }
+    callback && callback(); return;
+  }
   if (_clashPending && _clashSideOf(card)) { (card && card._remoteFx ? _clashFinish : _clashFinishSync)('', () => showDestroyEffect(card, callback)); return; }
   // 1つの効果でまとめて消滅させている間（window._destroyFxBatch）は1体ずつの演出を出さず、
   // 最後に「以下のN体が消滅」の一括演出（showDestroyBatch）で見せる

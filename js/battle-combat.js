@@ -8,7 +8,7 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClash, fxBattleClashReset, fxBattleResultBurst } from './battle-fx.js';
+import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClash, fxBattleClashReset, fxBattleResultBurst, registerClashLoser, consumeClashLoser } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { fireOptionUsedTriggers as _fireOptionUsed } from './effect-engine.js';
@@ -5619,11 +5619,15 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     const _a = _ice ? (atkCard.stack || []).length : (parseInt(atkCard.dp) || 0);
     const _d = _ice ? (secCard.stack || []).length : (parseInt(secCard.dp) || 0);
     const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
+    // 吹き飛ばしてトラッシュに送った側は、この後の消滅演出・セキュリティデジモンの LOSE 演出を省く
+    if (_winner !== 'atk') registerClashLoser(atkCard);
+    if (_winner !== 'def') registerClashLoser(secCard);
     setTimeout(() => {
       try {
         fxBattleClash(document.getElementById('sec-vs-cards') || overlay, _vsAtkArea, _vsDefArea, _vsLabel, _winner, () => {
-          setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 250);
-        });
+          window._clashAt = Date.now();
+          setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 150);
+        }, !!bs.isPlayerTurn);
       } catch (_) { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }
     }, 1350);
   } else {
@@ -5649,6 +5653,14 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
   const _win = /win|撃破！/i.test(String(text)) && !/撃破された/.test(String(text));
   const _lose = /lost|lose|両者/i.test(String(text));
   let _cleanup = null;
+  // 直前のぶつかり合い演出で WIN/LOSE を大きく見せたので、ここは何が起きたか（「〜を撃破！」等）を短く出すだけ
+  if ((_win || _lose) && window._clashAt && Date.now() - window._clashAt < 3000) {
+    textEl.style.opacity = '0';
+    overlay.style.background = 'rgba(0,0,0,0.35)';
+    subEl.style.fontSize = '1.05rem'; subEl.style.color = '#fff'; subEl.style.opacity = '1';
+    setTimeout(() => { overlay.style.display = 'none'; subEl.style.fontSize = ''; subEl.style.color = ''; callback && callback(); }, 1000);
+    return;
+  }
   if (_win || _lose) {
     overlay.style.overflow = 'hidden';
     overlay.style.background = _win ? 'radial-gradient(ellipse at center,rgba(60,40,0,0.85) 0%,rgba(0,0,0,0.8) 70%)' : 'radial-gradient(ellipse at center,rgba(60,0,0,0.85) 0%,rgba(0,0,0,0.85) 70%)';
@@ -5683,6 +5695,8 @@ export function showSecurityDigimonLeave(sec, lost, toHand, ownerSide, callback,
     _sendCommand({ type: 'fx_secDigimonLeave', cardName: sec.name || '', cardNo: sec.cardNo || '', cardImg: cardImg(sec) || '', lost: !!lost, toHand: !!toHand, ownerSide: ownerSide === 'ai' ? 'player' : 'ai' });
   }
   const pre = ownerSide === 'ai' ? '相手の' : '';
+  // バトルのぶつかり合い演出で吹き飛ばしてトラッシュに送ったなら、LOSE と移動演出を重ねない
+  if (lost && !toHand && consumeClashLoser(sec)) { callback && callback(); return; }
   const move = () => {
     if (typeof window._fxCardMove === 'function') window._fxCardMove(sec, pre + 'セキュリティ', pre + (toHand ? '手札' : 'トラッシュ'), callback);
     else callback && callback();
@@ -5720,6 +5734,8 @@ export function showDestroyEffect(card, callback) {
   const _batch = (typeof window !== 'undefined') ? window._destroyFxBatch : null;
   if (_batch && card && !card._remoteFx && card.cardNo) { _batch.gone.push(card); callback && callback(); return; }
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
+  // バトルのぶつかり合い演出で吹き飛ばしてトラッシュに送ったカードは、消滅演出を重ねない
+  if (consumeClashLoser(card)) { callback && callback(); return; }
   const overlay = document.getElementById('destroy-overlay');
   if (!overlay) { callback && callback(); return; }
   const imgEl = document.getElementById('destroy-card-img');

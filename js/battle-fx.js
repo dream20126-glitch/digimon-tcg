@@ -2032,133 +2032,238 @@ export function fxDigixrossFusion(mats, result, cost, callback) {
 
 // =====================================================
 //  バトルのぶつかり合い演出（VS画面の中で再生）
-//  2枚のカードが互いに突進してぶつかり、火花・衝撃波・揺れ。負けた方はひびが入って砕け落ち、勝った方は金色に光って大きくなる。
-//  相打ちは両方が砕ける。atkEl / defEl: VS画面の左右のカード枠（名前・DPを含む塊）。winner: 'atk' | 'def' | 'tie'
-//  ※ 実際の消滅（消滅演出・消滅回避の判定）は、この後の処理がいつも通り行う
+//  ① 2回、突進してぶつかり火花を散らしてはね返る ② 3回目はぶつかったまま押し合い、火花が出続ける
+//  ③ 決着の爆発: 負けた方は回転しながら吹き飛ばされ、画面の隅のトラッシュに吸い込まれる（相打ちは両方）
+//  ④ 勝った側の画面には大きく「WIN」、負けた側の画面には「LOSE」
+//  atkEl / defEl: VS画面の左右のカード枠。winner: 'atk' | 'def' | 'tie'。myIsAtk: この画面の持ち主がアタックした側か
+//  ※ 吹き飛ばしたカードは registerClashLoser に登録し、この後の消滅演出・セキュリティデジモンの LOSE 演出を省く
 // =====================================================
-export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback) {
+export function registerClashLoser(card) {
+  if (typeof window === 'undefined' || !card) return;
+  const list = Array.isArray(window._clashLosers) ? window._clashLosers : [];
+  list.push({ name: card.name || '', at: Date.now() });
+  window._clashLosers = list.filter(x => Date.now() - x.at < 10000);
+}
+// 直前のぶつかり合い演出で吹き飛ばしたカードか（1回だけ消費する）
+export function consumeClashLoser(card) {
+  if (typeof window === 'undefined' || !card || !Array.isArray(window._clashLosers)) return false;
+  const now = Date.now();
+  window._clashLosers = window._clashLosers.filter(x => now - x.at < 10000);
+  const i = window._clashLosers.findIndex(x => x.name === (card.name || ''));
+  if (i === -1) return false;
+  window._clashLosers.splice(i, 1);
+  return true;
+}
+export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myIsAtk) {
   const done = () => { try { callback && callback(); } catch (_) {} };
   if (typeof document === 'undefined' || !stageEl || !atkEl || !defEl) { done(); return; }
-  if (!document.getElementById('fx-clash-style')) {
+  if (!document.getElementById('fx-clash-style2')) {
     const st = document.createElement('style');
-    st.id = 'fx-clash-style';
+    st.id = 'fx-clash-style2';
     st.textContent = [
       '@keyframes fcShake{0%,100%{transform:translate(0,0)}15%{transform:translate(-12px,6px)}30%{transform:translate(10px,-8px)}45%{transform:translate(-8px,-4px)}60%{transform:translate(6px,6px)}80%{transform:translate(-3px,2px)}}',
-      '@keyframes fcRing{0%{transform:translate(-50%,-50%) scale(0.1);opacity:1}100%{transform:translate(-50%,-50%) scale(5.5);opacity:0}}',
+      '@keyframes fcShakeS{0%,100%{transform:translate(0,0)}25%{transform:translate(-5px,3px)}50%{transform:translate(5px,-3px)}75%{transform:translate(-3px,-2px)}}',
+      '@keyframes fcRing{0%{transform:translate(-50%,-50%) scale(0.1);opacity:1}100%{transform:translate(-50%,-50%) scale(6);opacity:0}}',
       '@keyframes fcFlash{0%{opacity:0}12%{opacity:0.95}100%{opacity:0}}',
-      '@keyframes fcWinGlow{0%,100%{box-shadow:0 0 30px #ffd84a,0 0 70px #ff9a00}50%{box-shadow:0 0 50px #fff,0 0 110px #ffd84a}}',
-      '@keyframes fcBadge{0%{transform:translateX(-50%) scale(2.6);opacity:0}60%{transform:translateX(-50%) scale(0.9);opacity:1}100%{transform:translateX(-50%) scale(1);opacity:1}}',
+      '@keyframes fcBin{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}',
+      '@keyframes fcBinHit{0%,100%{transform:translate(-50%,-50%) scale(1) rotate(0)}30%{transform:translate(-50%,-50%) scale(1.3) rotate(-10deg)}60%{transform:translate(-50%,-50%) scale(0.95) rotate(6deg)}}',
+      '@keyframes fcBig{0%{transform:translate(-50%,-50%) scale(3.4);opacity:0;filter:blur(8px)}55%{transform:translate(-50%,-50%) scale(0.9);opacity:1;filter:blur(0)}75%{transform:translate(-50%,-50%) scale(1.07)}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}',
+      '@keyframes fcBigLose{0%{transform:translate(-50%,-80%) scale(1.2);opacity:0}50%{transform:translate(-50%,-50%) scale(1);opacity:1}62%{transform:translate(-53%,-50%)}74%{transform:translate(-47%,-50%)}86%{transform:translate(-51%,-50%)}100%{transform:translate(-50%,-50%);opacity:1}}',
+      '@keyframes fcRays{0%{transform:translate(-50%,-50%) rotate(0deg) scale(0.4);opacity:0}20%{opacity:0.9}100%{transform:translate(-50%,-50%) rotate(70deg) scale(1.15);opacity:0.5}}',
+      '@keyframes fcPiece{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}',
+      '@keyframes fcGlow{0%,100%{opacity:0.55;transform:translate(-50%,-50%) scale(0.9)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.25)}}',
     ].join('');
     document.head.appendChild(st);
   }
-  const imgOf = (area) => area.querySelector('[id$="card-img"]') || area.firstElementChild;
-  const aImg = imgOf(atkEl), dImg = imgOf(defEl);
+  const W = window.innerWidth, H = window.innerHeight, R = Math.max(W, H);
   const ra = atkEl.getBoundingClientRect(), rd = defEl.getBoundingClientRect();
   const gap = Math.max(0, rd.left - ra.right);
-  const push = gap / 2 + Math.min(ra.width, rd.width) * 0.18; // 中央で少し重なるまで
+  const push = gap / 2 + Math.min(ra.width, rd.width) * 0.16;
   const ix = (ra.right + rd.left) / 2, iy = (ra.top + ra.bottom) / 2 - 20;
-  const ease = 'cubic-bezier(.55,0,.9,.35)';
-  // ① 溜め（少し引く）→ ② 突進
-  [atkEl, defEl].forEach(el => { el.style.transition = 'transform 0.18s ease-out'; });
-  atkEl.style.transform = 'translateX(-14px) rotate(-4deg)';
-  defEl.style.transform = 'translateX(14px) rotate(4deg)';
-  if (vsEl) { vsEl.style.transition = 'opacity 0.15s, transform 0.15s'; }
-  setTimeout(() => {
-    [atkEl, defEl].forEach(el => { el.style.transition = 'transform 0.22s ' + ease; });
-    atkEl.style.transform = 'translateX(' + push + 'px) rotate(6deg)';
-    defEl.style.transform = 'translateX(' + (-push) + 'px) rotate(-6deg)';
-    if (vsEl) { vsEl.style.opacity = '0'; vsEl.style.transform = 'scale(2.5)'; }
-  }, 200);
-  // ③ 衝突
-  setTimeout(() => {
-    const fx = document.createElement('div');
-    fx.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;';
-    document.body.appendChild(fx);
-    const flash = document.createElement('div');
-    flash.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + ix + 'px ' + iy + 'px,#fff 0%,rgba(255,240,180,0.85) 18%,rgba(255,255,255,0) 60%);animation:fcFlash 0.5s ease-out forwards;';
-    fx.appendChild(flash);
-    ['#ffffff', '#ffd84a', '#ff6a00'].forEach((c, i) => {
-      const ring = document.createElement('div');
-      ring.style.cssText = 'position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:70px;height:70px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 18px ' + c + ';animation:fcRing 0.7s ease-out ' + (i * 0.08) + 's forwards;opacity:0;';
-      fx.appendChild(ring);
-    });
-    // 火花（キャンバス）
-    const W = window.innerWidth, H = window.innerHeight;
-    const cv = document.createElement('canvas');
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = W * dpr; cv.height = H * dpr; cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
-    fx.appendChild(cv);
-    const g = cv.getContext('2d');
-    const ps = [];
-    const cols = ['#fff6c8', '#ffd84a', '#ff9a00', '#ff5a1f', '#ffffff', '#7ff6ff'];
-    for (let i = 0; i < 140; i++) {
-      const ang = (Math.random() < 0.7 ? (Math.random() < 0.5 ? -Math.PI / 2 : Math.PI / 2) + (Math.random() - 0.5) * 2.2 : Math.random() * Math.PI * 2);
-      const sp = 3 + Math.random() * 13;
-      ps.push({ x: ix, y: iy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 26 + Math.random() * 30, len: 2 + Math.random() * 4, c: cols[i % cols.length] });
+  if (vsEl) { vsEl.style.transition = 'opacity 0.15s, transform 0.15s'; vsEl.style.opacity = '0'; vsEl.style.transform = 'scale(2.5)'; }
+
+  // 演出用のレイヤー（VS画面の上）と火花のキャンバス
+  const fx = document.createElement('div');
+  fx.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;';
+  document.body.appendChild(fx);
+  const cv = document.createElement('canvas');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+  fx.appendChild(cv);
+  const g = cv.getContext('2d');
+  const ps = [];
+  const cols = ['#fff6c8', '#ffd84a', '#ff9a00', '#ff5a1f', '#ffffff', '#7ff6ff'];
+  const sparks = (n, power) => {
+    for (let i = 0; i < n; i++) {
+      const ang = (Math.random() < 0.75 ? (Math.random() < 0.5 ? -Math.PI / 2 : Math.PI / 2) + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2);
+      const sp = (2 + Math.random() * 11) * power;
+      ps.push({ x: ix + (Math.random() - 0.5) * 8, y: iy + (Math.random() - 0.5) * 30, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 20 + Math.random() * 28, len: 1.5 + Math.random() * 3.5, c: cols[(Math.random() * cols.length) | 0] });
     }
-    let last = performance.now();
-    const tick = (now) => {
-      if (!g) return;
-      const dt = Math.min(50, now - last) / 16.67; last = now;
+  };
+  let alive = true, last = performance.now(), holdSpark = false;
+  const tick = (now) => {
+    if (!alive) return;
+    const dt = Math.min(50, now - last) / 16.67; last = now;
+    if (holdSpark) sparks(6, 0.8);
+    if (g) {
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       g.globalCompositeOperation = 'lighter';
-      let any = false;
-      ps.forEach(p => {
-        if (p.life >= p.max) return; any = true;
-        p.life += dt; p.vx *= 0.94; p.vy = p.vy * 0.94 + 0.25 * dt;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        p.life += dt;
+        if (p.life >= p.max) { ps.splice(i, 1); continue; }
+        p.vx *= 0.94; p.vy = p.vy * 0.94 + 0.25 * dt;
         const ox = p.x, oy = p.y; p.x += p.vx * dt; p.y += p.vy * dt;
         const f = 1 - p.life / p.max;
         g.strokeStyle = p.c; g.globalAlpha = Math.max(0, f); g.lineWidth = p.len * f + 0.5; g.shadowColor = p.c; g.shadowBlur = 10;
         g.beginPath(); g.moveTo(ox - p.vx * 1.5, oy - p.vy * 1.5); g.lineTo(p.x, p.y); g.stroke();
-      });
-      if (any) requestAnimationFrame(tick);
-    };
+      }
+    }
     requestAnimationFrame(tick);
-    stageEl.style.animation = 'fcShake 0.45s linear';
-    setTimeout(() => { stageEl.style.animation = ''; }, 500);
-    // ④ はね返り
-    [atkEl, defEl].forEach(el => { el.style.transition = 'transform 0.35s cubic-bezier(.2,.9,.3,1.3)'; });
-    atkEl.style.transform = 'translateX(-6px)'; defEl.style.transform = 'translateX(6px)';
-    // ⑤ 勝敗
+  };
+  requestAnimationFrame(tick);
+  const flashAt = (strength) => {
+    const f = document.createElement('div');
+    f.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + ix + 'px ' + iy + 'px,rgba(255,255,255,' + strength + ') 0%,rgba(255,240,180,' + (strength * 0.8) + ') 16%,rgba(255,255,255,0) 55%);animation:fcFlash 0.45s ease-out forwards;';
+    fx.appendChild(f); setTimeout(() => f.remove(), 500);
+  };
+  const rings = (colors, size) => colors.forEach((c, i) => {
+    const r = document.createElement('div');
+    r.style.cssText = 'position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 18px ' + c + ';animation:fcRing 0.7s ease-out ' + (i * 0.08) + 's forwards;opacity:0;';
+    fx.appendChild(r); setTimeout(() => r.remove(), 1000);
+  });
+  const shake = (name, ms) => { stageEl.style.animation = name + ' ' + ms + 'ms linear'; setTimeout(() => { stageEl.style.animation = ''; }, ms + 20); };
+  const setT = (el, tr, t) => { el.style.transition = 'transform ' + t; el.style.transform = tr; };
+  const AT = (x, rot, sc) => 'translateX(' + x + 'px) rotate(' + rot + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
+
+  // ①② 2回ぶつかってはね返る
+  const clashOnce = (at, power, next) => {
     setTimeout(() => {
-      const lose = (area, img, dir) => {
-        if (!img) return;
-        img.style.transition = 'filter 0.25s';
-        img.style.filter = 'grayscale(0.85) brightness(0.65) sepia(0.4) hue-rotate(-30deg) saturate(2.5)';
-        // ひび
-        const crack = document.createElement('div');
-        crack.setAttribute('data-clash-fx', '1');
-        crack.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
-        crack.innerHTML = '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M52 0 L46 28 L60 44 L40 70 L58 92 L44 140 M46 28 L20 36 M60 44 L88 52 M40 70 L12 82 M58 92 L84 110" stroke="#fff" stroke-width="2.2" fill="none" style="filter:drop-shadow(0 0 3px #ff3b3b)"/></svg>';
-        if (getComputedStyle(img).position === 'static') img.style.position = 'relative';
-        img.appendChild(crack);
-        setTimeout(() => {
-          area.style.transition = 'transform 0.6s cubic-bezier(.5,0,.9,.4), opacity 0.6s';
-          area.style.transform = 'translate(' + (dir * 30) + 'px,60px) rotate(' + (dir * 18) + 'deg) scale(0.85)';
-          area.style.opacity = '0.25';
-        }, 350);
-      };
-      const win = (area, img) => {
-        if (!img) return;
-        area.style.transition = 'transform 0.4s cubic-bezier(.2,.9,.3,1.4)';
-        area.style.transform = 'scale(1.18)';
-        img.style.animation = 'fcWinGlow 0.8s ease-in-out infinite';
-        img.style.borderColor = '#ffd84a';
-        const b = document.createElement('div');
-        b.setAttribute('data-clash-fx', '1');
-        b.style.cssText = 'position:absolute;left:50%;top:-34px;transform:translateX(-50%);font-size:22px;font-weight:900;font-style:italic;white-space:nowrap;background:linear-gradient(180deg,#fff,#ffe27a 45%,#ff9a00);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 8px #ffb000);animation:fcBadge 0.45s ease-out forwards;';
-        b.innerText = 'WIN';
-        if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
-        area.appendChild(b);
-      };
-      if (winner === 'atk') { win(atkEl, aImg); lose(defEl, dImg, 1); }
-      else if (winner === 'def') { win(defEl, dImg); lose(atkEl, aImg, -1); }
-      else { lose(atkEl, aImg, -1); lose(defEl, dImg, 1); }
-    }, 260);
-    setTimeout(() => { fx.remove(); }, 1500);
-    setTimeout(done, 1450);
-  }, 430);
+      setT(atkEl, AT(-16, -5), '0.16s ease-out'); setT(defEl, AT(16, 5), '0.16s ease-out');
+    }, at);
+    setTimeout(() => {
+      setT(atkEl, AT(push, 7), '0.17s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -7), '0.17s cubic-bezier(.55,0,.9,.35)');
+    }, at + 170);
+    setTimeout(() => {
+      flashAt(0.6 + power * 0.25); sparks(55 + power * 35, 0.8 + power * 0.3); rings(['#ffffff', '#ffd84a'], 50 + power * 20); shake('fcShakeS', 260);
+      setT(atkEl, AT(-10, -2), '0.28s cubic-bezier(.2,.9,.3,1.3)'); setT(defEl, AT(10, 2), '0.28s cubic-bezier(.2,.9,.3,1.3)');
+      if (next) next();
+    }, at + 340);
+  };
+  clashOnce(0, 0);
+  clashOnce(620, 1);
+  // ③ 3回目: ぶつかったまま押し合う（震えながら火花が出続け、中心が光る）
+  const T3 = 1300, HOLD = 1100;
+  setTimeout(() => {
+    setT(atkEl, AT(-22, -7), '0.2s ease-out'); setT(defEl, AT(22, 7), '0.2s ease-out');
+  }, T3);
+  setTimeout(() => {
+    setT(atkEl, AT(push, 5), '0.18s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -5), '0.18s cubic-bezier(.55,0,.9,.35)');
+  }, T3 + 210);
+  let glow = null, jitterTimer = null;
+  setTimeout(() => {
+    flashAt(0.9); sparks(90, 1.3); rings(['#ffffff', '#ffd84a', '#ff6a00'], 70); shake('fcShake', 380);
+    holdSpark = true;
+    glow = document.createElement('div');
+    glow.style.cssText = 'position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:120px;height:180px;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,0.95) 0%,rgba(255,216,74,0.7) 35%,rgba(255,106,0,0) 70%);animation:fcGlow 0.22s ease-in-out infinite;';
+    fx.appendChild(glow);
+    // 押し合いの震え（少しずつ勝つ側が押し込む）
+    const t0 = performance.now();
+    jitterTimer = setInterval(() => {
+      const u = Math.min(1, (performance.now() - t0) / HOLD);
+      const lean = winner === 'atk' ? 1 : winner === 'def' ? -1 : 0;
+      const shift = lean * 14 * u;
+      const j = () => (Math.random() - 0.5) * 6;
+      atkEl.style.transition = 'transform 0.05s linear'; defEl.style.transition = 'transform 0.05s linear';
+      atkEl.style.transform = AT(push + shift + j(), 5 + j() * 0.5);
+      defEl.style.transform = AT(-push + shift + j(), -5 + j() * 0.5);
+    }, 50);
+  }, T3 + 390);
+  // ④ 決着
+  const TK = T3 + 390 + HOLD;
+  setTimeout(() => {
+    clearInterval(jitterTimer); holdSpark = false;
+    if (glow) glow.remove();
+    flashAt(1); sparks(160, 1.6); rings(['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
+    const losers = winner === 'atk' ? [[defEl, 1]] : winner === 'def' ? [[atkEl, -1]] : [[atkEl, -1], [defEl, 1]];
+    const winEl = winner === 'atk' ? atkEl : winner === 'def' ? defEl : null;
+    if (winEl) {
+      setT(winEl, AT((winEl === atkEl ? 1 : -1) * push * 0.6, 0, 1.15), '0.35s cubic-bezier(.2,.9,.3,1.4)');
+      const im = winEl.querySelector('[id$="card-img"]');
+      if (im) { im.style.transition = 'box-shadow 0.3s, border-color 0.3s'; im.style.borderColor = '#ffd84a'; im.style.boxShadow = '0 0 40px #ffd84a,0 0 90px #ff9a00'; }
+    }
+    // 負けた方: 回転しながら吹き飛ばされ、トラッシュに吸い込まれる
+    losers.forEach(([el, dir]) => {
+      const r = el.getBoundingClientRect();
+      const bx = dir < 0 ? Math.max(48, W * 0.12) : Math.min(W - 48, W * 0.88), by = H - Math.max(70, H * 0.12);
+      const bin = document.createElement('div');
+      bin.style.cssText = 'position:absolute;left:' + bx + 'px;top:' + by + 'px;width:74px;height:74px;border-radius:50%;background:radial-gradient(circle,#3a1010 0%,#120404 70%);border:3px solid #ff4d4d;box-shadow:0 0 22px #ff3b3b,inset 0 0 16px #ff3b3b;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ffd0d0;font-size:26px;animation:fcBin 0.3s ease-out forwards;';
+      bin.innerHTML = '🗑<div style="font-size:9px;font-weight:bold;margin-top:-2px;">トラッシュ</div>';
+      fx.appendChild(bin);
+      const cx0 = r.left + r.width / 2, cy0 = r.top + r.height / 2;
+      // まず外へ大きく吹き飛ぶ（上へはね上がりながら回転）→ トラッシュへ落ちて吸い込まれる
+      el.style.transition = 'transform 0.38s cubic-bezier(.15,.8,.35,1), opacity 0.38s';
+      el.style.transform = 'translate(' + (dir * W * 0.22) + 'px,' + (-H * 0.16) + 'px) rotate(' + (dir * 400) + 'deg) scale(0.8)';
+      // 煙の尾
+      for (let i = 0; i < 14; i++) {
+        const pc = document.createElement('div');
+        const sz = 10 + Math.random() * 18;
+        pc.style.cssText = 'position:absolute;left:' + cx0 + 'px;top:' + cy0 + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + sz / 2 + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,170,90,0.8),rgba(90,40,20,0));--dx:' + (dir * (60 + Math.random() * W * 0.25)) + 'px;--dy:' + (-30 - Math.random() * H * 0.15) + 'px;--r:0deg;animation:fcPiece ' + (0.5 + Math.random() * 0.4) + 's ease-out forwards;';
+        fx.appendChild(pc); setTimeout(() => pc.remove(), 1000);
+      }
+      setTimeout(() => {
+        el.style.transition = 'transform 0.42s cubic-bezier(.6,0,.9,.6), opacity 0.42s';
+        el.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) rotate(' + (dir * 900) + 'deg) scale(0.12)';
+        el.style.opacity = '0.2';
+      }, 400);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        bin.style.animation = 'fcBinHit 0.4s ease-out';
+        for (let i = 0; i < 10; i++) {
+          const pc = document.createElement('div');
+          const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2;
+          pc.style.cssText = 'position:absolute;left:' + bx + 'px;top:' + by + 'px;width:5px;height:5px;border-radius:50%;background:#ff7a5a;box-shadow:0 0 8px #ff3b3b;--dx:' + Math.cos(ang) * 50 + 'px;--dy:' + Math.sin(ang) * 50 + 'px;--r:0deg;animation:fcPiece 0.5s ease-out forwards;';
+          fx.appendChild(pc); setTimeout(() => pc.remove(), 600);
+        }
+      }, 820);
+    });
+  }, TK);
+  // ⑤ この画面の持ち主の勝ち負けを大きく
+  const myResult = winner === 'tie' ? 'lose' : ((winner === 'atk') === !!myIsAtk ? 'win' : 'lose');
+  setTimeout(() => {
+    const big = document.createElement('div');
+    const fs = Math.min(110, W * 0.24);
+    if (myResult === 'win') {
+      const rays = document.createElement('div');
+      rays.style.cssText = 'position:absolute;left:50%;top:42%;width:' + R * 1.5 + 'px;height:' + R * 1.5 + 'px;border-radius:50%;background:repeating-conic-gradient(rgba(255,226,122,0.7) 0deg 5deg,rgba(255,226,122,0) 5deg 16deg);-webkit-mask:radial-gradient(circle,#000 0%,transparent 55%);mask:radial-gradient(circle,#000 0%,transparent 55%);animation:fcRays 1.4s ease-out forwards;';
+      fx.appendChild(rays);
+      const cc = ['#ffd84a', '#ffffff', '#00ff88', '#7ff6ff', '#ff8adf'];
+      for (let i = 0; i < 50; i++) {
+        const p = document.createElement('div');
+        const ang = Math.random() * Math.PI * 2, d = 120 + Math.random() * R * 0.4;
+        p.style.cssText = 'position:absolute;left:50%;top:42%;width:' + (5 + Math.random() * 6) + 'px;height:' + (8 + Math.random() * 8) + 'px;background:' + cc[i % cc.length] + ';border-radius:2px;--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 90) + 'px;--r:' + (Math.random() * 720 - 360) + 'deg;animation:fcPiece ' + (1 + Math.random() * 0.6) + 's cubic-bezier(.1,.7,.3,1) forwards;';
+        fx.appendChild(p);
+      }
+      big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffc300 60%,#ff8a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,0.5);filter:drop-shadow(0 0 14px #ffb000) drop-shadow(0 0 34px #ff6a00);animation:fcBig 0.55s cubic-bezier(.2,.9,.3,1) forwards;';
+      big.innerText = 'WIN';
+    } else {
+      const vig = document.createElement('div');
+      vig.style.cssText = 'position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(120,0,0,0.15) 0%,rgba(80,0,0,0.75) 100%);animation:fcFlash 1.6s ease-out forwards;';
+      fx.appendChild(vig);
+      for (let i = 0; i < 16; i++) {
+        const sh = document.createElement('div');
+        const ang = Math.random() * Math.PI * 2, d = 80 + Math.random() * 200, sz = 8 + Math.random() * 16;
+        sh.style.cssText = 'position:absolute;left:50%;top:42%;width:' + sz + 'px;height:' + sz + 'px;background:linear-gradient(135deg,rgba(255,120,120,0.9),rgba(120,0,0,0.6));clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 140) + 'px;--r:' + (Math.random() * 540 - 270) + 'deg;animation:fcPiece 1.1s cubic-bezier(.3,.1,.7,1) 0.2s forwards;';
+        fx.appendChild(sh);
+      }
+      big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;color:#ff4040;-webkit-text-stroke:2px rgba(60,0,0,0.8);text-shadow:0 0 18px #ff2020,0 0 40px #aa0000;animation:fcBigLose 0.7s ease-out forwards;';
+      big.innerText = 'LOSE';
+    }
+    fx.appendChild(big);
+  }, TK + 950);
+  setTimeout(() => { alive = false; fx.style.transition = 'opacity 0.25s'; fx.style.opacity = '0'; }, TK + 2300);
+  setTimeout(() => { fx.remove(); done(); }, TK + 2550);
 }
 
 // VS画面のカード枠を元に戻す（次の表示のため）
@@ -2168,7 +2273,7 @@ export function fxBattleClashReset(atkEl, defEl, vsEl) {
     el.style.transition = 'none'; el.style.transform = ''; el.style.opacity = '';
     el.querySelectorAll('[data-clash-fx]').forEach(d => d.remove());
     const img = el.querySelector('[id$="card-img"]');
-    if (img) { img.style.filter = ''; img.style.animation = ''; img.style.borderColor = ''; }
+    if (img) { img.style.filter = ''; img.style.animation = ''; img.style.borderColor = ''; img.style.boxShadow = ''; img.style.transition = 'opacity 0.3s'; }
   });
   if (vsEl) { vsEl.style.transition = 'none'; vsEl.style.opacity = ''; vsEl.style.transform = ''; }
 }

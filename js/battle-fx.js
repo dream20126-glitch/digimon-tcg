@@ -3391,36 +3391,43 @@ export function fxEffectHit(kind, p, callback) {
       const x = cx - totalW / 2 + k * (HW + 12) + HW / 2;
       return { d: _hitCard(ov, it.card, x, cy, HW, HH, '#44dd88', (it.remote ? '相手の' : '') + (it.card.name || '')), x };
     });
-    const STEP = 1100;
+    // 緑の渦が並んだカード全部を包み込む（1つの大きな渦が回り続ける）
+    const VW = totalW + HW * 1.1, VH = HH * 1.55;
+    const vortex = document.createElement('div');
+    vortex.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + VW + 'px;height:' + VH + 'px;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.35s,transform 0.4s;';
+    const ring = (sc, dash, wdt, op) => '<div style="position:absolute;left:' + (50 - sc * 50) + '%;top:' + (50 - sc * 50) + '%;width:' + sc * 100 + '%;height:' + sc * 100 + '%;border-radius:50%;border:' + wdt + 'px dashed rgba(68,221,136,' + op + ');box-shadow:0 0 18px rgba(68,221,136,0.6),inset 0 0 22px rgba(68,221,136,0.45);animation:abSpin ' + (1.2 + sc) + 's linear infinite;"></div>';
+    vortex.innerHTML = '<div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse,rgba(68,221,136,0.08) 0%,rgba(68,221,136,0.22) 60%,rgba(68,221,136,0) 72%);"></div>'
+      + ring(1, '', 5, 0.95) + ring(0.8, '', 3, 0.7) + ring(0.6, '', 2, 0.5);
+    ov.insertBefore(vortex, ov.firstChild);
+    if (!document.getElementById('fx-absorb-style')) {
+      const st2 = document.createElement('style'); st2.id = 'fx-absorb-style';
+      st2.textContent = '@keyframes abSpin{to{transform:rotate(-360deg)}}@keyframes abSpinR{to{transform:rotate(360deg)}}@keyframes abSwirl{0%{transform:rotate(0deg) translateX(var(--r)) scale(1);opacity:0}20%{opacity:1}100%{transform:rotate(540deg) translateX(0) scale(0.2);opacity:0}}';
+      document.head.appendChild(st2);
+    }
+    setTimeout(() => { vortex.style.opacity = '1'; vortex.style.transform = 'translate(-50%,-50%) scale(1)'; }, 250);
+    // 渦の中でカードが揺れる
+    els.forEach(({ d }, k) => setTimeout(() => { d.style.transition = 'transform 0.4s ease-in-out'; d.style.transform = 'rotate(' + (k % 2 ? 7 : -7) + 'deg) scale(0.95)'; }, 500));
+    // 時間差で1枚ずつ、回りながら下の「手札」へ吸い込まれる
+    const STEP = n >= 2 ? 520 : 0;
     els.forEach(({ d, x }, k) => {
-      const t0 = 500 + k * STEP;
-      // 足元に緑の渦が開く
+      const t0 = 1100 + k * STEP;
       setTimeout(() => {
-        const vortex = document.createElement('div');
-        vortex.style.cssText = 'position:absolute;left:' + x + 'px;top:' + (cy + HH / 2) + 'px;width:' + HW * 1.8 + 'px;height:' + HW * 0.7 + 'px;border-radius:50%;border:4px dashed #44dd88;box-shadow:0 0 22px #44dd88,inset 0 0 22px #44dd88;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.3s;';
-        ov.appendChild(vortex);
-        requestAnimationFrame(() => { vortex.style.opacity = '1'; vortex.style.transform = 'translate(-50%,-50%) scale(1)'; });
-        let spin = 0; const sp = setInterval(() => { spin += 14; vortex.style.transform = 'translate(-50%,-50%) scale(1) rotate(' + spin + 'deg)'; }, 30);
-        d.style.transition = 'transform 0.35s ease-in-out';
-        d.style.transform = 'rotate(-8deg) scale(0.95)';
-        // 渦に巻かれて、回りながら下の「手札」へ吸い込まれる
-        setTimeout(() => {
-          d.style.transition = 'transform 0.75s cubic-bezier(.6,0,.9,.6),opacity 0.75s';
-          d.style.transform = 'translate(' + (cx - x) + 'px,' + (hy - cy) + 'px) scale(0.12) rotate(540deg)';
-          d.style.opacity = '0.3';
-          // 緑の光の粒が一緒に流れ込む
-          for (let q = 0; q < 8; q++) {
-            const pt = document.createElement('div');
-            pt.style.cssText = 'position:absolute;left:' + (x + (Math.random() - 0.5) * HW) + 'px;top:' + (cy + (Math.random() - 0.5) * HH) + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#bfffd8;box-shadow:0 0 8px #44dd88;transition:transform 0.7s cubic-bezier(.6,0,.9,.6) ' + (q * 0.03) + 's,opacity 0.7s;';
-            ov.appendChild(pt);
-            const r0 = { x: parseFloat(pt.style.left), y: parseFloat(pt.style.top) };
-            requestAnimationFrame(() => { pt.style.transform = 'translate(' + (cx - r0.x) + 'px,' + (hy - r0.y) + 'px) scale(0.3)'; pt.style.opacity = '0'; });
-          }
-        }, 380);
-        setTimeout(() => { clearInterval(sp); vortex.style.opacity = '0'; d.style.opacity = '0'; _pulse(hand); }, 1150);
+        d.style.transition = 'transform 0.75s cubic-bezier(.6,0,.9,.6),opacity 0.75s';
+        d.style.transform = 'translate(' + (cx - x) + 'px,' + (hy - cy) + 'px) scale(0.12) rotate(540deg)';
+        d.style.opacity = '0.3';
+        for (let q = 0; q < 8; q++) {
+          const pt = document.createElement('div');
+          const px = x + (Math.random() - 0.5) * HW, py = cy + (Math.random() - 0.5) * HH;
+          pt.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#bfffd8;box-shadow:0 0 8px #44dd88;transition:transform 0.7s cubic-bezier(.6,0,.9,.6) ' + (q * 0.03) + 's,opacity 0.7s;';
+          ov.appendChild(pt);
+          requestAnimationFrame(() => { pt.style.transform = 'translate(' + (cx - px) + 'px,' + (hy - py) + 'px) scale(0.3)'; pt.style.opacity = '0'; });
+        }
+        setTimeout(() => { d.style.opacity = '0'; _pulse(hand); }, 760);
       }, t0);
     });
-    total = 500 + n * STEP + 600;
+    const tLast = 1100 + (n - 1) * STEP + 800;
+    setTimeout(() => { vortex.style.transition = 'opacity 0.4s,transform 0.4s'; vortex.style.opacity = '0'; vortex.style.transform = 'translate(-50%,-50%) scale(0.2) rotate(-180deg)'; }, tLast);
+    total = tLast + 700;
   } else if (kind === 'deck') {
     const top = !!p.top;
     _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '⛓ デッキの' + (top ? '上' : '下') + 'に戻す', '#ffd84a');
@@ -3534,48 +3541,137 @@ if (typeof window !== 'undefined') window._fxEffectHit = fxEffectHit;
 export function fxBoardHit(kind, side, idx, value) {
   if (typeof document === 'undefined' || !document.body) return;
   _ensureHitStyle();
+  if (!document.getElementById('fx-board2-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-board2-style';
+    st.textContent = '@keyframes bhShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-5px,3px)}40%{transform:translate(5px,-3px)}60%{transform:translate(-4px,-2px)}80%{transform:translate(3px,2px)}}'
+      + '@keyframes bhBadge{0%{transform:translate(-50%,-50%) scale(1.8);opacity:0}25%{transform:translate(-50%,-50%) scale(0.95);opacity:1}35%{transform:translate(-50%,-50%) scale(1.05)}45%{transform:translate(-50%,-50%) scale(1)}85%{opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}'
+      + '@keyframes bhChain{0%{stroke-dashoffset:var(--len)}100%{stroke-dashoffset:0}}'
+      + '@keyframes bhLock{0%{transform:translate(-50%,-50%) scale(0) rotate(-30deg);opacity:0}60%{transform:translate(-50%,-50%) scale(1.25) rotate(8deg);opacity:1}100%{transform:translate(-50%,-50%) scale(1) rotate(0deg);opacity:1}}'
+      + '@keyframes bhPress{0%{transform:translate(-50%,-140%) scaleY(0.6);opacity:0}40%{opacity:1}100%{transform:translate(-50%,-50%) scaleY(1);opacity:0}}';
+    document.head.appendChild(st);
+  }
   const row = document.getElementById(side === 'player' ? 'pl-battle-row' : 'ai-battle-row');
   const slot = row ? row.querySelectorAll('.b-slot')[idx] : null;
   if (!slot) return;
   const r = slot.getBoundingClientRect();
   if (!r.width) return;
+  const bs = window._lastBattleState;
+  const card = bs && bs[side] && bs[side].battleArea ? bs[side].battleArea[idx] : null;
+  const src = card ? (card.imgSrc || cardImg(card) || '') : '';
   const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  // 盤面のカードは、レストなら横向き。演出用の写しは縦向きの大きさで作る
+  const susp = slot.classList.contains('suspended');
+  const cw = susp ? r.height : r.width, ch = susp ? r.width : r.height;
   const layer = document.createElement('div');
-  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46500;overflow:hidden;';
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46500;overflow:visible;';
   document.body.appendChild(layer);
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
-  const txt = (s, color, up) => add('position:absolute;left:' + x + 'px;top:' + (up ? r.top + 6 : y) + 'px;white-space:nowrap;font-size:18px;font-weight:900;color:' + color + ';text-shadow:0 0 8px ' + color + ',0 0 2px #000;animation:' + (up ? 'hxRise' : 'hxFall') + ' 0.9s ease-out forwards;', s);
-  if (kind === 'rest') {
-    // 上から紫の重力の波紋が押しつぶす
-    for (let i = 0; i < 3; i++) add('position:absolute;left:' + x + 'px;top:' + (r.top + i * 10) + 'px;width:' + r.width * 1.3 + 'px;height:' + r.width * 0.6 + 'px;border-radius:50%;border:3px solid #b47cff;box-shadow:0 0 12px #8a3dff;animation:hxWave 0.6s ease-out ' + (i * 0.1) + 's forwards;opacity:0;');
-    txt('💤 レスト', '#d6b4ff', false);
-  } else if (kind === 'active') {
-    add('position:absolute;left:' + x + 'px;top:' + r.top + 'px;width:' + r.width * 0.9 + 'px;height:' + r.height + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(68,221,136,0.8),rgba(68,221,136,0));animation:hxBeam 0.7s ease-out forwards;');
-    txt('⤴ アクティブ', '#7dffb0', true);
-  } else if (kind === 'dp_minus') {
-    // 赤い楔が打ち込まれ、ひびが入り、数字が下へ落ちる
-    add('position:absolute;left:' + x + 'px;top:' + (r.top - 30) + 'px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:34px solid #ff3b2f;filter:drop-shadow(0 0 8px #ff3b2f);transform:translateX(-50%);transition:transform 0.18s ease-in;', '');
-    const wedge = layer.lastChild;
-    requestAnimationFrame(() => { wedge.style.transform = 'translate(-50%,' + (r.height * 0.35) + 'px)'; });
-    setTimeout(() => {
-      wedge.style.opacity = '0';
-      add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;', '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M50 40 L42 62 L58 76 L46 100 M42 62 L24 70 M58 76 L80 84" stroke="#ff8a7a" stroke-width="2.5" fill="none" style="filter:drop-shadow(0 0 3px #ff3b2f)"/></svg>');
-      add('position:absolute;left:' + x + 'px;top:' + (r.top + r.height * 0.35) + 'px;width:60px;height:60px;border-radius:50%;border:3px solid #ff3b2f;animation:hxRing 0.5s ease-out forwards;');
-      txt('-' + Math.abs(value || 0), '#ff6a5a', false);
-    }, 200);
-  } else if (kind === 'dp_plus') {
-    add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:8px;box-shadow:0 0 22px #ffd84a,0 0 40px #ffb000,inset 0 0 18px #ffd84a;opacity:0;transition:opacity 0.25s;');
-    const aura = layer.lastChild; requestAnimationFrame(() => { aura.style.opacity = '1'; }); setTimeout(() => { aura.style.opacity = '0'; }, 650);
-    for (let i = 0; i < 8; i++) add('position:absolute;left:' + (r.left + Math.random() * r.width) + 'px;top:' + (r.top + r.height * 0.8) + 'px;width:5px;height:5px;border-radius:50%;background:#ffe27a;box-shadow:0 0 6px #ffb000;--dx:' + ((Math.random() - 0.5) * 20) + 'px;--dy:' + (-40 - Math.random() * 50) + 'px;--r:0deg;animation:hxShard 0.8s ease-out forwards;');
-    txt('+' + Math.abs(value || 0), '#ffe27a', true);
+  // 大きな表示（バッジ）。カードの中央に出て、少し残ってから消える
+  const badge = (html, color, dur) => add('position:absolute;left:' + x + 'px;top:' + y + 'px;transform:translate(-50%,-50%);white-space:nowrap;padding:4px 10px;border-radius:8px;background:rgba(0,0,0,0.82);border:2px solid ' + color + ';box-shadow:0 0 14px ' + color + ';color:#fff;font-weight:900;font-size:15px;text-align:center;line-height:1.25;text-shadow:0 0 6px ' + color + ';animation:bhBadge ' + (dur || 1.6) + 's ease-out forwards;z-index:3;', html);
+  // カードの写し（盤面のカードの上に重ねる）
+  const copy = (rot) => {
+    const d = add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + rot + 'deg);transform-origin:center center;',
+      src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '');
+    return d;
+  };
+  let life = 1800;
+  if (kind === 'rest' || kind === 'active') {
+    const toRest = kind === 'rest';
+    const col = toRest ? '#b47cff' : '#44dd88';
+    // 盤面のカードを隠して、写しが回る様子を見せる
+    const prevVis = slot.style.visibility; slot.style.visibility = 'hidden';
+    const c = copy(toRest ? 0 : 90);
+    c.style.boxShadow = '0 0 14px ' + col;
+    if (toRest) {
+      // 上から紫の重力が押しつぶす → ドンと横に倒れる
+      for (let i = 0; i < 3; i++) add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + cw * 1.5 + 'px;height:' + ch * 0.5 + 'px;border-radius:50%;border:3px solid #d6b4ff;box-shadow:0 0 14px #8a3dff;transform-origin:center;animation:bhPress 0.45s ease-in ' + (i * 0.12) + 's both;');
+      add('position:absolute;left:' + (x - cw) + 'px;top:' + (y - ch * 1.1) + 'px;width:' + cw * 2 + 'px;height:' + ch * 1.1 + 'px;background:linear-gradient(to bottom,rgba(138,61,255,0),rgba(138,61,255,0.55));opacity:0;transition:opacity 0.3s;');
+      const veil = layer.lastChild; requestAnimationFrame(() => { veil.style.opacity = '1'; }); setTimeout(() => { veil.style.opacity = '0'; }, 650);
+      setTimeout(() => { c.style.transition = 'transform 0.35s cubic-bezier(.6,0,.4,1.4)'; c.style.transform = 'rotate(90deg)'; }, 450);
+      setTimeout(() => { c.style.animation = 'bhShake 0.3s linear'; add('position:absolute;left:' + x + 'px;top:' + (y + cw / 2) + 'px;width:' + ch * 1.4 + 'px;height:14px;margin-left:' + (-ch * 0.7) + 'px;border-radius:50%;background:radial-gradient(ellipse,rgba(200,160,255,0.9),rgba(138,61,255,0));animation:hxFlash 0.5s ease-out forwards;'); }, 800);
+      setTimeout(() => badge('💤 レスト', col), 750);
+    } else {
+      // 下から緑の光が立ち上り、カードが起き上がる
+      add('position:absolute;left:' + x + 'px;top:' + (y - ch * 0.9) + 'px;width:' + cw * 1.2 + 'px;height:' + ch * 1.6 + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(68,221,136,0.85),rgba(68,221,136,0));animation:hxBeam 0.9s ease-out forwards;');
+      setTimeout(() => { c.style.transition = 'transform 0.4s cubic-bezier(.3,1.4,.5,1)'; c.style.transform = 'rotate(0deg) translateY(-6px)'; }, 300);
+      setTimeout(() => { c.style.transition = 'transform 0.2s'; c.style.transform = 'rotate(0deg)'; }, 750);
+      setTimeout(() => badge('⤴ アクティブ', col), 550);
+    }
+    setTimeout(() => { c.style.transition = 'opacity 0.25s'; c.style.opacity = '0'; slot.style.visibility = prevVis; }, 1650);
+    life = 2300;
+  } else if (kind === 'dp_minus' || kind === 'dp_plus') {
+    const minus = kind === 'dp_minus';
+    const col = minus ? '#ff4d3d' : '#ffd84a';
+    const v = (value && typeof value === 'object') ? value : { diff: value };
+    const diff = Math.abs(v.diff != null ? v.diff : ((v.to || 0) - (v.from || 0)));
+    const from = v.from, to = v.to;
+    if (minus) {
+      // 赤い楔が上から打ち込まれ、カードが揺れて赤く染まる
+      const wedge = add('position:absolute;left:' + x + 'px;top:' + (r.top - 50) + 'px;width:0;height:0;border-left:16px solid transparent;border-right:16px solid transparent;border-top:46px solid #ff3b2f;filter:drop-shadow(0 0 10px #ff3b2f);transform:translateX(-50%);transition:transform 0.22s ease-in;');
+      requestAnimationFrame(() => requestAnimationFrame(() => { wedge.style.transform = 'translate(-50%,' + (r.height * 0.45) + 'px)'; }));
+      setTimeout(() => {
+        wedge.style.opacity = '0';
+        add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;background:rgba(255,40,30,0.45);border-radius:5px;animation:hxFlash 0.9s ease-out forwards;');
+        add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;', '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M50 30 L42 58 L60 74 L44 104 L56 130 M42 58 L18 68 M60 74 L84 86" stroke="#ffd0c8" stroke-width="3" fill="none" style="filter:drop-shadow(0 0 4px #ff3b2f)"/></svg>');
+        add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid #ff3b2f;animation:hxRing 0.6s ease-out forwards;');
+        slot.style.animation = 'bhShake 0.35s linear'; setTimeout(() => { slot.style.animation = ''; }, 400);
+      }, 260);
+    } else {
+      // 金色のオーラが立ち上る
+      add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:6px;box-shadow:0 0 22px #ffd84a,0 0 44px #ffb000,inset 0 0 20px #ffd84a;animation:hxFlash 1.3s ease-out forwards;');
+      for (let i = 0; i < 12; i++) add('position:absolute;left:' + (r.left + Math.random() * r.width) + 'px;top:' + (r.top + r.height * 0.85) + 'px;width:6px;height:6px;border-radius:50%;background:#ffe27a;box-shadow:0 0 8px #ffb000;--dx:' + ((Math.random() - 0.5) * 24) + 'px;--dy:' + (-50 - Math.random() * 60) + 'px;--r:0deg;animation:hxShard 1s ease-out ' + (Math.random() * 0.3) + 's both;');
+    }
+    // DP の数字: 「DP 15000 → 8000」と変化を見せ、差分を大きく
+    const b = badge('<div style="font-size:22px;color:' + col + ';">' + (minus ? '−' : '+') + diff + '</div>'
+      + ((from != null && to != null) ? '<div style="font-size:12px;">DP <span class="bh-dp">' + from + '</span></div>' : ''), col, 2.0);
+    if (from != null && to != null) {
+      const sp = b.querySelector('.bh-dp');
+      const t0 = Date.now() + 350, D = 600;
+      const tick = setInterval(() => {
+        const k = Math.min(1, Math.max(0, (Date.now() - t0) / D));
+        if (sp) sp.textContent = String(Math.round(from + (to - from) * k));
+        if (k >= 1) { clearInterval(tick); if (sp) { sp.style.color = col; sp.textContent = String(to); } }
+      }, 40);
+    }
+    life = 2200;
   } else if (kind === 'seal') {
-    // 鎖の×印の封印
-    add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;opacity:0;transition:opacity 0.2s;',
-      '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M10 10 L90 130 M90 10 L10 130" stroke="#c8c8d8" stroke-width="7" stroke-dasharray="10 5" fill="none" style="filter:drop-shadow(0 0 4px #ff3b2f)"/></svg>');
-    const seal = layer.lastChild; requestAnimationFrame(() => { seal.style.opacity = '1'; }); setTimeout(() => { seal.style.opacity = '0'; }, 750);
-    txt('🔒 ' + (value || '封印'), '#ffb0a8', false);
+    // 鎖がカード全体に巻き付き、中央に錠がかかって封印される（盤面）
+    const w = r.width, h = r.height, ox = r.left, oy = r.top;
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', w + 40); svg.setAttribute('height', h + 40);
+    svg.style.cssText = 'position:absolute;left:' + (ox - 20) + 'px;top:' + (oy - 20) + 'px;overflow:visible;filter:drop-shadow(0 0 4px #000) drop-shadow(0 0 6px rgba(255,80,60,0.6));';
+    const P = (px, py) => (px + 20).toFixed(1) + ' ' + (py + 20).toFixed(1);
+    // 斜め2本＋横3本（カードの外から外まで）。鎖の輪っぽく、太い破線＋細い破線を重ねる
+    const lines = [[[-12, -12], [w + 12, h + 12]], [[w + 12, -12], [-12, h + 12]], [[-14, h * 0.22], [w + 14, h * 0.3]], [[-14, h * 0.55], [w + 14, h * 0.48]], [[-14, h * 0.82], [w + 14, h * 0.76]]];
+    lines.forEach(([[x1, y1], [x2, y2]], i) => {
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      [['#5a5a66', 9, '13 5'], ['#d8d8e6', 5, '13 5'], ['#ffffff', 1.5, '13 5']].forEach(([col, sw, dash]) => {
+        const pth = document.createElementNS(svgNS, 'path');
+        pth.setAttribute('d', 'M ' + P(x1, y1) + ' L ' + P(x2, y2));
+        pth.setAttribute('stroke', col); pth.setAttribute('stroke-width', sw); pth.setAttribute('fill', 'none'); pth.setAttribute('stroke-linecap', 'round');
+        // 伸びる動き（clip のかわりに dasharray を全長にして offset を動かす）→ 伸び切ったら鎖の破線
+        pth.style.cssText = 'stroke-dasharray:' + len + ';--len:' + len + ';stroke-dashoffset:' + len + ';animation:bhChain 0.28s ease-out ' + (i * 0.14) + 's forwards;';
+        setTimeout(() => { pth.style.animation = ''; pth.style.strokeDashoffset = '0'; pth.setAttribute('stroke-dasharray', dash); }, 300 + i * 140);
+        svg.appendChild(pth);
+      });
+    });
+    layer.appendChild(svg);
+    const tLock = 300 + lines.length * 140;
+    // カードが暗く沈み、錠がかかる
+    const dim = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + w + 'px;height:' + h + 'px;border-radius:5px;background:rgba(40,0,0,0);transition:background 0.4s;');
+    setTimeout(() => { dim.style.background = 'rgba(40,0,10,0.45)'; }, 200);
+    setTimeout(() => {
+      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;font-size:' + Math.max(22, w * 0.5) + 'px;filter:drop-shadow(0 0 8px #ff3b2f);animation:bhLock 0.35s ease-out forwards;z-index:2;', '🔒');
+      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;width:60px;height:60px;border-radius:50%;border:3px solid #ff8a7a;animation:hxRing 0.5s ease-out forwards;');
+      slot.style.animation = 'bhShake 0.25s linear'; setTimeout(() => { slot.style.animation = ''; }, 300);
+    }, tLock);
+    setTimeout(() => { const t = add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h + 14) + 'px;transform:translateX(-50%);white-space:nowrap;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,0.85);border:2px solid #ff6a5a;color:#fff;font-weight:900;font-size:13px;opacity:0;transition:opacity 0.2s;', '封印：' + (value || 'アタック・ブロック不可')); requestAnimationFrame(() => { t.style.opacity = '1'; }); }, tLock + 150);
+    life = tLock + 1700;
+    setTimeout(() => { layer.style.transition = 'opacity 0.35s'; layer.style.opacity = '0'; }, life - 400);
   }
-  setTimeout(() => layer.remove(), 1100);
+  setTimeout(() => layer.remove(), life);
 }
 if (typeof window !== 'undefined') window._fxBoardHit = fxBoardHit;
 
@@ -3613,7 +3709,7 @@ export function boardStateDiff() {
         if (!prev || prev.no !== now.no || !active || window._fxMoveHold > 0) return;
         const hits = [];
         if (prev.s !== now.s) hits.push([now.s ? 'rest' : 'active', null]);
-        if (prev.dp !== now.dp) hits.push([now.dp < prev.dp ? 'dp_minus' : 'dp_plus', Math.abs(now.dp - prev.dp)]);
+        if (prev.dp !== now.dp) hits.push([now.dp < prev.dp ? 'dp_minus' : 'dp_plus', { from: prev.dp, to: now.dp, diff: Math.abs(now.dp - prev.dp) }]);
         if (prev.seal !== now.seal && now.seal.length > prev.seal.length) {
           hits.push(['seal', now.seal === 'AB' ? 'アタック・ブロック不可' : now.seal === 'A' ? 'アタック不可' : 'ブロック不可']);
         }
@@ -3621,7 +3717,7 @@ export function boardStateDiff() {
           // 相手の端末から同じ演出が届いた直後なら重ねない（両方の端末で処理中のとき）
           if (_boardRecent(sd, idx, k)) return;
           _boardMark(sd, idx, k);
-          setTimeout(() => fxBoardHit(k, sd, idx, v), i * 250);
+          setTimeout(() => fxBoardHit(k, sd, idx, v), i * 900);
           if (typeof window._onlineSendCommand === 'function' && typeof window._isOnlineMode === 'function' && window._isOnlineMode() && !window._suppressFxSend) {
             try { window._onlineSendCommand({ type: 'fx_boardHit', kind: k, side: sd === 'player' ? 'ai' : 'player', idx, value: v }); } catch (_) {}
           }

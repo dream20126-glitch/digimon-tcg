@@ -1327,7 +1327,13 @@ function showQueueOrderSelect(entries, callback0) {
     const _trigCode = entry.block && entry.block.trigger ? entry.block.trigger.code : null;
     const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
     // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
-    const effText = _withKeywordRuleText(extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null), Array.isArray(_steps) ? _steps : null);
+    let effText = _withKeywordRuleText(extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null), Array.isArray(_steps) ? _steps : null);
+    // 「〜。その後、〜」のように1つの効果が複数のステップに分かれていれば、全部の文章を出す
+    // （P-187 で【リカバリー+1】だけが出て、「その後〜」が別の効果に見えていた）
+    if (Array.isArray(_steps)) {
+      const _dts = _steps.map(st => st && typeof st.display_text === 'string' ? st.display_text.trim() : '').filter(Boolean);
+      if (_dts.length > 1 && effText.indexOf(_dts[1]) < 0) effText = _dts.join('');
+    }
     // 任意効果か（executeQueueEntry / _runReactionEffect の確認ダイアログの要否と同じ判定）
     const _opt = Array.isArray(_steps) && _steps.some(st => st && (st.optional === true || (Array.isArray(st.cost) && st.cost.length > 0)))
       && !_isInlineCostConfirmRecipe(_steps);
@@ -11824,6 +11830,10 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
         );
       }
+    }
+    // 付与効果・進化元の効果は、本体の効果が別々の効果に分かれた（_splitGroups）ときも拾う
+    // （以前は分かれたときにここを丸ごと飛ばしていて、進化元の【進化時】等が誘発しなかった）
+    if (sourceCard && !_negatedThisTrigger) {
       // 付与効果（grant_effect で付与されたレシピ）も triggerCode でスキャン
       // 例: ヘブンズリッパーで全デジモンが得る「【アタック時】DP-2000」
       if (Array.isArray(sourceCard._grantedRecipes)) {

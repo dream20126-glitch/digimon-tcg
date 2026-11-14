@@ -456,6 +456,10 @@ if (typeof window !== 'undefined') {
 // 先に試し、回避できなければ when_battle_destroy / when_destroy（_runWhenBattleDestroy）を確認する。
 // 片方だけ勝つ分岐は以前からこの順で確認していたが、両者消滅の分岐では離れるときの置換効果を見ておらず
 // 不発になっていた（巨神兵器 BT26-085「離れるとき、デストロイモードに進化させることで離れない」等）
+// _runBattleDestroyAvoid を cb(canceled) の形で呼ぶ（セキュリティデジモンとのバトルで負けたとき用）
+function _avoidBattleDestroy(side, card, cb) {
+  _runBattleDestroyAvoid(side, card, () => cb(false), () => cb(true));
+}
 function _runBattleDestroyAvoid(side, card, onDestroy, onCancel0) {
   // 消滅を回避したら、先に出していた消滅時効果の「発揮待ち」予告を外す
   const onCancel = () => { if (typeof window._hudClearDestroyPreview === 'function') window._hudClearDestroyPreview(card); onCancel0(); };
@@ -3430,9 +3434,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
             }, 'ジャミング！', '#00fbff');
             return;
           }
-          // ≪防壁≫: セキュリティバトル消滅時、自分のセキュリティ1枚破棄で回避
-          // ≪回避≫/≪アーマー解除≫/【分離】もここで判定
-          _tryCancelDestroyAsync(atk, bs.player, 'player', false, (cancelAtkInSec) => {
+          // ≪防壁≫等のキーワードに加え、「（バトルで）消滅するとき〜することで消滅しない」（【フラグメント】【アーマー解除】・
+          // 充填プラグインQ 等）も確認する（以前はキーワードだけで、ギロモン BT26-055 の【フラグメント】が発動しなかった）
+          _avoidBattleDestroy('player', atk, (cancelAtkInSec) => {
           if (cancelAtkInSec) {
             const _secToHand = _secDigimonToZone(sec, bs.ai, true);
             renderAll(); _dispatchStateSync();
@@ -4793,24 +4797,31 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     {
     showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('player', () => _secDigimonEffectFirst(sec, () => {
       if (_isSecurityDigimonCard(sec)) {
-        if (atk.dp === sec.dp) {
-          bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
-          if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-          const _secToHand = _secDigimonToZone(sec, bs.player, false);
-          showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, true, _secToHand, 'player', () => {
-            addLog('💥 両方ともバトルに負けた'); renderAll();
-            _fireDestroyChain(['ai'], _afterOne, { ai: atk });
-          }));
-        } else if (sec.dp > atk.dp) {
-          bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
-          if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-          const _secToHand = _secDigimonToZone(sec, bs.player, false);
-          showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, false, _secToHand, 'player', () => {
-            addLog('💥 「' + atk.name + '」が撃破された'); renderAll();
-            _fireDestroyChain(['ai'], _afterOne, { ai: atk });
-          }));
+        if (atk.dp <= sec.dp) {
+          // CPU のデジモンが負けた（相打ち含む）: 消滅回避（キーワード・「消滅するとき〜消滅しない」）を先に確認する
+          // （以前は確認しておらず、CPU の【防壁】【フラグメント】等が発動しなかった）
+          const _aiTie = atk.dp === sec.dp;
+          _avoidBattleDestroy('ai', atk, (canceledAi) => {
+            if (canceledAi) {
+              const _secToHand = _secDigimonToZone(sec, bs.player, false);
+              renderAll();
+              showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」が消滅を回避', () => {
+                showSecurityDigimonLeave(sec, _aiTie, _secToHand, 'player', () => { renderAll(); _afterOne(); });
+              });
+              return;
+            }
+            const _atkNow = bs.ai.battleArea[atkIdx] === atk ? atk : null;
+            if (_atkNow) {
+              bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
+              if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+              _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
+            }
+            const _secToHand = _secDigimonToZone(sec, bs.player, false);
+            showDestroyEffect(atk, () => showSecurityDigimonLeave(sec, _aiTie, _secToHand, 'player', () => {
+              addLog(_aiTie ? '💥 両方ともバトルに負けた' : '💥 「' + atk.name + '」が撃破された'); renderAll();
+              _fireDestroyChain(['ai'], _afterOne, { ai: atk });
+            }));
+          });
         } else {
           const _secToHand = _secDigimonToZone(sec, bs.player, false);
           renderAll();

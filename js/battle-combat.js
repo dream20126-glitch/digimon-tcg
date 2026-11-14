@@ -5778,6 +5778,10 @@ function _clashNoteAndSend(card, kind, imgs, swapImg) {
 // 回避の前後の差から決める演出の種類（リンクカードが減った＝分離／進化元が減った＝フラグメント／場所が移った／それ以外は「消滅しない」）
 function _clashKindByDiff(snap, card) {
   if (card && card._armorPurgedTo) return 'armor_break';
+  // 減った進化元がトラッシュではなくセキュリティへ行った（充填プラグインQ P-146「進化元から…セキュリティの下に置くことで消滅しない」）
+  // なら、代わりのカードが弾き飛ぶのではなく光のバリア（消滅しない）
+  const _goneStack = (snap.stack || []).filter(c => c && !((card && card.stack) || []).includes(c));
+  if (_goneStack.length && _goneStack.every(c => (bs.player.security || []).includes(c) || (bs.ai.security || []).includes(c))) return 'shield';
   const ln = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
   const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
   return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? 'fragment' : 'shield');

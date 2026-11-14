@@ -2361,34 +2361,39 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       }
       case 'shield': {
         lbl(_CLASH_KW_LABEL.shield, '#4ad8ff');
-        // 光の壁: 2枚のカードの間に、下から光の壁がせり上がり、相手の一撃を受け止める（波紋・火花）。守られたカードは残る
-        const r = area.getBoundingClientRect();
-        const wallH = r.height * 1.9, wallW = 34;
-        const wx = ix; // 2枚のカードの間（ぶつかり合った位置）
-        const wall = el('position:absolute;left:' + (wx - wallW / 2) + 'px;top:' + (iy - wallH / 2) + 'px;width:' + wallW + 'px;height:' + wallH + 'px;border-radius:14px;'
-          + 'background:linear-gradient(90deg,rgba(74,216,255,0) 0%,rgba(140,235,255,0.75) 30%,#ffffff 50%,rgba(140,235,255,0.75) 70%,rgba(74,216,255,0) 100%),repeating-linear-gradient(0deg,rgba(255,255,255,0.35) 0 2px,transparent 2px 12px);'
-          + 'box-shadow:0 0 30px #4ad8ff,0 0 70px rgba(74,216,255,0.7);transform-origin:center bottom;transform:scaleY(0);opacity:0;transition:transform 0.32s cubic-bezier(.2,.9,.3,1.2),opacity 0.2s;z-index:4;will-change:transform,opacity;');
-        // 壁の光のにじみ（幅広・半透明）
-        const glowW = el('position:absolute;left:' + (wx - wallW * 2.5) + 'px;top:' + (iy - wallH / 2) + 'px;width:' + (wallW * 5) + 'px;height:' + wallH + 'px;background:radial-gradient(ellipse at center,rgba(120,225,255,0.45) 0%,rgba(74,216,255,0) 70%);opacity:0;transition:opacity 0.3s;z-index:3;');
-        requestAnimationFrame(() => { wall.style.transform = 'scaleY(1)'; wall.style.opacity = '1'; glowW.style.opacity = '1'; });
-        sparksAt(wx, iy + wallH / 2, 30, 0.8, ['#9ff2ff', '#ffffff', '#4ad8ff']);
-        // 一撃が壁に当たる: 白く光り、波紋が広がり、火花が散る。守られたカードは壁の後ろで踏みとどまる
+        // バリア: 守られるカード全体を、六角形の模様が光るバリアが包む。相手の一撃がバリアの表面に当たって波紋が広がり、
+        // はじき返す。守られたカードは残る
+        const im0 = area.querySelector('[id$="card-img"]');
+        const r = (im0 || area).getBoundingClientRect();
+        const bW = r.width * 1.5, bH = r.height * 1.32;
+        const bcx = r.left + r.width / 2, bcy = r.top + r.height / 2;
+        const hex = "url(\"data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="48" viewBox="0 0 28 48"><path d="M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M14 32 L14 48" fill="none" stroke="rgba(200,245,255,0.55)" stroke-width="1.4"/></svg>') + "\")";
+        const bubble = el('position:absolute;left:' + (bcx - bW / 2) + 'px;top:' + (bcy - bH / 2) + 'px;width:' + bW + 'px;height:' + bH + 'px;border-radius:50% / 46%;'
+          + 'background:' + hex + ',radial-gradient(ellipse at 50% 45%,rgba(160,240,255,0.06) 0%,rgba(120,225,255,0.18) 55%,rgba(74,216,255,0.55) 100%);'
+          + 'border:3px solid rgba(190,245,255,0.95);box-shadow:0 0 26px #4ad8ff,0 0 60px rgba(74,216,255,0.6),inset 0 0 36px rgba(120,230,255,0.75);'
+          + 'transform:scale(0.2);opacity:0;transition:transform 0.38s cubic-bezier(.2,.9,.3,1.35),opacity 0.25s;z-index:4;will-change:transform,opacity;');
+        requestAnimationFrame(() => { bubble.style.transform = 'scale(1)'; bubble.style.opacity = '1'; });
+        sparksAt(bcx, bcy, 26, 0.8, ['#9ff2ff', '#ffffff']);
+        // 一撃がバリアの表面（相手の側）に当たる
+        const hx = bcx - dir * bW / 2, hy = bcy;
         setTimeout(() => {
-          wall.style.transition = 'filter 0.12s'; wall.style.filter = 'brightness(2.2)';
-          setTimeout(() => { wall.style.filter = ''; }, 140);
-          flashAt(wx, iy, 0.75, 'rgba(120,230,255,0.6)');
-          ringsAt(wx, iy, ['#ffffff', '#9ff2ff', '#4ad8ff'], 50);
-          sparksAt(wx, iy, 70, 1.2, ['#9ff2ff', '#ffffff', '#4ad8ff']);
+          bubble.style.transition = 'filter 0.12s, transform 0.18s ease-out';
+          bubble.style.filter = 'brightness(2.3)';
+          bubble.style.transform = 'scale(0.94,1.04)';
+          setTimeout(() => { bubble.style.filter = ''; bubble.style.transform = 'scale(1)'; }, 170);
+          flashAt(hx, hy, 0.75, 'rgba(120,230,255,0.6)');
+          ringsAt(hx, hy, ['#ffffff', '#9ff2ff', '#4ad8ff'], 46);
+          sparksAt(hx, hy, 70, 1.2, ['#9ff2ff', '#ffffff', '#4ad8ff']);
           shake('fcShakeS', 260);
-          // 攻撃してきた側（反対側のカード）は壁にはじき返される
+          // 攻撃してきた側（反対側のカード）はバリアにはじき返される
           const other = area === atkEl ? defEl : atkEl;
           other.style.transition = 'transform 0.3s cubic-bezier(.2,.9,.3,1.3)';
           other.style.transform = 'translateX(' + (-dir * 30) + 'px)';
-        }, 420);
-        setTimeout(() => { wall.style.filter = 'brightness(1.8)'; flashAt(wx, iy, 0.4, 'rgba(120,230,255,0.4)'); setTimeout(() => { wall.style.filter = ''; }, 120); }, 700);
-        // 消える
-        setTimeout(() => { wall.style.transition = 'opacity 0.45s, transform 0.45s'; wall.style.opacity = '0'; wall.style.transform = 'scaleY(1.08)'; glowW.style.opacity = '0'; }, 1300);
-        return 1750;
+        }, 450);
+        // バリアの表面を光が走る（守り切った）
+        setTimeout(() => { bubble.style.transition = 'filter 0.2s'; bubble.style.filter = 'brightness(1.7)'; setTimeout(() => { bubble.style.filter = ''; }, 200); }, 800);
+        setTimeout(() => { bubble.style.transition = 'opacity 0.45s, transform 0.45s'; bubble.style.opacity = '0'; bubble.style.transform = 'scale(1.12)'; }, 1350);
+        return 1800;
       }
       case 'recoil': {
         // 【道連れ】: 負けた側のトラッシュから衝撃が返り、勝った側も吹き飛ばされる

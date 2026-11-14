@@ -3185,6 +3185,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const doCostDestroy = (idx) => {
         const tgt = player.battleArea[idx];
         if (!tgt) { callback(false); return; }
+        if (ctx.bs) ctx.bs._lastCostDestroyed = tgt;
         ctx.addLog('💀 コスト: 「' + tgt.name + '」を消滅');
         // 共通の doDestroy に委譲（オンライン同期・on_destroy連鎖・デコイ/スケープゴート判定を統一）。
         // 消滅しなかった（消滅されない効果・【分離】等）ときはコストを支払えていないので false
@@ -3970,14 +3971,19 @@ export function runWhenDestroyLocal(card, cause, cb) {
   const wasActive = !card.suspended;
   const stack0 = Array.isArray(card.stack) ? card.stack.slice() : [];
   const field0 = (bs.player.battleArea || []).slice();
+  const plan = { card, side: 'player', ctx, wasActive, stack0, field0, shown: false };
+  bs._lastCostDestroyed = null; bs._ddDodgePlan = plan;
   window._fxMoveHold = (window._fxMoveHold || 0) + 1;
   triggerEffect('when_destroy', card, 'player', ctx, () => {
     window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1);
+    if (bs._ddDodgePlan === plan) bs._ddDodgePlan = null;
     bs._lastDestroyCause = prevCause;
     const cur = card._armorPurgedTo || card;
     const prevented = !!(cur.buffs && cur.buffs.some((b) => b && b.type === 'keyword_prevent_destroy'));
     if (Array.isArray(cur.buffs)) cur.buffs = cur.buffs.filter(b => before.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
     if (!prevented) { done(false); return; }
+    if (plan.shown) { done(true); return; }
+    _ddPlayDodge(plan, cur, () => done(true)); return;
     const byEvade = wasActive && cur.suspended && !!(card._permEffects && card._permEffects.evade);
     const purged = !!card._armorPurgedTo;
     const scape = field0.filter(c => c && c !== card && c !== cur && !(bs.player.battleArea || []).includes(c));
@@ -3990,6 +3996,24 @@ export function runWhenDestroyLocal(card, cause, cb) {
   });
 }
 if (typeof window !== 'undefined') window._runWhenDestroyLocal = (card, cause, cb) => runWhenDestroyLocal(card, cause, cb);
+
+// 効果での消滅を回避したときの演出の内容（何で回避したか・代わりのカード）を決めて出す。
+// plan: { card, side, ctx, wasActive, stack0, field0, sideArr }。cur: 残ったカード（【アーマー解除】なら下のカード）
+function _ddPlayDodge(plan, cur, cb) {
+  const bs = plan.ctx && plan.ctx.bs;
+  const card = plan.card;
+  const byEvade = plan.wasActive && cur.suspended && !!(card._permEffects && card._permEffects.evade);
+  const purged = !!card._armorPurgedTo;
+  // 身代わり（【スケープゴート】）: コストで消滅させた、場にいた他のデジモン（【不屈】で戻っていても身代わりは身代わり）
+  const lcd = bs && bs._lastCostDestroyed;
+  const scape = (lcd && lcd !== card && lcd !== cur && plan.field0.includes(lcd)) ? [lcd] : [];
+  const gone = purged ? [card] : scape.length ? scape : plan.stack0.filter(c => c && c !== cur && !(Array.isArray(cur.stack) && cur.stack.includes(c)));
+  let isFrag = false;
+  try { isFrag = !purged && !scape.length && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, plan.side); } catch (_) {}
+  const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : scape.length ? '【スケープゴート】' : isFrag ? '【フラグメント】' : '回避！';
+  const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : scape.length ? '身代わりで消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+  _ddDodgeFx(plan.ctx, cur, plan.side, { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged }, cb);
+}
 
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
@@ -4043,12 +4067,18 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     const _wdWasActive = !destroyed.suspended;
     const _wdStack0 = Array.isArray(destroyed.stack) ? destroyed.stack.slice() : [];
     const _wdField0 = (targetSide.battleArea || []).slice();
+    // 回避の演出は「消滅しない」が付いた時点（cant_destroy）で出す。身代わりの【消滅時】【不屈】等はその後に発揮される
+    // （以前は「消滅するとき」の処理が全部終わってから出していたため、身代わりの効果の後に出て、身代わりが【不屈】で
+    // 戻っていると身代わりとして見つからず「よける」演出になっていた）
+    const _wdPlan = causeType !== 'battle' ? { card: destroyed, side: _ddSide, ctx, wasActive: !destroyed.suspended, stack0: _wdStack0, field0: _wdField0, shown: false } : null;
+    if (ctx.bs) { ctx.bs._lastCostDestroyed = null; if (_wdPlan) ctx.bs._ddDodgePlan = _wdPlan; }
     // 効果での消滅を回避するとき、代わりに破棄するカード（【アーマー解除】【フラグメント】）は稲妻の演出で見せるので、
     // その間はトラッシュへの移動演出を出さない
     const _wdHold = causeType !== 'battle' && typeof window !== 'undefined';
     if (_wdHold) window._fxMoveHold = (window._fxMoveHold || 0) + 1;
     triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
       if (_wdHold) window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1);
+      if (ctx.bs && ctx.bs._ddDodgePlan === _wdPlan) ctx.bs._ddDodgePlan = null;
       const _wdCur = destroyed._armorPurgedTo || destroyed;
       const prevented = !!(_wdCur.buffs && _wdCur.buffs.some((b) =>
         b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
@@ -4058,6 +4088,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
+        if (causeType !== 'battle' && _wdPlan && _wdPlan.shown) { callback && callback(); return; }
+        if (causeType !== 'battle' && _wdPlan) { _ddPlayDodge(_wdPlan, _wdCur, () => { callback && callback(); }); return; }
         if (causeType !== 'battle') {
           // 何で防いだかの表示（【回避】=レストした／【アーマー解除】=一番上のカードを破棄した／それ以外は「消滅しない」）
           const _byEvade = _wdWasActive && _wdCur.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
@@ -22024,6 +22056,12 @@ function executeRecipeStep(step, ctx, store, callback) {
       } else cdTargets = ctx.card ? [ctx.card] : [];
       cdTargets.forEach(applyFlagsTo);
       ctx.renderAll();
+      {
+        const _plan = ctx.bs && ctx.bs._ddDodgePlan;
+        const _trig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+        const _hit = _plan && !_plan.shown && _trig === 'when_destroy' && cdTargets.find(t => t === _plan.card || _plan.card._armorPurgedTo === t);
+        if (_hit) { _plan.shown = true; _ddPlayDodge(_plan, _hit, () => callback()); break; }
+      }
       callback();
       break;
     }

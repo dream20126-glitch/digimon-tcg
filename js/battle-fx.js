@@ -2361,12 +2361,34 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       }
       case 'shield': {
         lbl(_CLASH_KW_LABEL.shield, '#4ad8ff');
-        // 光のバリアが一撃を受け止める
+        // 光の壁: 2枚のカードの間に、下から光の壁がせり上がり、相手の一撃を受け止める（波紋・火花）。守られたカードは残る
         const r = area.getBoundingClientRect();
-        const dome = el('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + (r.width * 1.7) + 'px;height:' + (r.height * 1.45) + 'px;border-radius:50%;border:3px solid #9ff2ff;box-shadow:0 0 30px #4ad8ff,inset 0 0 40px rgba(74,216,255,0.6);background:radial-gradient(ellipse,rgba(160,240,255,0.08) 40%,rgba(74,216,255,0.35) 100%),repeating-linear-gradient(60deg,rgba(255,255,255,0.12) 0 2px,transparent 2px 14px);animation:fcDome 0.35s ease-out forwards;z-index:2;');
-        setTimeout(() => { dome.style.animation = 'fcDomeHit 0.35s ease-out'; flashAt(hitX, cy, 0.7, 'rgba(120,230,255,0.6)'); sparksAt(hitX, cy, 60, 1, ['#9ff2ff', '#ffffff', '#4ad8ff']); ringsAt(hitX, cy, ['#9ff2ff'], 60); }, 350);
-        setTimeout(() => { dome.style.transition = 'opacity 0.4s'; dome.style.opacity = '0'; }, 1100);
-        return 1400;
+        const wallH = r.height * 1.9, wallW = 34;
+        const wx = ix; // 2枚のカードの間（ぶつかり合った位置）
+        const wall = el('position:absolute;left:' + (wx - wallW / 2) + 'px;top:' + (iy - wallH / 2) + 'px;width:' + wallW + 'px;height:' + wallH + 'px;border-radius:14px;'
+          + 'background:linear-gradient(90deg,rgba(74,216,255,0) 0%,rgba(140,235,255,0.75) 30%,#ffffff 50%,rgba(140,235,255,0.75) 70%,rgba(74,216,255,0) 100%),repeating-linear-gradient(0deg,rgba(255,255,255,0.35) 0 2px,transparent 2px 12px);'
+          + 'box-shadow:0 0 30px #4ad8ff,0 0 70px rgba(74,216,255,0.7);transform-origin:center bottom;transform:scaleY(0);opacity:0;transition:transform 0.32s cubic-bezier(.2,.9,.3,1.2),opacity 0.2s;z-index:4;will-change:transform,opacity;');
+        // 壁の光のにじみ（幅広・半透明）
+        const glowW = el('position:absolute;left:' + (wx - wallW * 2.5) + 'px;top:' + (iy - wallH / 2) + 'px;width:' + (wallW * 5) + 'px;height:' + wallH + 'px;background:radial-gradient(ellipse at center,rgba(120,225,255,0.45) 0%,rgba(74,216,255,0) 70%);opacity:0;transition:opacity 0.3s;z-index:3;');
+        requestAnimationFrame(() => { wall.style.transform = 'scaleY(1)'; wall.style.opacity = '1'; glowW.style.opacity = '1'; });
+        sparksAt(wx, iy + wallH / 2, 30, 0.8, ['#9ff2ff', '#ffffff', '#4ad8ff']);
+        // 一撃が壁に当たる: 白く光り、波紋が広がり、火花が散る。守られたカードは壁の後ろで踏みとどまる
+        setTimeout(() => {
+          wall.style.transition = 'filter 0.12s'; wall.style.filter = 'brightness(2.2)';
+          setTimeout(() => { wall.style.filter = ''; }, 140);
+          flashAt(wx, iy, 0.75, 'rgba(120,230,255,0.6)');
+          ringsAt(wx, iy, ['#ffffff', '#9ff2ff', '#4ad8ff'], 50);
+          sparksAt(wx, iy, 70, 1.2, ['#9ff2ff', '#ffffff', '#4ad8ff']);
+          shake('fcShakeS', 260);
+          // 攻撃してきた側（反対側のカード）は壁にはじき返される
+          const other = area === atkEl ? defEl : atkEl;
+          other.style.transition = 'transform 0.3s cubic-bezier(.2,.9,.3,1.3)';
+          other.style.transform = 'translateX(' + (-dir * 30) + 'px)';
+        }, 420);
+        setTimeout(() => { wall.style.filter = 'brightness(1.8)'; flashAt(wx, iy, 0.4, 'rgba(120,230,255,0.4)'); setTimeout(() => { wall.style.filter = ''; }, 120); }, 700);
+        // 消える
+        setTimeout(() => { wall.style.transition = 'opacity 0.45s, transform 0.45s'; wall.style.opacity = '0'; wall.style.transform = 'scaleY(1.08)'; glowW.style.opacity = '0'; }, 1300);
+        return 1750;
       }
       case 'recoil': {
         // 【道連れ】: 負けた側のトラッシュから衝撃が返り、勝った側も吹き飛ばされる

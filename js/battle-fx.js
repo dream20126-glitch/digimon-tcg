@@ -3169,27 +3169,67 @@ const _MAGIC_SVG = (c1, c2) => '<svg viewBox="0 0 200 200" style="width:100%;hei
   + '<circle cx="100" cy="100" r="34" fill="none" stroke="' + c2 + '" stroke-width="3"/>'
   + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="96" y="2" width="8" height="12" fill="' + c2 + '" transform="rotate(' + a + ' 100 100)"/>').join('')
   + '</svg>';
+// 攻撃の稲妻（ギザギザの線）を svg に描く
+function _magicBoltLines(svg, x1, y1, x2, y2, amp, scale) {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const pts = [];
+  const steps = 10, nx = -(y2 - y1), ny = x2 - x1, len = Math.hypot(nx, ny) || 1;
+  for (let q = 0; q <= steps; q++) {
+    const t = q / steps, off = (q === 0 || q === steps) ? 0 : (Math.random() - 0.5) * amp * 2;
+    pts.push((x1 + (x2 - x1) * t + nx / len * off).toFixed(1) + ',' + (y1 + (y2 - y1) * t + ny / len * off).toFixed(1));
+  }
+  [[13 * scale, 'rgba(150,90,255,0.4)'], [5 * scale, '#d9b8ff'], [2 * scale, '#ffffff']].forEach(([w, c]) => {
+    const l = document.createElementNS(svgNS, 'polyline');
+    l.setAttribute('points', pts.join(' ')); l.setAttribute('fill', 'none'); l.setAttribute('stroke', c); l.setAttribute('stroke-width', w);
+    l.setAttribute('stroke-linejoin', 'round'); l.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(l);
+  });
+}
+// 攻撃（全演出で共通）: 対象の上に紫の魔法陣が広がって魔力が集まり、魔法陣から稲妻が対象へ落ちる。
+// 当たる時刻(ms)を返す（通常0.2秒・slow 1.55秒）。呼ぶ側はその時刻に合わせて揺れ・よける等を出す
 export function attackStrikeFx(ov, x, y, size, slow) {
   _ensureHitStyle(); _ensureMagicStyle();
-  const S = (size || 120) * 1.5;
-  // slow: 効果での消滅用のゆっくり版（魔法陣が広がる→光が集まる→炸裂、をそれぞれ見える速さで）
+  const S = (size || 120) * 1.3;
   const D = slow ? 2.2 : 0.62;      // 魔法陣の表示時間(s)
   const GD = slow ? 0.9 : 0.24;     // 光が集まる時間(s)
   const GS = slow ? 0.55 : 0;       // 光が集まり始める時刻(s)
-  const T = slow ? 1550 : 200;      // 炸裂する時刻(ms)
-  const B = slow ? 1.7 : 1;         // 炸裂の演出の長さの倍率
+  const T = slow ? 1550 : 200;      // 稲妻が当たる時刻(ms)
+  const B = slow ? 1.7 : 1;         // 当たったあとの演出の長さの倍率
+  const W = window.innerWidth, H = window.innerHeight;
+  // 魔法陣は対象の上（画面の上にはみ出さない）
+  const mx = x, my = Math.max(S * 0.42 + 6, y - (size || 120) * 1.45);
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
   // ① 魔法陣が2重に回りながら広がる
-  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S + 'px;height:' + S + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
-  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S * 0.62 + 'px;height:' + S * 0.62 + 'px;filter:drop-shadow(0 0 6px #6ff3ff);animation:mgCircle2 ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#9ff6ff', '#e3c8ff'));
-  // ② 光の粒が中心へ集まる
+  add('position:absolute;left:' + mx + 'px;top:' + my + 'px;width:' + S + 'px;height:' + S + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
+  add('position:absolute;left:' + mx + 'px;top:' + my + 'px;width:' + S * 0.62 + 'px;height:' + S * 0.62 + 'px;filter:drop-shadow(0 0 6px #6ff3ff);animation:mgCircle2 ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#9ff6ff', '#e3c8ff'));
+  // ② 光の粒が魔法陣の中心へ集まる
   for (let k = 0; k < 14; k++) {
     const ang = Math.random() * Math.PI * 2, dd = S * 0.6 + Math.random() * S * 0.5;
-    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff,0 0 14px #6ff3ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather ' + GD + 's ease-in ' + (GS + Math.random() * (slow ? 0.25 : 0.06)) + 's forwards;opacity:0;z-index:9;');
+    add('position:absolute;left:' + mx + 'px;top:' + my + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff,0 0 14px #6ff3ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather ' + GD + 's ease-in ' + (GS + Math.random() * (slow ? 0.25 : 0.06)) + 's forwards;opacity:0;z-index:9;');
   }
-  // ③ 魔力が炸裂（光の柱・閃光・衝撃波・魔力の欠片が飛び散る）
+  // ③ 魔法陣から稲妻が放たれ、対象に落ちる（数回ちらつく）
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;z-index:10;';
+  ov.appendChild(svg);
+  const pre = slow ? 260 : 90; // 稲妻が伸びる時間
   setTimeout(() => {
-    add('position:absolute;left:' + x + 'px;top:0;width:' + S * 0.5 + 'px;height:' + (y + S * 0.3) + 'px;transform-origin:center;background:linear-gradient(to bottom,rgba(176,108,255,0) 0%,rgba(200,150,255,0.85) 60%,#fff 100%);box-shadow:0 0 30px #b06cff;animation:mgPillar ' + 0.45 * B + 's ease-out forwards;z-index:8;');
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + mx + 'px ' + my + 'px,rgba(255,255,255,0.8) 0%,rgba(190,130,255,0.45) 10%,rgba(0,0,0,0) 28%);animation:hxFlash ' + 0.4 * B + 's ease-out forwards;z-index:8;');
+    const t0 = Date.now(), dur = pre + 380 * B;
+    const tick = setInterval(() => {
+      const el = Date.now() - t0;
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      if (el >= dur) { clearInterval(tick); svg.remove(); return; }
+      const k = Math.min(1, el / pre);
+      const fade = el > pre ? Math.max(0.3, 1 - (el - pre) / (dur - pre)) : 1;
+      [-0.3, 0, 0.3].forEach((o) => {
+        const sx = mx + o * S * 0.35, ex = x + o * (size || 120) * 0.15;
+        _magicBoltLines(svg, sx, my, sx + (ex - sx) * k, my + (y - my) * k, 16, fade);
+      });
+    }, 50);
+  }, Math.max(0, T - pre));
+  // ④ 当たった瞬間: 閃光・衝撃波・魔力の欠片が飛び散る
+  setTimeout(() => {
     add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(190,130,255,0.6) 14%,rgba(80,200,255,0.25) 28%,rgba(0,0,0,0) 48%);animation:hxFlash ' + 0.5 * B + 's ease-out forwards;z-index:8;');
     add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #e3c8ff;box-shadow:0 0 18px #b06cff,inset 0 0 12px #6ff3ff;animation:hxRing ' + 0.55 * B + 's ease-out forwards;z-index:8;');
     add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid #8ff3ff;animation:hxRing ' + 0.7 * B + 's ease-out ' + 0.08 * B + 's forwards;opacity:0;z-index:8;');

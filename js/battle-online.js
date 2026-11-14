@@ -1621,7 +1621,7 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_cancelFlash': {
       // 相手のデジモンがキーワード（≪防壁≫等）で消滅を回避した
-      if (typeof window._showCancelFlash === 'function') window._showCancelFlash({ name: cmd.cardName || '' }, cmd.reason || '', null, true);
+      if (typeof window._showCancelFlash === 'function') window._showCancelFlash({ name: cmd.cardName || '', imgSrc: cmd.cardImg || '' }, cmd.reason || '', null, true);
       break;
     }
     case 'fx_kwRule': {

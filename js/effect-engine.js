@@ -3976,6 +3976,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     // 「〜することで、消滅しない」（【フラグメント】等の置換効果）で付いた「消滅しない」は、この消滅を防ぐだけ。
     // 防いだら外す（以前はターン終了まで残り、ゴクモン BT26-077 が【エグゼキュート】の自壊でも消滅しなかった）
     const _wdBefore = new Set(Array.isArray(destroyed.buffs) ? destroyed.buffs : []);
+    const _wdWasActive = !destroyed.suspended;
     triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
       const prevented = !!(destroyed.buffs && destroyed.buffs.some((b) =>
         b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
@@ -3985,6 +3986,11 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
+        // 【回避】（レストさせることで消滅しない）で防いだなら、よける演出を出す
+        const _byEvade = _wdWasActive && destroyed.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
+        if (_byEvade && typeof window !== 'undefined' && typeof window._showCancelFlash === 'function') {
+          try { window._showCancelFlash(destroyed, 'evade', () => { callback && callback(); }); return; } catch (_) {}
+        }
         callback && callback();
         return;
       }

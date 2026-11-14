@@ -265,9 +265,11 @@ function _showCancelFlash(card, reason, cb, remote) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[cancelFlash]', e); } };
   const kw = _CANCEL_FLASH_LABEL[reason];
   if (!kw || typeof document === 'undefined') { done(); return; }
-  if (!remote && _onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_cancelFlash', cardName: (card && card.name) || '', reason }); } catch (_) {} }
+  if (!remote && _onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_cancelFlash', cardName: (card && card.name) || '', cardImg: (card && cardImg(card)) || '', reason }); } catch (_) {} }
   // VS画面のぶつかり合いの途中なら、回避の仕方は決着の演出で見せる
   if (_clashNote(card, _CLASH_REASON_KIND[reason] || 'shield')) { done(); return; }
+  // 【回避】: カードが残像を残して横によけ、レスト（横向き）になる
+  if (reason === 'evade') { _showEvadeDodge(card, remote, done); return; }
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:70500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(0,0,0,0.55);pointer-events:none;animation:fadeIn 0.15s ease;';
   ov.innerHTML = '<div style="font-size:clamp(1.8rem,8vw,3.2rem);font-weight:900;color:#00fbff;text-shadow:0 0 18px #00fbff,0 0 4px #fff;letter-spacing:0.05em;">🛡 ' + kw + 'で回避！</div>'
@@ -276,6 +278,57 @@ function _showCancelFlash(card, reason, cb, remote) {
   setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); done(); }, 1600);
 }
 if (typeof window !== 'undefined') window._showCancelFlash = _showCancelFlash;
+// 【回避】の演出: 消滅させる一撃（赤い斬撃）をカードが残像を残してよけ、レスト（横向き）になる
+function _showEvadeDodge(card, remote, done) {
+  if (!document.getElementById('fx-evade-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-evade-style';
+    st.textContent = '@keyframes evSlash{0%{transform:translate(-50%,-50%) rotate(-35deg) scaleX(0);opacity:0}30%{opacity:1}60%{transform:translate(-50%,-50%) rotate(-35deg) scaleX(1);opacity:1}100%{transform:translate(-50%,-50%) rotate(-35deg) scaleX(1.1);opacity:0}}'
+      + '@keyframes evLbl{0%{transform:scale(1.8);opacity:0}50%{transform:scale(0.95);opacity:1}100%{transform:scale(1);opacity:1}}';
+    document.head.appendChild(st);
+  }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:70500;background:rgba(0,0,0,0.7);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H / 2;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const src = card ? (card.imgSrc || cardImg(card)) : '';
+  const mk = (op) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;left:' + (cx - CW / 2) + 'px;top:' + (cy - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid #00fbff;box-shadow:0 0 20px #00fbff;background:#111;opacity:' + op + ';transition:transform 0.28s cubic-bezier(.2,.9,.3,1),opacity 0.4s;';
+    d.innerHTML = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:12px;">' + ((card && card.name) || '') + '</div>';
+    ov.appendChild(d); return d;
+  };
+  const ghosts = [mk(0), mk(0), mk(0)];
+  const main = mk(1);
+  // ① 一撃（赤い斬撃）が来る
+  setTimeout(() => {
+    const slash = document.createElement('div');
+    slash.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + (CW * 2.6) + 'px;height:6px;border-radius:3px;background:linear-gradient(90deg,transparent,#ff4d4d,#fff,#ff4d4d,transparent);box-shadow:0 0 18px #ff3b3b;animation:evSlash 0.5s ease-out forwards;';
+    ov.appendChild(slash);
+  }, 250);
+  // ② 残像を残して横によける
+  setTimeout(() => {
+    ghosts.forEach((g, i) => { g.style.transition = 'none'; g.style.opacity = String(0.45 - i * 0.12); });
+    requestAnimationFrame(() => {
+      ghosts.forEach((g, i) => { g.style.transition = 'transform ' + (0.2 + i * 0.06) + 's ease-out,opacity 0.5s ' + (0.15 + i * 0.05) + 's'; g.style.transform = 'translateX(' + (CW * 0.35 * (i + 1)) + 'px)'; g.style.opacity = '0'; });
+      main.style.transform = 'translateX(' + (CW * 1.25) + 'px)';
+    });
+  }, 300);
+  // ③ 戻りながらレスト（横向き）になる
+  setTimeout(() => {
+    main.style.transition = 'transform 0.45s cubic-bezier(.3,.8,.3,1.2)';
+    main.style.transform = 'translateX(0) rotate(90deg) scale(0.9)';
+    const t = document.createElement('div');
+    t.style.cssText = 'position:absolute;left:0;right:0;top:' + Math.max(20, cy - CH / 2 - 86) + 'px;text-align:center;animation:evLbl 0.4s ease-out forwards;';
+    t.innerHTML = '<div style="font-size:clamp(1.8rem,8vw,3rem);font-weight:900;color:#00fbff;text-shadow:0 0 18px #00fbff,0 0 4px #fff;">【回避】でよけた！</div>'
+      + '<div style="font-size:clamp(0.9rem,3.5vw,1.15rem);color:#fff;text-shadow:0 0 6px #000;margin-top:4px;">' + (remote ? '相手の' : '') + '「' + ((card && card.name) || '') + '」はレストして消滅しない</div>';
+    ov.appendChild(t);
+  }, 900);
+  setTimeout(() => { ov.style.opacity = '0'; }, 2300);
+  setTimeout(() => { ov.remove(); done(); }, 2500);
+}
 // 効果（≪防壁≫等）で自分のセキュリティが減ったとき →「セキュリティが減ったとき」（battle-online.js の fx_barrierRequest から）
 if (typeof window !== 'undefined') window._fireSecurityDecreaseByEffect = (side, card, cb) => {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };

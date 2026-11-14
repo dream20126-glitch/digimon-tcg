@@ -3939,6 +3939,23 @@ function _destroyWithFx(owner, idx, ctx, fxFn, done, causeType) {
     done && done(gone);
   }, causeType);
 }
+// 効果で消滅させられるときに回避した演出（青い稲妻 → よける／身代わりが受ける。全カード共通）。両方の画面に出し、終わってから cb。
+// バトルのVS画面の途中（_clashIsPending）は決着の演出で見せるので出さない
+function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[ddDodge]', e); } };
+  if (typeof window === 'undefined' || typeof window._fxEffectDodge !== 'function' || !card) { done(); return; }
+  if (typeof window._clashIsPending === 'function' && window._clashIsPending()) { done(); return; }
+  const sub = opts && opts.substitute;
+  if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try {
+      const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
+      window._onlineSendCommand({ type: 'fx_effectDodge', cardName: card.name || '', cardImg: img(card), label: (opts && opts.label) || '', sub: (opts && opts.sub) || '',
+        subName: sub ? (sub.name || '') : '', subImg: sub ? img(sub) : '', ownerIsSender: ownerSide === 'player' });
+    } catch (_) {}
+  }
+  window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
+}
+
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
   // 呼び出し側が「同じオブジェクトがまだその位置にいるか」で判定すると、離れなかったのに消滅扱いになる
@@ -3961,6 +3978,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
   )) {
     ctx.addLog('🛡 「' + destroyed.name + '」は消滅しない！');
+    if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '回避！', sub: '消滅しない' }, () => { callback && callback(); }); return; }
     callback && callback();
     return;
   }
@@ -3987,10 +4005,13 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
-        // 【回避】（レストさせることで消滅しない）で防いだなら、よける演出を出す
-        const _byEvade = _wdWasActive && destroyed.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
-        if (_byEvade && typeof window !== 'undefined' && typeof window._showCancelFlash === 'function') {
-          try { window._showCancelFlash(destroyed, 'evade', () => { callback && callback(); }); return; } catch (_) {}
+        if (causeType !== 'battle') {
+          // 何で防いだかの表示（【回避】=レストした／【アーマー解除】=一番上のカードを破棄した／それ以外は「消滅しない」）
+          const _byEvade = _wdWasActive && _wdCur.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
+          const _lbl = _byEvade ? '【回避】' : (destroyed._armorPurgedTo ? '【アーマー解除】' : '回避！');
+          const _sub = _byEvade ? 'レストして消滅しない' : '消滅しない';
+          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _sub }, () => { callback && callback(); });
+          return;
         }
         callback && callback();
         return;
@@ -4026,13 +4047,16 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
         enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
           { type: causeType, causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, dc, decoyOwnerSide, ctx.bs, ctx
         ]);
+        if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, decoyOwnerSide, { label: '【デコイ】', sub: '身代わりで消滅しない', substitute: dc }, () => { callback && callback(); }); return; }
         callback && callback();
       });
       return;
     }
   }
   if (window._tryScapegoat) {
+    const _sgBefore = (targetSide.battleArea || []).slice();
     if (window._tryScapegoat(destroyed, targetSide)) {
+      const _sgSub = _sgBefore.find(c => c && c !== destroyed && !(targetSide.battleArea || []).includes(c)) || null;
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
@@ -4040,6 +4064,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
         { type: causeType, causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, destroyed, sgOwnerSide, ctx.bs, ctx
       ]);
+      if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, sgOwnerSide, { label: '【スケープゴート】', sub: '身代わりで消滅しない', substitute: _sgSub }, () => { callback && callback(); }); return; }
       callback && callback();
       return;
     }
@@ -4052,7 +4077,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
   tryCancelViaLeaveBattle(destroyed, destroyedSideName, ctx.bs, ctxBase, (canceled) => {
     if (ctx.bs) ctx.bs._leaveCause = _ddPrevLeaveCause;
-    if (canceled) { callback && callback(); return; }
+    if (canceled) {
+      // 離れなかったカード（進化して別のカードになった等は、その位置の今のカード）
+      const _lvNow = targetSide.battleArea[slotIdx] || destroyed;
+      if (causeType !== 'battle') { _ddDodgeFx(ctx, _lvNow, destroyedSideName, { label: '回避！', sub: '消滅しない' }, () => { callback && callback(); }); return; }
+      callback && callback(); return;
+    }
     _ddRemoved = true;
     targetSide.battleArea[slotIdx] = null;
     targetSide.trash.push(destroyed);

@@ -2305,7 +2305,13 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         setTimeout(() => { area.style.transition = 'transform 0.4s ease-in-out'; area.style.transform = 'translate(0,0)'; }, 700);
         return 1300;
       }
-      case 'barrier': case 'armor_break': case 'fragment': case 'separate': case 'scapegoat': {
+      case 'separate': {
+        // 【分離】: リンクカードがトラッシュへ行く移動演出は別に出るので、ここでは表示と軽い光だけ（台帳 FX-BATTLE c7）
+        lbl(_CLASH_KW_LABEL.separate, '#a8ff4a');
+        flashAt(hitX, cy, 0.5); sparksAt(hitX, cy, 30, 1, ['#a8ff4a', '#ffffff']);
+        return 1000;
+      }
+      case 'barrier': case 'armor_break': case 'fragment': case 'scapegoat': {
         const colorOf = { barrier: '#ffd84a', scapegoat: '#ff8adf' };
         const bc = colorOf[kind] || '#a8ff4a';
         lbl(_CLASH_KW_LABEL[kind], bc);
@@ -2666,3 +2672,117 @@ export function fxSecurityMove(card, mode, opts, callback) {
   setTimeout(done, 6000);
 }
 if (typeof window !== 'undefined') window._fxSecurityMove = fxSecurityMove;
+
+
+// =====================================================
+//  効果で消滅させられるときに回避した演出（全カード共通）
+//  青い稲妻がそのカードに落ちる → カードが残像を残してよける。身代わり（【スケープゴート】【デコイ】等）なら、
+//  身代わりのカードが割り込んで稲妻を受け、砕けてトラッシュへ
+//  card: 消滅を回避したカード / opts: { label: '【回避】' 等, sub: '消滅しない' 等, substitute: 身代わりのカード, remote: 相手のカードか }
+// =====================================================
+export function fxEffectDodge(card, opts, callback) {
+  opts = opts || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  if (!document.getElementById('fx-dodge-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-dodge-style';
+    st.textContent = [
+      '@keyframes fdFlash{0%{opacity:0}10%{opacity:0.9}100%{opacity:0}}',
+      '@keyframes fdBolt{0%{opacity:0}8%{opacity:1}20%{opacity:0.3}30%{opacity:1}55%{opacity:1}100%{opacity:0}}',
+      '@keyframes fdLbl{0%{transform:translateX(-50%) scale(1.8);opacity:0}50%{transform:translateX(-50%) scale(0.95);opacity:1}100%{transform:translateX(-50%) scale(1);opacity:1}}',
+      '@keyframes fdRing{0%{transform:translate(-50%,-50%) scale(0.2);opacity:1}100%{transform:translate(-50%,-50%) scale(3);opacity:0}}',
+      '@keyframes fdShard{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.55;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:70500;background:rgba(0,4,20,0.78);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const imgOf = (c) => c ? (c.imgSrc || cardImg(c) || '') : '';
+  const mkCard = (c, x, color) => {
+    const d = document.createElement('div');
+    const src = imgOf(c);
+    d.style.cssText = 'position:absolute;left:' + (x - CW / 2) + 'px;top:' + (cy - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid ' + color + ';box-shadow:0 0 18px ' + color + ';background:#111;will-change:transform,opacity;transition:transform 0.28s cubic-bezier(.2,.9,.3,1),opacity 0.4s;';
+    d.innerHTML = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:12px;">' + ((c && c.name) || '') + '</div>';
+    ov.appendChild(d); return d;
+  };
+  const sub = opts.substitute || null;
+  const main = mkCard(card, sub ? cx + CW * 0.55 : cx, '#7fd8ff');
+  const subEl = sub ? mkCard(sub, cx - CW * 0.75, '#ff8adf') : null;
+  if (subEl) { subEl.style.opacity = '0'; subEl.style.transform = 'translate(-40px,30px) scale(0.7)'; }
+  // 稲妻（ギザギザの線を上から対象まで）
+  const bolt = (tx, ty) => {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.style.cssText = 'position:absolute;left:0;top:0;animation:fdBolt 0.6s ease-out forwards;';
+    const mkPath = (w, color) => {
+      const p = document.createElementNS(svgNS, 'polyline');
+      let x = tx + (Math.random() - 0.5) * 60, y = -10; const pts = [x + ',' + y];
+      const steps = 9;
+      for (let i = 1; i <= steps; i++) { y = -10 + (ty + 10) * i / steps; x = (i === steps ? tx : tx + (Math.random() - 0.5) * 70 * (1 - i / steps)); pts.push(x + ',' + y); }
+      p.setAttribute('points', pts.join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w); p.setAttribute('stroke-linejoin', 'round');
+      return p;
+    };
+    svg.appendChild(mkPath(12, 'rgba(80,170,255,0.45)'));
+    svg.appendChild(mkPath(5, '#7fd8ff'));
+    svg.appendChild(mkPath(2, '#ffffff'));
+    ov.appendChild(svg);
+    const fl = document.createElement('div');
+    fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + tx + 'px ' + ty + 'px,rgba(200,235,255,0.95) 0%,rgba(80,170,255,0.5) 18%,rgba(0,0,0,0) 55%);animation:fdFlash 0.5s ease-out forwards;';
+    ov.appendChild(fl);
+    const ring = document.createElement('div');
+    ring.style.cssText = 'position:absolute;left:' + tx + 'px;top:' + ty + 'px;width:90px;height:90px;border-radius:50%;border:3px solid #7fd8ff;box-shadow:0 0 16px #4aa8ff;animation:fdRing 0.6s ease-out forwards;';
+    ov.appendChild(ring);
+  };
+  const label = () => {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:absolute;left:50%;top:' + Math.max(16, cy - CH / 2 - 92) + 'px;transform:translateX(-50%);text-align:center;white-space:nowrap;animation:fdLbl 0.4s ease-out forwards;';
+    t.innerHTML = '<div style="font-size:clamp(1.7rem,7.5vw,2.8rem);font-weight:900;color:#7fd8ff;text-shadow:0 0 16px #4aa8ff,0 0 3px #fff;">' + (opts.label || '回避！') + '</div>'
+      + '<div style="font-size:clamp(0.85rem,3.4vw,1.1rem);color:#fff;text-shadow:0 0 6px #000;margin-top:4px;">' + (opts.remote ? '相手の' : '') + '「' + ((card && card.name) || '') + '」は' + (opts.sub || '消滅しない') + '</div>';
+    ov.appendChild(t);
+  };
+  if (sub) {
+    // 身代わりが割り込み、稲妻を受けて砕ける
+    setTimeout(() => { subEl.style.opacity = '1'; subEl.style.transform = 'translate(' + (CW * 0.45) + 'px,0) scale(1.05)'; }, 200);
+    setTimeout(() => {
+      bolt(cx - CW * 0.3, cy);
+      subEl.style.transition = 'filter 0.2s'; subEl.style.filter = 'brightness(2.2) saturate(0.4)';
+    }, 600);
+    setTimeout(() => {
+      const r = subEl.getBoundingClientRect();
+      subEl.remove();
+      for (let i = 0; i < 12; i++) {
+        const sh = document.createElement('div');
+        const ang = Math.random() * Math.PI * 2, d = 60 + Math.random() * 140;
+        sh.style.cssText = 'position:absolute;left:' + (r.left + r.width / 2) + 'px;top:' + (r.top + r.height / 2) + 'px;width:18px;height:24px;background:linear-gradient(135deg,#9fe0ff,#2a3c66);clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 80) + 'px;--r:' + (Math.random() * 540) + 'deg;animation:fdShard 0.8s ease-out forwards;';
+        ov.appendChild(sh);
+      }
+      label();
+    }, 950);
+  } else {
+    // 稲妻が落ちる直前に、残像を残して横によける
+    setTimeout(() => {
+      bolt(cx, cy);
+      for (let i = 1; i <= 3; i++) {
+        const g = main.cloneNode(true);
+        g.style.opacity = String(0.5 - i * 0.13);
+        ov.appendChild(g);
+        requestAnimationFrame(() => { g.style.transition = 'transform ' + (0.18 + i * 0.05) + 's ease-out,opacity 0.45s'; g.style.transform = 'translateX(' + (CW * 0.3 * i) + 'px)'; g.style.opacity = '0'; });
+        setTimeout(() => g.remove(), 600);
+      }
+      main.style.transform = 'translateX(' + (CW * 1.2) + 'px)';
+    }, 350);
+    setTimeout(() => { main.style.transition = 'transform 0.4s cubic-bezier(.3,.8,.3,1.2)'; main.style.transform = 'translateX(0)'; label(); }, 900);
+  }
+  setTimeout(() => { ov.style.opacity = '0'; }, 2300);
+  setTimeout(() => { ov.remove(); done(); }, 2500);
+  setTimeout(done, 5000);
+}
+if (typeof window !== 'undefined') window._fxEffectDodge = fxEffectDodge;

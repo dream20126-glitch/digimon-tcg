@@ -1360,6 +1360,15 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_effectDodge': {
+      // 相手の端末で、効果による消滅を回避した演出（青い稲妻）
+      if (typeof window._fxEffectDodge === 'function') {
+        const c = { name: cmd.cardName || '', imgSrc: cmd.cardImg || '' };
+        const sub = cmd.subName || cmd.subImg ? { name: cmd.subName || '', imgSrc: cmd.subImg || '' } : null;
+        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: sub, remote: !!cmd.ownerIsSender }, done));
+      }
+      break;
+    }
     case 'fx_clashNote': {
       // 相手の端末で決まった消滅回避の仕方（分離・フラグメント・消滅しない等）と代わりのカードの画像を、こちらのVS画面の決着の演出に使う。
       // VS画面（fx_securityCheck）の後に処理されるよう、演出の順番待ちに入れる

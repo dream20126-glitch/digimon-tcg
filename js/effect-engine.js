@@ -22417,8 +22417,15 @@ function executeRecipeStep(step, ctx, store, callback) {
               tryCancelViaLeaveBattle(c, _psSideName, ctx.bs, _psCtxBase, (canceled) => {
                 if (ctx.bs) ctx.bs._leaveCause = _prevLeaveCause;
                 if (canceled) { console.warn('[place_on_security_top] 離れなかった', c && c.name); ctx.addLog && ctx.addLog('🛡 「' + c.name + '」はバトルエリアを離れなかった'); _psNext(k + 1); return; }
-                _psPlace(e);
-                _psNext(k + 1);
+                const _pl = _psPlace(e);
+                if (!_pl) { _psNext(k + 1); return; }
+                // バトルエリア → セキュリティの移動演出（自分・相手の画面とも）。置いた後に続ける
+                // （マスティモン P-187 で相手のデジモンをセキュリティに置いたとき、演出が出ていなかった）
+                const _psPre = _pl.opp ? '相手の' : '';
+                const _psZone = _pl.zone === 'tamerArea' ? 'テイマーエリア' : 'バトルエリア';
+                const _psTo = 'セキュリティの' + (_psToBottom ? '下' : '上');
+                _fxMoveSync(ctx, _pl.card, _psPre + _psZone, _psPre + _psTo, () => _psNext(k + 1),
+                  { faceUp: !!_psFaceUp, remoteFrom: (_pl.opp ? '' : '相手の') + _psZone, remoteTo: (_pl.opp ? '' : '相手の') + _psTo });
               });
             };
             const _psPlace = (e0) => {
@@ -22451,6 +22458,7 @@ function executeRecipeStep(step, ctx, store, callback) {
                   }
                 } catch (_) {}
               }
+              return { card: c, opp: _psOpp, zone: e.zone };
             };
             _psNext(0);
           };

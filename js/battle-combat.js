@@ -692,8 +692,8 @@ function showMichizureAnnounce(callback) {
   if (_onlineMode && _sendCommand && !window._suppressFxSend) {
     try { _sendCommand({ type: 'fx_michizure' }); } catch (_) {}
   }
-  // VS画面の決着で【道連れ】（黒いもやが引きずり込む演出）を見せた直後なら重ねない
-  if (window._clashRecoilAt && Date.now() - window._clashRecoilAt < 8000) { callback && callback(); return; }
+  // VS画面の決着で【道連れ】（黒いもやが引きずり込む演出）を見せたなら重ねない（1回分。長い演出の後でも出さない）
+  if (window._clashRecoilPending > 0 && window._clashRecoilAt && Date.now() - window._clashRecoilAt < 60000) { window._clashRecoilPending = 0; callback && callback(); return; }
   const overlay = document.createElement('div');
   overlay.id = '_michizure-announce';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
@@ -5730,7 +5730,10 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     window._fxMoveHold = (window._fxMoveHold || 0) + 1;
     let _held = true;
     const _onFieldNow = (c) => !!c && ['player', 'ai'].some(sd => (bs[sd].battleArea || []).some(x => x && (x === c || (x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo)))));
+    // 相手から届いたVS画面のカードは名前と画像だけなので、こちらの盤面の同じカード（効果の情報を持つ）を探す
+    const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && (y === c || (y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)))); if (x) return x; } return c; };
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
+      atkReal: _realOf(atkCard), defReal: _realOf(secCard),
       close: () => { overlay.style.display = 'none'; _removeCountLabel(); if (_held) { _held = false; window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1); } } };
     setTimeout(() => {
       try {
@@ -5839,7 +5842,8 @@ function _clashRecoilSide(p) {
   if (!p || p.winner === 'tie') return null;
   const ls = p.winner === 'atk' ? 'def' : 'atk';
   const winOnField = p.winner === 'def' ? p.defOnField : p.atkOnField;
-  return (hasMichizure(p[ls]) && winOnField) ? p.winner : null;
+  const loserReal = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
+  return ((hasMichizure(loserReal) || hasMichizure(p[ls])) && winOnField) ? p.winner : null;
 }
 function _clashFinish(textHint, cb, remoteInfo) {
   const p = _clashPending;
@@ -5867,7 +5871,7 @@ function _clashFinish(textHint, cb, remoteInfo) {
     // 通常どおり勝ち）。相手の画面では作り直したカードなので名前でも探す
     // （場にいたかはVSの開始時に記録。決着の時点では【道連れ】で既に場から外れていることがある）
     const _forced = p._forceRecoilName && p[p.winner] && p[p.winner].name === p._forceRecoilName;
-    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && (_clashRecoilSide(p) === p.winner || _forced)) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); }
+    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && (_clashRecoilSide(p) === p.winner || _forced)) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); window._clashRecoilPending = 1; }
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });

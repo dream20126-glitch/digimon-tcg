@@ -5742,10 +5742,15 @@ function _clashForceClose() {
   try { p.close(); } catch (_) {}
 }
 if (typeof window !== 'undefined') window._clashNote = (card, kind) => _clashNote(card, kind);
+function _closeRemoteConfirm() {
+  // 決着の時点で、相手の確認（【防壁】等）の「相手が効果を発動中…」が残っていれば閉じる
+  try { const el = document.getElementById('_remote-effect-announce'); if (el && el.parentNode) el.parentNode.removeChild(el); } catch (_) {}
+}
 function _clashFinish(textHint, cb) {
   const p = _clashPending;
   if (!p) { cb && cb(); return; }
   _clashPending = null;
+  _closeRemoteConfirm();
   const hint = String(textHint || '');
   const avoidedHint = /回避|ジャミング/.test(hint) && !/両者消滅/.test(hint);
   const out = {};
@@ -5774,6 +5779,7 @@ if (typeof window !== 'undefined') window._clashFinish = (hint, cb) => _clashFin
 // ----- バトル結果演出 -----
 
 export function showBattleResult(text, color, sub, callback, oppText, oppColor) {
+  _closeRemoteConfirm();
   // VS画面の押し合いが続いていれば、先に決着の演出を見せる
   if (_clashPending) { _clashFinish(text, () => showBattleResult(text, color, sub, callback, oppText, oppColor)); return; }
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_battleResult', text: oppText || text, color: oppColor || color, sub });

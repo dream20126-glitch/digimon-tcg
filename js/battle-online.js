@@ -1357,6 +1357,8 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_barrierDone': {
+      // 相手が【防壁】の確認を終えた →「相手が効果を発動中…」を閉じる
+      if (m.fxRemoteEffectClose) m.fxRemoteEffectClose();
       if (_pendingBarrierCallback) { const cb = _pendingBarrierCallback; _pendingBarrierCallback = null; cb(cmd.used ? { remaining: cmd.remaining } : false); }
       break;
     }

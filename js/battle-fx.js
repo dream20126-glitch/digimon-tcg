@@ -2095,7 +2095,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   fx.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;';
   document.body.appendChild(fx);
   const cv = document.createElement('canvas');
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = 1; // 演出の粒は等倍で十分（高解像度の端末で重くなっていた）
   cv.width = W * dpr; cv.height = H * dpr; cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
   fx.appendChild(cv);
   const g = cv.getContext('2d');
@@ -2106,7 +2106,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     for (let i = 0; i < n; i++) {
       const ang = (Math.random() < 0.75 ? (Math.random() < 0.5 ? -Math.PI / 2 : Math.PI / 2) + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2);
       const sp = (2 + Math.random() * 11) * power;
-      if (ps.length < 1200) ps.push({ x: x + (Math.random() - 0.5) * 8, y: y + (Math.random() - 0.5) * 30, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 20 + Math.random() * 28, len: 1.5 + Math.random() * 3.5, c: pal[(Math.random() * pal.length) | 0] });
+      if (ps.length < 420) ps.push({ x: x + (Math.random() - 0.5) * 8, y: y + (Math.random() - 0.5) * 30, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 20 + Math.random() * 28, len: 1.5 + Math.random() * 3.5, c: pal[(Math.random() * pal.length) | 0] });
     }
   };
   const sparks = (n, power) => sparksAt(ix, iy, n, power);
@@ -2114,8 +2114,9 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   const tick = (now) => {
     if (!alive) return;
     const dt = Math.min(50, now - last) / 16.67; last = now;
-    if (holdSpark) sparks(6, 0.8);
-    if (g) {
+    if (holdSpark) sparks(4, 0.8);
+    if (g && (ps.length > 0 || g._dirty)) {
+      g._dirty = ps.length > 0;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       g.globalCompositeOperation = 'lighter';
@@ -2126,8 +2127,10 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         p.vx *= 0.94; p.vy = p.vy * 0.94 + 0.25 * dt;
         const ox = p.x, oy = p.y; p.x += p.vx * dt; p.y += p.vy * dt;
         const f = 1 - p.life / p.max;
-        g.strokeStyle = p.c; g.globalAlpha = Math.max(0, f); g.lineWidth = p.len * f + 0.5; g.shadowColor = p.c; g.shadowBlur = 10;
-        g.beginPath(); g.moveTo(ox - p.vx * 1.5, oy - p.vy * 1.5); g.lineTo(p.x, p.y); g.stroke();
+        // ぼかし（shadowBlur）は重いので使わず、太い半透明の線で光って見せる
+        g.strokeStyle = p.c; g.beginPath(); g.moveTo(ox - p.vx * 1.5, oy - p.vy * 1.5); g.lineTo(p.x, p.y);
+        g.globalAlpha = Math.max(0, f) * 0.35; g.lineWidth = (p.len * f + 0.5) * 3; g.stroke();
+        g.globalAlpha = Math.max(0, f); g.lineWidth = p.len * f + 0.5; g.stroke();
       }
     }
     requestAnimationFrame(tick);
@@ -2143,6 +2146,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     setTimeout(() => r.remove(), 1000);
   });
   const shake = (name, ms) => { stageEl.style.animation = name + ' ' + ms + 'ms linear'; setTimeout(() => { stageEl.style.animation = ''; }, ms + 20); };
+  [atkEl, defEl].forEach((e) => { e.style.willChange = 'transform'; });
   const setT = (e, tr, t) => { e.style.transition = 'transform ' + t; e.style.transform = tr; };
   const AT = (x, rot, sc) => 'translateX(' + x + 'px) rotate(' + rot + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
   const label = (x, y, text, color) => el('position:absolute;left:' + x + 'px;top:' + y + 'px;white-space:nowrap;font-size:' + Math.min(30, W * 0.07) + 'px;font-weight:900;color:#fff;text-shadow:0 0 10px ' + color + ',0 0 22px ' + color + ',0 0 3px #000;animation:fcLabel 0.5s ease-out forwards;z-index:3;', text);
@@ -2162,7 +2166,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   setTimeout(() => { setT(atkEl, AT(push, 5), '0.18s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -5), '0.18s cubic-bezier(.55,0,.9,.35)'); }, T3 + 210);
   let glow = null, jitterTimer = null, holdStart = 0, pendingFinish = null, finished = false;
   setTimeout(() => {
-    flashAt(ix, iy, 0.9); sparks(90, 1.3); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00'], 70); shake('fcShake', 380);
+    flashAt(ix, iy, 0.9); sparks(60, 1.3); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00'], 70); shake('fcShake', 380);
     holdSpark = true; holdStart = performance.now();
     glow = el('position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:120px;height:180px;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,0.95) 0%,rgba(255,216,74,0.7) 35%,rgba(255,106,0,0) 70%);animation:fcGlow 0.22s ease-in-out infinite;');
     jitterTimer = setInterval(() => {
@@ -2183,7 +2187,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   const binAt = (dir, icon, text, color) => {
     const bx = dir < 0 ? Math.max(56, W * 0.13) : Math.min(W - 56, W * 0.87), by = H - Math.max(80, H * 0.14);
     // 渦を巻いて口を開ける（トラッシュの入口）
-    const vortex = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:150px;height:150px;border-radius:50%;background:repeating-conic-gradient(' + color + '66 0deg 12deg,transparent 12deg 30deg);-webkit-mask:radial-gradient(circle,transparent 0 30%,#000 32% 60%,transparent 70%);mask:radial-gradient(circle,transparent 0 30%,#000 32% 60%,transparent 70%);animation:fcBin 0.3s ease-out, fcVortex 0.9s linear 0.3s infinite;opacity:0.9;');
+    const vortex = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:130px;height:130px;border-radius:50%;border:5px dashed ' + color + ';box-sizing:border-box;will-change:transform;animation:fcBin 0.3s ease-out, fcVortex 0.9s linear 0.3s infinite;opacity:0.85;');
     const b = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle,' + color + '77 0%,#0a0a0a 72%);border:3px solid ' + color + ';box-shadow:0 0 30px ' + color + ',0 0 60px ' + color + '88,inset 0 0 20px ' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:30px;animation:fcBin 0.3s ease-out forwards;z-index:2;',
       icon + '<div style="font-size:10px;font-weight:bold;margin-top:-2px;">' + text + '</div>');
     return { b, bx, by, vortex };
@@ -2198,7 +2202,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     // 発射の爆発
     flashAt(cx0, cy0, 0.85, 'rgba(255,120,60,0.7)');
     ringsAt(cx0, cy0, ['#ffffff', fire[2]], 60);
-    sparksAt(cx0, cy0, 70, 1.4, fire);
+    sparksAt(cx0, cy0, 45, 1.4, fire);
     shake('fcShake', 300);
     // 飛んでいる間、カードの位置から燃える尾を出す
     let trailOn = true;
@@ -2206,8 +2210,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       if (!trailOn) return;
       const r = area.getBoundingClientRect();
       const x = r.left + r.width / 2, y = r.top + r.height / 2;
-      for (let i = 0; i < 5; i++) {
-        if (ps.length < 1400) ps.push({ x: x + (Math.random() - 0.5) * 24, y: y + (Math.random() - 0.5) * 24, vx: (Math.random() - 0.5) * 2 - dir * 1.5, vy: (Math.random() - 0.5) * 2 - 1, life: 0, max: 18 + Math.random() * 16, len: 3 + Math.random() * 4, c: fire[(Math.random() * fire.length) | 0] });
+      for (let i = 0; i < 2; i++) {
+        if (ps.length < 420) ps.push({ x: x + (Math.random() - 0.5) * 24, y: y + (Math.random() - 0.5) * 24, vx: (Math.random() - 0.5) * 2 - dir * 1.5, vy: (Math.random() - 0.5) * 2 - 1, life: 0, max: 18 + Math.random() * 16, len: 3 + Math.random() * 4, c: fire[(Math.random() * fire.length) | 0] });
       }
       requestAnimationFrame(trail);
     };
@@ -2230,7 +2234,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       b.style.animation = 'fcBinHit 0.45s ease-out';
       flashAt(bx, by, 1, 'rgba(255,90,60,0.8)');
       ringsAt(bx, by, ['#ffffff', fire[2], fire[4] || fire[1]], 70);
-      sparksAt(bx, by, 120, 1.5, fire);
+      sparksAt(bx, by, 70, 1.5, fire);
       shake('fcShake', 420);
       for (let i = 0; i < 16; i++) {
         const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, d = 50 + Math.random() * 90;
@@ -2362,7 +2366,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     const doFinish = () => {
       clearInterval(jitterTimer); holdSpark = false;
       if (glow) glow.remove();
-      flashAt(ix, iy, 1); sparks(160, 1.6); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
+      flashAt(ix, iy, 1); sparks(90, 1.6); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
       const o = outcomes || {};
       let dur = 0;
       [['atk', atkEl, -1], ['def', defEl, 1]].forEach(([side, area, dir]) => {
@@ -2385,13 +2389,13 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         const big = document.createElement('div');
         const fs = Math.min(110, W * 0.24);
         if (myResult === 'win') {
-          el('position:absolute;left:50%;top:42%;width:' + R * 1.5 + 'px;height:' + R * 1.5 + 'px;border-radius:50%;background:repeating-conic-gradient(rgba(255,226,122,0.7) 0deg 5deg,rgba(255,226,122,0) 5deg 16deg);-webkit-mask:radial-gradient(circle,#000 0%,transparent 55%);mask:radial-gradient(circle,#000 0%,transparent 55%);animation:fcRays 1.4s ease-out forwards;');
+          el('position:absolute;left:50%;top:42%;width:' + Math.min(R, 700) + 'px;height:' + Math.min(R, 700) + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,240,170,0.75) 0%,rgba(255,180,40,0.35) 35%,rgba(255,140,0,0) 65%);will-change:transform,opacity;animation:fcRays 1.4s ease-out forwards;');
           const cc = ['#ffd84a', '#ffffff', '#00ff88', '#7ff6ff', '#ff8adf'];
-          for (let i = 0; i < 50; i++) {
+          for (let i = 0; i < 26; i++) {
             const ang = Math.random() * Math.PI * 2, d = 120 + Math.random() * R * 0.4;
             el('position:absolute;left:50%;top:42%;width:' + (5 + Math.random() * 6) + 'px;height:' + (8 + Math.random() * 8) + 'px;background:' + cc[i % cc.length] + ';border-radius:2px;--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 90) + 'px;--r:' + (Math.random() * 720 - 360) + 'deg;animation:fcPiece ' + (1 + Math.random() * 0.6) + 's cubic-bezier(.1,.7,.3,1) forwards;');
           }
-          big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffc300 60%,#ff8a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,0.5);filter:drop-shadow(0 0 14px #ffb000) drop-shadow(0 0 34px #ff6a00);animation:fcBig 0.55s cubic-bezier(.2,.9,.3,1) forwards;z-index:4;';
+          big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffc300 60%,#ff8a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(255,190,60,0.9);animation:fcBig 0.55s cubic-bezier(.2,.9,.3,1) forwards;z-index:4;';
           big.innerText = 'WIN';
         } else {
           el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(120,0,0,0.15) 0%,rgba(80,0,0,0.75) 100%);animation:fcFlash 1.6s ease-out forwards;');

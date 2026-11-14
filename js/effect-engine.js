@@ -5160,6 +5160,8 @@ function _showCardConfirmDialog(card, onConfirm) {
 // 手札が見えない（バトル画面の外・手札欄が無い）ときは false を返す（呼び出し側は今までの一覧で選ぶ）
 function _handInPlacePick(candidates, opts) {
   if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+  // バトルのVS画面が出ている間は手札が隠れているので、一覧の画面で選ぶ
+  { const _vs = document.getElementById('security-check-overlay'); if (_vs && _vs.style.display !== 'none') return false; }
   const b = window._lastBattleState;
   const hw = document.getElementById('hand-wrap');
   if (!b || !b.player || !Array.isArray(b.player.hand) || !hw) return false;
@@ -5895,6 +5897,11 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     const _pkBackdrop = document.getElementById('_combat-backdrop');
     const _pkBackdropWasVisible = !!(_pkBackdrop && _pkBackdrop.style.display !== 'none');
     if (_pkBackdropWasVisible) _pkBackdrop.style.display = 'none';
+    // バトルのVS画面（z-index:47500〜）の押し合いの途中で選ぶとき（「バトルで消滅するとき〜進化元から置くことで消滅しない」
+    // 充填プラグインQ P-146 等）は、選ぶ画面をVS画面より前に出す（以前は裏に隠れて選べず、止まっていた）
+    const _pkZ0 = modal ? modal.style.zIndex : '';
+    const _pkVs = document.getElementById('security-check-overlay');
+    if (modal && _pkVs && _pkVs.style.display !== 'none') modal.style.zIndex = '66500';
     const renderItems = () => {
       if (!grid) return;
       grid.innerHTML = '';
@@ -6022,6 +6029,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     const cleanup = () => {
       if (!_uiClosed) { _uiClosed = true; _effectUiOpen = Math.max(0, _effectUiOpen - 1); }
       modal.style.display = 'none';
+      modal.style.zIndex = _pkZ0;
       if (_pkBackdropWasVisible && _pkBackdrop) _pkBackdrop.style.display = 'block';
       if (actionRow && actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
       // 元の閉じるボタンを元の場所に戻す（次回の通常のトラッシュ閲覧用）

@@ -371,7 +371,11 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
       renderAll(); _dispatchStateSync();
       const ctxBase = { bs, addLog, renderAll, updateMemGauge };
       const cause = { type: 'effect', causerSide: side, causerCard: card };
-      const _fin = () => callback({ canceled: true, reason: 'barrier' });
+      // 確認のときに相手の画面に出した「相手が効果を発動中…」を閉じる（残ったままになっていた）
+      const _fin = () => {
+        if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
+        callback({ canceled: true, reason: 'barrier' });
+      };
       try { _fireWhenSecurityDecrease(side, bs, ctxBase, _fin, { cause }); } catch (e) { console.error('[barrier secDecrease]', e); _fin(); }
     });
     return;

@@ -2080,6 +2080,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       '@keyframes fcLabel{0%{transform:translate(-50%,-50%) scale(2);opacity:0}40%{transform:translate(-50%,-50%) scale(0.95);opacity:1}100%{transform:translate(-50%,-60%) scale(1);opacity:1}}',
       '@keyframes fcDome{0%{transform:translate(-50%,-50%) scale(0.3);opacity:0}40%{transform:translate(-50%,-50%) scale(1.08);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:0.9}}',
       '@keyframes fcDomeHit{0%,100%{filter:brightness(1)}30%{filter:brightness(2.6)}}',
+      '@keyframes fcVortex{0%{transform:translate(-50%,-50%) rotate(0deg) scale(1)}100%{transform:translate(-50%,-50%) rotate(360deg) scale(1)}}',
       '@keyframes fcRevive{0%{transform:translate(-50%,0) scaleY(0);opacity:0}30%{opacity:1}100%{transform:translate(-50%,0) scaleY(1);opacity:0}}',
     ].join('');
     document.head.appendChild(st);
@@ -2180,38 +2181,68 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   // ---- 決着 ----
   const centerOf = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
   const binAt = (dir, icon, text, color) => {
-    const bx = dir < 0 ? Math.max(48, W * 0.12) : Math.min(W - 48, W * 0.88), by = H - Math.max(70, H * 0.12);
-    const b = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:74px;height:74px;border-radius:50%;background:radial-gradient(circle,' + color + '55 0%,#0a0a0a 70%);border:3px solid ' + color + ';box-shadow:0 0 22px ' + color + ',inset 0 0 16px ' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:26px;animation:fcBin 0.3s ease-out forwards;',
-      icon + '<div style="font-size:9px;font-weight:bold;margin-top:-2px;">' + text + '</div>');
-    return { b, bx, by };
+    const bx = dir < 0 ? Math.max(56, W * 0.13) : Math.min(W - 56, W * 0.87), by = H - Math.max(80, H * 0.14);
+    // 渦を巻いて口を開ける（トラッシュの入口）
+    const vortex = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:150px;height:150px;border-radius:50%;background:repeating-conic-gradient(' + color + '66 0deg 12deg,transparent 12deg 30deg);-webkit-mask:radial-gradient(circle,transparent 0 30%,#000 32% 60%,transparent 70%);mask:radial-gradient(circle,transparent 0 30%,#000 32% 60%,transparent 70%);animation:fcBin 0.3s ease-out, fcVortex 0.9s linear 0.3s infinite;opacity:0.9;');
+    const b = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle,' + color + '77 0%,#0a0a0a 72%);border:3px solid ' + color + ';box-shadow:0 0 30px ' + color + ',0 0 60px ' + color + '88,inset 0 0 20px ' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:30px;animation:fcBin 0.3s ease-out forwards;z-index:2;',
+      icon + '<div style="font-size:10px;font-weight:bold;margin-top:-2px;">' + text + '</div>');
+    return { b, bx, by, vortex };
   };
-  // 吹き飛ばして、隅のアイコン（トラッシュ等）に吸い込ませる
+  // 吹き飛ばして、隅のアイコン（トラッシュ等）に吸い込ませる。発射の爆発 → 燃える尾を引いて回転しながら飛ぶ
+  // → 渦に吸い込まれて爆発・衝撃波・揺れ・「TRASH!」
   const blowTo = (area, dir, dest, after) => {
     const [cx0, cy0] = centerOf(area);
-    const info = dest === 'to_hand' ? ['🖐', '手札', '#4ad8ff'] : dest === 'to_deck' ? ['🂠', 'デッキ', '#a8ff4a'] : dest === 'to_security' ? ['🛡', 'セキュリティ', '#ffd84a'] : ['🗑', 'トラッシュ', '#ff4d4d'];
-    const { b, bx, by } = binAt(dir, info[0], info[1], info[2]);
-    area.style.transition = 'transform 0.38s cubic-bezier(.15,.8,.35,1), opacity 0.38s';
-    area.style.transform = 'translate(' + (dir * W * 0.22) + 'px,' + (-H * 0.16) + 'px) rotate(' + (dir * 400) + 'deg) scale(0.8)';
-    for (let i = 0; i < 14; i++) {
-      const sz = 10 + Math.random() * 18;
-      const pc = el('position:absolute;left:' + cx0 + 'px;top:' + cy0 + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + sz / 2 + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,170,90,0.8),rgba(90,40,20,0));--dx:' + (dir * (60 + Math.random() * W * 0.25)) + 'px;--dy:' + (-30 - Math.random() * H * 0.15) + 'px;--r:0deg;animation:fcPiece ' + (0.5 + Math.random() * 0.4) + 's ease-out forwards;');
-      setTimeout(() => pc.remove(), 1000);
-    }
-    setTimeout(() => {
-      area.style.transition = 'transform 0.42s cubic-bezier(.6,0,.9,.6), opacity 0.42s';
-      area.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) rotate(' + (dir * 900) + 'deg) scale(0.12)';
-      area.style.opacity = '0.2';
-    }, 400);
-    setTimeout(() => {
-      area.style.opacity = '0';
-      b.style.animation = 'fcBinHit 0.4s ease-out';
-      for (let i = 0; i < 10; i++) {
-        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2;
-        const pc = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:5px;height:5px;border-radius:50%;background:' + info[2] + ';box-shadow:0 0 8px ' + info[2] + ';--dx:' + Math.cos(ang) * 50 + 'px;--dy:' + Math.sin(ang) * 50 + 'px;--r:0deg;animation:fcPiece 0.5s ease-out forwards;');
-        setTimeout(() => pc.remove(), 600);
+    const info = dest === 'to_hand' ? ['🖐', '手札', '#4ad8ff', 'HAND!'] : dest === 'to_deck' ? ['🂠', 'デッキ', '#a8ff4a', 'DECK!'] : dest === 'to_security' ? ['🛡', 'セキュリティ', '#ffd84a', 'SECURITY!'] : ['🗑', 'トラッシュ', '#ff4d4d', 'TRASH!'];
+    const { b, bx, by, vortex } = binAt(dir, info[0], info[1], info[2]);
+    const fire = dest === 'trash' ? ['#ffffff', '#ffe27a', '#ff9a00', '#ff4d1f', '#ff2a2a'] : ['#ffffff', info[2], info[2], '#ffffff'];
+    // 発射の爆発
+    flashAt(cx0, cy0, 0.85, 'rgba(255,120,60,0.7)');
+    ringsAt(cx0, cy0, ['#ffffff', fire[2]], 60);
+    sparksAt(cx0, cy0, 70, 1.4, fire);
+    shake('fcShake', 300);
+    // 飛んでいる間、カードの位置から燃える尾を出す
+    let trailOn = true;
+    const trail = () => {
+      if (!trailOn) return;
+      const r = area.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      for (let i = 0; i < 5; i++) {
+        if (ps.length < 1400) ps.push({ x: x + (Math.random() - 0.5) * 24, y: y + (Math.random() - 0.5) * 24, vx: (Math.random() - 0.5) * 2 - dir * 1.5, vy: (Math.random() - 0.5) * 2 - 1, life: 0, max: 18 + Math.random() * 16, len: 3 + Math.random() * 4, c: fire[(Math.random() * fire.length) | 0] });
       }
+      requestAnimationFrame(trail);
+    };
+    requestAnimationFrame(trail);
+    const im = area.querySelector('[id$="card-img"]');
+    if (im) { im.style.transition = 'box-shadow 0.2s, filter 0.2s'; im.style.boxShadow = '0 0 30px ' + fire[3] + ',0 0 60px ' + fire[2]; im.style.filter = 'brightness(1.3) saturate(1.3)'; }
+    // ① 大きくはね上がりながら高速回転
+    area.style.transition = 'transform 0.42s cubic-bezier(.12,.85,.3,1), opacity 0.42s';
+    area.style.transform = 'translate(' + (dir * W * 0.26) + 'px,' + (-H * 0.2) + 'px) rotate(' + (dir * 540) + 'deg) scale(0.85)';
+    // ② 渦へ急降下して吸い込まれる
+    setTimeout(() => {
+      area.style.transition = 'transform 0.45s cubic-bezier(.65,0,.95,.55), opacity 0.45s';
+      area.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) rotate(' + (dir * 1260) + 'deg) scale(0.1)';
+      area.style.opacity = '0.3';
+    }, 440);
+    // ③ 着弾: 爆発・衝撃波・揺れ・「TRASH!」
+    setTimeout(() => {
+      trailOn = false;
+      area.style.opacity = '0';
+      b.style.animation = 'fcBinHit 0.45s ease-out';
+      flashAt(bx, by, 1, 'rgba(255,90,60,0.8)');
+      ringsAt(bx, by, ['#ffffff', fire[2], fire[4] || fire[1]], 70);
+      sparksAt(bx, by, 120, 1.5, fire);
+      shake('fcShake', 420);
+      for (let i = 0; i < 16; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, d = 50 + Math.random() * 90;
+        const sz = 8 + Math.random() * 14;
+        const sm = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + sz / 2 + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,190,120,0.85),rgba(80,30,20,0));--dx:' + Math.cos(ang) * d + 'px;--dy:' + Math.sin(ang) * d + 'px;--r:0deg;animation:fcPiece ' + (0.5 + Math.random() * 0.5) + 's ease-out forwards;');
+        setTimeout(() => sm.remove(), 1100);
+      }
+      const tl = el('position:absolute;left:' + bx + 'px;top:' + (by - 70) + 'px;white-space:nowrap;font-size:' + Math.min(30, W * 0.07) + 'px;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 10px ' + info[2] + ',0 0 24px ' + info[2] + ',0 0 3px #000;animation:fcLabel 0.45s ease-out forwards;z-index:3;', info[3]);
+      setTimeout(() => { vortex.style.transition = 'opacity 0.4s'; vortex.style.opacity = '0'; }, 500);
+      void tl;
       after && after({ b, bx, by, cx0, cy0 });
-    }, 820);
+    }, 900);
   };
   // 小さなカード（裏向き or 画像）を飛ばす（身代わり・進化元・リンク・セキュリティ）
   const miniCard = (x, y, img, border) => el('position:absolute;left:' + (x - 30) + 'px;top:' + (y - 42) + 'px;width:60px;height:84px;border-radius:5px;border:2px solid ' + border + ';box-shadow:0 0 14px ' + border + ';background:' + (img ? 'url(' + img + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:2;transition:transform 0.5s cubic-bezier(.15,.8,.35,1),opacity 0.5s;',
@@ -2223,7 +2254,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     const hitX = cx - dir * 30; // 衝撃が来る側
     const lbl = (t, c) => label(cx, cy - 110, t, c);
     switch (kind) {
-      case 'trash': blowTo(area, dir, 'trash'); return 1300;
+      case 'trash': blowTo(area, dir, 'trash'); return 1500;
       case 'to_hand': case 'to_deck': case 'to_security': lbl(_CLASH_KW_LABEL[kind], '#4ad8ff'); blowTo(area, dir, kind); return 1300;
       case 'indomitable': {
         lbl(_CLASH_KW_LABEL.indomitable, '#ff9a00');

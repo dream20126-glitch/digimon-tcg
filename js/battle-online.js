@@ -1337,6 +1337,8 @@ function onRemoteCommand(cmd) {
       const card = (bs.player.battleArea || [])[cmd.slotIdx];
       const reply = (used) => {
         try { sendStateSync(); } catch (_) {}
+        // 【防壁】を使ったら、確認のときに相手の画面に出した「相手が効果を発動中…」を閉じる（残ったままになっていた）
+        if (used) { try { sendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
         sendCommand({ type: 'fx_barrierDone', used: !!used, remaining: bs.player.security.length });
       };
       if (!card || !bs.player.security || bs.player.security.length === 0) { reply(false); break; }

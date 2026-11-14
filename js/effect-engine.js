@@ -3949,8 +3949,9 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
   if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     try {
       const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
+      const subs = Array.isArray(sub) ? sub : (sub ? [sub] : []);
       window._onlineSendCommand({ type: 'fx_effectDodge', cardName: card.name || '', cardImg: img(card), label: (opts && opts.label) || '', sub: (opts && opts.sub) || '',
-        subName: sub ? (sub.name || '') : '', subImg: sub ? img(sub) : '', ownerIsSender: ownerSide === 'player' });
+        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', ownerIsSender: ownerSide === 'player' });
     } catch (_) {}
   }
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
@@ -3995,7 +3996,13 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     // 防いだら外す（以前はターン終了まで残り、ゴクモン BT26-077 が【エグゼキュート】の自壊でも消滅しなかった）
     const _wdBefore = new Set(Array.isArray(destroyed.buffs) ? destroyed.buffs : []);
     const _wdWasActive = !destroyed.suspended;
+    const _wdStack0 = Array.isArray(destroyed.stack) ? destroyed.stack.slice() : [];
+    // 効果での消滅を回避するとき、代わりに破棄するカード（【アーマー解除】【フラグメント】）は稲妻の演出で見せるので、
+    // その間はトラッシュへの移動演出を出さない
+    const _wdHold = causeType !== 'battle' && typeof window !== 'undefined';
+    if (_wdHold) window._fxMoveHold = (window._fxMoveHold || 0) + 1;
     triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
+      if (_wdHold) window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1);
       const _wdCur = destroyed._armorPurgedTo || destroyed;
       const prevented = !!(_wdCur.buffs && _wdCur.buffs.some((b) =>
         b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
@@ -4008,9 +4015,14 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
         if (causeType !== 'battle') {
           // 何で防いだかの表示（【回避】=レストした／【アーマー解除】=一番上のカードを破棄した／それ以外は「消滅しない」）
           const _byEvade = _wdWasActive && _wdCur.suspended && !!(destroyed._permEffects && destroyed._permEffects.evade);
-          const _lbl = _byEvade ? '【回避】' : (destroyed._armorPurgedTo ? '【アーマー解除】' : '回避！');
-          const _sub = _byEvade ? 'レストして消滅しない' : '消滅しない';
-          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _sub }, () => { callback && callback(); });
+          // 代わりに破棄したカード: 【アーマー解除】は一番上のこのカード自身、それ以外は減った進化元（【フラグメント】等）
+          const _purged = !!destroyed._armorPurgedTo;
+          const _gone = _purged ? [destroyed] : _wdStack0.filter(c => c && c !== _wdCur && !(Array.isArray(_wdCur.stack) && _wdCur.stack.includes(c)));
+          let _isFrag = false;
+          try { _isFrag = !_purged && _gone.length > 0 && !!cardHasActivePassiveFlag(_wdCur, 'fragment', ctx.bs, _ddSide); } catch (_) {}
+          const _lbl = _byEvade ? '【回避】' : _purged ? '【アーマー解除】' : _isFrag ? '【フラグメント】' : '回避！';
+          const _sub = _byEvade ? 'レストして消滅しない' : _gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _sub, substitute: _gone.length ? _gone : null, subColor: '#a8ff4a' }, () => { callback && callback(); });
           return;
         }
         callback && callback();

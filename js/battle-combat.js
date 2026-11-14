@@ -5726,8 +5726,10 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
     // 3回目の押し合いに入ったら callback（勝敗・消滅回避の判定）へ進む。VS画面は決着（_clashFinish）まで出したまま
     if (_clashPending) _clashForceClose();
+    window._fxMoveHold = (window._fxMoveHold || 0) + 1;
+    let _held = true;
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null,
-      close: () => { overlay.style.display = 'none'; _removeCountLabel(); } };
+      close: () => { overlay.style.display = 'none'; _removeCountLabel(); if (_held) { _held = false; window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1); } } };
     setTimeout(() => {
       try {
         _p.ctrl = fxBattleClashBegin(document.getElementById('sec-vs-cards') || overlay, _vsAtkArea, _vsDefArea, _vsLabel, _winner, !!bs.isPlayerTurn, () => { callback && callback(); });
@@ -5814,6 +5816,7 @@ function _clashKindByZone(card) {
 function _clashForceClose() {
   const p = _clashPending; _clashPending = null;
   if (!p) return;
+  // （close() で移動演出の保留も解除される）
   try { p.ctrl && p.ctrl.close(); } catch (_) {}
   try { p.close(); } catch (_) {}
 }

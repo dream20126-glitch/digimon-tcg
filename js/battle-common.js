@@ -442,6 +442,9 @@ export function setupCommonWindowExports() {
     try { fxCardMoveMulti(cards, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
   };
   window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {
+    // VS画面の決着・効果での消滅回避（稲妻）の演出で「代わりにトラッシュへ送るカード」を見せている間は、
+    // 同じカードのトラッシュへの移動演出を重ねない（window._fxMoveHold。battle-combat.js / effect-engine.js が立てる）
+    if (window._fxMoveHold > 0 && /トラッシュ/.test(String(toLabel || ''))) { setTimeout(() => { callback && callback(); }, 0); return; }
     const _skSet = window._fxMoveBatchSkipCards instanceof Set ? window._fxMoveBatchSkipCards : null;
     if (window._fxMoveBatchSkip > 0 && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)
         && (!_skSet || _skSet.has(card))) {

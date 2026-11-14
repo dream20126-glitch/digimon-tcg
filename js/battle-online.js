@@ -312,6 +312,8 @@ export function sendCommand(cmd) {
   if (cmd && cmd.type === 'fx_remoteBuff' && !cmd.sourceType && typeof window._curEffectSourceType === 'function') {
     try { const _st = window._curEffectSourceType(); if (_st) cmd = Object.assign({}, cmd, { sourceType: _st }); } catch (_) {}
   }
+  // 代わりにトラッシュへ送るカードを決着・稲妻の演出で見せている間は、表示だけの移動演出を送らない（相手の画面も同じ演出が出る）
+  if (cmd && window._fxMoveHold > 0 && (cmd.type === 'fx_remoteSelfEvoDiscard' || (cmd.type === 'fx_remoteCardMove' && /トラッシュ/.test(String(cmd.toLabel || ''))))) return;
   // 3枚以上のまとめての移動は一覧の演出（fx_moveBatch）を送り済みなので、1枚ずつの移動演出は送らない
   if (cmd && (cmd.type === 'fx_remoteCardMove' || cmd.type === 'fx_remoteSelfEvoDiscard') && window._fxMoveBatchSkip > 0
       && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)) return;
@@ -1364,8 +1366,8 @@ function onRemoteCommand(cmd) {
       // 相手の端末で、効果による消滅を回避した演出（青い稲妻）
       if (typeof window._fxEffectDodge === 'function') {
         const c = { name: cmd.cardName || '', imgSrc: cmd.cardImg || '' };
-        const sub = cmd.subName || cmd.subImg ? { name: cmd.subName || '', imgSrc: cmd.subImg || '' } : null;
-        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: sub, remote: !!cmd.ownerIsSender }, done));
+        const subs = Array.isArray(cmd.subs) ? cmd.subs : [];
+        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', remote: !!cmd.ownerIsSender }, done));
       }
       break;
     }

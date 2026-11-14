@@ -2305,13 +2305,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         setTimeout(() => { area.style.transition = 'transform 0.4s ease-in-out'; area.style.transform = 'translate(0,0)'; }, 700);
         return 1300;
       }
-      case 'separate': {
-        // 【分離】: リンクカードがトラッシュへ行く移動演出は別に出るので、ここでは表示と軽い光だけ（台帳 FX-BATTLE c7）
-        lbl(_CLASH_KW_LABEL.separate, '#a8ff4a');
-        flashAt(hitX, cy, 0.5); sparksAt(hitX, cy, 30, 1, ['#a8ff4a', '#ffffff']);
-        return 1000;
-      }
-      case 'barrier': case 'armor_break': case 'fragment': case 'scapegoat': {
+      case 'barrier': case 'armor_break': case 'fragment': case 'separate': case 'scapegoat': {
         const colorOf = { barrier: '#ffd84a', scapegoat: '#ff8adf' };
         const bc = colorOf[kind] || '#a8ff4a';
         lbl(_CLASH_KW_LABEL[kind], bc);
@@ -2712,10 +2706,16 @@ export function fxEffectDodge(card, opts, callback) {
     d.innerHTML = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:12px;">' + ((c && c.name) || '') + '</div>';
     ov.appendChild(d); return d;
   };
-  const sub = opts.substitute || null;
+  const subs = (Array.isArray(opts.substitute) ? opts.substitute : (opts.substitute ? [opts.substitute] : [])).slice(0, 3);
+  const sub = subs.length ? subs[0] : null;
   const main = mkCard(card, sub ? cx + CW * 0.55 : cx, '#7fd8ff');
-  const subEl = sub ? mkCard(sub, cx - CW * 0.75, '#ff8adf') : null;
-  if (subEl) { subEl.style.opacity = '0'; subEl.style.transform = 'translate(-40px,30px) scale(0.7)'; }
+  // 代わりのカード（身代わりのデジモン・破棄する進化元等）。複数枚なら少しずつずらして重ねる
+  const subEls = subs.map((sc, i) => {
+    const e = mkCard(sc, cx - CW * 0.75 - i * 14, opts.subColor || '#ff8adf');
+    e.style.opacity = '0'; e.style.transform = 'translate(-40px,30px) scale(0.7)'; e.style.zIndex = String(5 - i);
+    return e;
+  });
+  const subEl = subEls[0] || null;
   // 稲妻（ギザギザの線を上から対象まで）
   const bolt = (tx, ty) => {
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -2750,14 +2750,14 @@ export function fxEffectDodge(card, opts, callback) {
   };
   if (sub) {
     // 身代わりが割り込み、稲妻を受けて砕ける
-    setTimeout(() => { subEl.style.opacity = '1'; subEl.style.transform = 'translate(' + (CW * 0.45) + 'px,0) scale(1.05)'; }, 200);
+    subEls.forEach((e, i) => setTimeout(() => { e.style.opacity = '1'; e.style.transform = 'translate(' + (CW * 0.45 + i * 14) + 'px,' + (i * 8) + 'px) scale(1.05)'; }, 200 + i * 110));
     setTimeout(() => {
       bolt(cx - CW * 0.3, cy);
-      subEl.style.transition = 'filter 0.2s'; subEl.style.filter = 'brightness(2.2) saturate(0.4)';
-    }, 600);
+      subEls.forEach((e) => { e.style.transition = 'filter 0.2s'; e.style.filter = 'brightness(2.2) saturate(0.4)'; });
+    }, 600 + (subEls.length - 1) * 110);
     setTimeout(() => {
       const r = subEl.getBoundingClientRect();
-      subEl.remove();
+      subEls.forEach((e) => e.remove());
       for (let i = 0; i < 12; i++) {
         const sh = document.createElement('div');
         const ang = Math.random() * Math.PI * 2, d = 60 + Math.random() * 140;
@@ -2765,7 +2765,7 @@ export function fxEffectDodge(card, opts, callback) {
         ov.appendChild(sh);
       }
       label();
-    }, 950);
+    }, 950 + (subEls.length - 1) * 110);
   } else {
     // 稲妻が落ちる直前に、残像を残して横によける
     setTimeout(() => {

@@ -2305,7 +2305,28 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         setTimeout(() => { area.style.transition = 'transform 0.4s ease-in-out'; area.style.transform = 'translate(0,0)'; }, 700);
         return 1300;
       }
-      case 'barrier': case 'armor_break': case 'fragment': case 'separate': case 'scapegoat': {
+      case 'armor_break': {
+        lbl(_CLASH_KW_LABEL.armor_break, '#a8ff4a');
+        // 一番上のカード（このカード自身）がはがれ、下のカード（残るデジモン。VS画面の画像は差し替え済み）が見えた状態で、
+        // はがれたカードがトラッシュへ飛ぶ
+        const im0 = area.querySelector('[id$="card-img"]');
+        const rr = (im0 || area).getBoundingClientRect();
+        const topImg = (subs && subs[0]) || '';
+        const nameOnly = topImg.indexOf('name:') === 0 ? topImg.slice(5) : null;
+        const peel = el('position:absolute;left:' + rr.left + 'px;top:' + rr.top + 'px;width:' + rr.width + 'px;height:' + rr.height + 'px;border-radius:10px;overflow:hidden;border:2px solid #a8ff4a;box-shadow:0 0 18px #a8ff4a;background:' + (topImg && nameOnly == null ? 'url(' + topImg + ') center/cover' : 'linear-gradient(160deg,#3a3a48,#16161e)') + ';z-index:3;will-change:transform;transform-origin:' + (dir < 0 ? 'right' : 'left') + ' bottom;transition:transform 0.45s cubic-bezier(.3,.7,.3,1);',
+          nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:12px;font-weight:bold;color:#fff;">' + nameOnly + '</div>' : '');
+        // ① 衝撃を受けて、めくれるように持ち上がる（下のカードが見える）
+        setTimeout(() => {
+          flashAt(hitX, cy, 0.7); sparksAt(hitX, cy, 40, 1.1, ['#a8ff4a', '#ffffff', '#ff9a00']);
+          peel.style.transform = 'translate(' + (dir * 26) + 'px,-46px) rotate(' + (dir * 18) + 'deg)';
+          area.style.transition = 'transform 0.3s cubic-bezier(.2,.9,.3,1.3)';
+          area.style.transform = 'translateX(' + (dir * 8) + 'px)';
+        }, 350);
+        // ② はがれたカードが吹き飛ばされてトラッシュへ
+        setTimeout(() => { peel.style.transition = ''; blowTo(peel, dir, 'trash'); }, 950);
+        return 950 + 2000;
+      }
+      case 'barrier': case 'fragment': case 'separate': case 'scapegoat': {
         const colorOf = { barrier: '#ffd84a', scapegoat: '#ff8adf' };
         const bc = colorOf[kind] || '#a8ff4a';
         lbl(_CLASH_KW_LABEL[kind], bc);
@@ -2752,7 +2773,34 @@ export function fxEffectDodge(card, opts, callback) {
       + '<div style="font-size:clamp(0.85rem,3.4vw,1.1rem);color:#fff;text-shadow:0 0 6px #000;margin-top:4px;">' + (opts.remote ? '相手の' : '') + '「' + ((card && card.name) || '') + '」は' + (opts.sub || '消滅しない') + '</div>';
     ov.appendChild(t);
   };
-  if (sub) {
+  if (sub && opts.peel) {
+    // 【アーマー解除】: 一番上のカード（sub）が下のカード（card）に重なっている。稲妻が落ちると一番上がはがれてトラッシュへ飛び、
+    // 下のカードが残る
+    main.style.left = (cx - CW / 2) + 'px';
+    subEl.style.left = (cx - CW / 2) + 'px'; subEl.style.top = (cy - CH / 2) + 'px';
+    subEl.style.transition = 'none'; subEl.style.opacity = '1'; subEl.style.transform = 'none'; subEl.style.zIndex = '6';
+    subEl.style.borderColor = '#a8ff4a'; subEl.style.boxShadow = '0 0 18px #a8ff4a';
+    setTimeout(() => {
+      bolt(cx, cy);
+      subEl.style.transformOrigin = 'right bottom';
+      subEl.style.transition = 'transform 0.45s cubic-bezier(.3,.7,.3,1)';
+      subEl.style.transform = 'translate(-30px,-50px) rotate(-18deg)';
+    }, 450);
+    setTimeout(() => {
+      // トラッシュのアイコンへ回転しながら飛ぶ
+      const bin = document.createElement('div');
+      const bx = Math.max(56, W * 0.14), by = H - Math.max(80, H * 0.14);
+      bin.style.cssText = 'position:absolute;left:' + bx + 'px;top:' + by + 'px;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;background:radial-gradient(circle,#ff4d4d55 0%,#0a0a0a 72%);border:3px solid #ff4d4d;box-shadow:0 0 24px #ff4d4d;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:28px;';
+      bin.innerHTML = '🗑<div style="font-size:9px;font-weight:bold;">トラッシュ</div>';
+      ov.appendChild(bin);
+      const r = subEl.getBoundingClientRect();
+      subEl.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6), opacity 0.7s';
+      subEl.style.transform = 'translate(' + (bx - (r.left + r.width / 2)) + 'px,' + (by - (r.top + r.height / 2)) + 'px) rotate(-900deg) scale(0.12)';
+      subEl.style.opacity = '0.3';
+      setTimeout(() => { subEl.style.opacity = '0'; bin.style.transform = 'scale(1.25)'; bin.style.transition = 'transform 0.2s'; setTimeout(() => { bin.style.transform = ''; }, 200); }, 700);
+      label();
+    }, 1000);
+  } else if (sub) {
     // 身代わりが割り込み、稲妻を受けて砕ける
     subEls.forEach((e, i) => setTimeout(() => { e.style.opacity = '1'; e.style.transform = 'translate(' + (CW * 0.45 + i * 14) + 'px,' + (i * 8) + 'px) scale(1.05)'; }, 200 + i * 110));
     setTimeout(() => {

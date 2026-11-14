@@ -1367,7 +1367,7 @@ function onRemoteCommand(cmd) {
       if (typeof window._fxEffectDodge === 'function') {
         const c = { name: cmd.cardName || '', imgSrc: cmd.cardImg || '' };
         const subs = Array.isArray(cmd.subs) ? cmd.subs : [];
-        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', remote: !!cmd.ownerIsSender }, done));
+        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', peel: !!cmd.peel, remote: !!cmd.ownerIsSender }, done));
       }
       break;
     }

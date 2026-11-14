@@ -3951,7 +3951,7 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
       const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
       const subs = Array.isArray(sub) ? sub : (sub ? [sub] : []);
       window._onlineSendCommand({ type: 'fx_effectDodge', cardName: card.name || '', cardImg: img(card), label: (opts && opts.label) || '', sub: (opts && opts.sub) || '',
-        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', ownerIsSender: ownerSide === 'player' });
+        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', peel: !!(opts && opts.peel), ownerIsSender: ownerSide === 'player' });
     } catch (_) {}
   }
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
@@ -4022,7 +4022,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
           try { _isFrag = !_purged && _gone.length > 0 && !!cardHasActivePassiveFlag(_wdCur, 'fragment', ctx.bs, _ddSide); } catch (_) {}
           const _lbl = _byEvade ? '【回避】' : _purged ? '【アーマー解除】' : _isFrag ? '【フラグメント】' : '回避！';
           const _sub = _byEvade ? 'レストして消滅しない' : _gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
-          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _sub, substitute: _gone.length ? _gone : null, subColor: '#a8ff4a' }, () => { callback && callback(); });
+          _ddDodgeFx(ctx, _wdCur, _ddSide, { label: _lbl, sub: _purged ? '一番上のカードをはがして消滅しない' : _sub, substitute: _gone.length ? _gone : null, subColor: '#a8ff4a', peel: _purged }, () => { callback && callback(); });
           return;
         }
         callback && callback();

@@ -11145,17 +11145,10 @@ function checkPendingDestroys(ctx, callback) {
   }
 
   // showDestroyEffect の取得（ctx 経由 or window フォールバック）
-  const _showDE0 = (ctx && ctx.showDestroyEffect)
+  // DP0 の消滅はルールによる消滅なので、効果で消滅させるときの演出（魔法陣から稲妻）ではなく、いつもの消滅演出
+  const showDE = (ctx && ctx.showDestroyEffect)
     || (window.showDestroyEffect)
     || ((c, cb) => cb && cb()); // フォールバック: 演出なし
-  // 効果の DP- 等で DP0 になって消滅するときも、効果で消滅させるときと同じ演出（魔法陣から稲妻が落ちる）にする。
-  // バトルの VS 画面の途中は VS 画面の決着で見せるので従来どおり
-  const _pdImpact = typeof window !== 'undefined' && typeof window._fxBoltDestroy === 'function'
-    && !(typeof window._clashIsPending === 'function' && window._clashIsPending());
-  const _pdRemote = (c) => !!(ctx.bs && ctx.bs.ai && ((ctx.bs.ai.battleArea || []).includes(c) || (ctx.bs.ai.trash || []).includes(c)));
-  const showDE = _pdImpact
-    ? ((c, cb) => _fxBoltDestroySync({ side: 'player', bs: ctx.bs }, [{ card: c, remote: _pdRemote(c) }], cb))
-    : _showDE0;
 
   // 2) 1枚ずつ処理: 演出 → trash 移動 → on_destroy
   // 2体以上が同時に消滅する（「相手のデジモン全てをDP-」でDP0になった等）ときは、全員を場から外してから
@@ -11194,7 +11187,6 @@ function checkPendingDestroys(ctx, callback) {
           try { f(runChains); } catch (e) { console.error('[destroy batch chain]', e); runChains(); }
         };
         const g = _pdBatch.gone.splice(0);
-        if (g.length >= 2 && _pdImpact) { _fxBoltDestroySync({ side: 'player', bs: ctx.bs }, g.map(c => ({ card: c, remote: _pdRemote(c) })), runChains); return; }
         if (g.length >= 2) { window._showDestroyBatch(g, runChains); return; }
         if (g.length === 1) { showDE(g[0], runChains); return; }
         runChains();

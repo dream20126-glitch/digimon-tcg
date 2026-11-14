@@ -8,7 +8,7 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion } from './battle-fx.js';
+import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClash, fxBattleClashReset, fxBattleResultBurst } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { fireOptionUsedTriggers as _fireOptionUsed } from './effect-engine.js';
@@ -5561,6 +5561,9 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   const typeEl = document.getElementById('sec-check-type');
   const resultEl = document.getElementById('sec-check-result');
 
+  // 前回のぶつかり合い演出の状態（移動・ひび・WIN の文字）を戻す
+  const _vsAtkArea = document.getElementById('sec-atk-area'), _vsDefArea = document.getElementById('sec-def-area'), _vsLabel = document.getElementById('sec-vs-label');
+  try { fxBattleClashReset(_vsAtkArea, _vsDefArea, _vsLabel); } catch (_) {}
   label.style.opacity = '0';
   atkImgEl.style.opacity = '0'; atkNameEl.style.opacity = '0'; atkDpEl.style.opacity = '0';
   imgEl.style.opacity = '0'; imgEl.style.transform = 'rotateY(180deg)';
@@ -5608,6 +5611,21 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
       resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)';
       setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 1300);
     }, 1500);
+  } else if (isDigimon) {
+    // デジモン同士のバトル（セキュリティデジモン・ブロック・デジモンへのアタック）: カードがぶつかり合い、火花を散らして
+    // 負けた方は砕け、勝った方が光る。その後の Win/Lost・消滅の演出はいつも通り
+    // （≪氷装≫は進化元の枚数で比べる）
+    const _ice = (atkCard._permEffects && atkCard._permEffects.iceArmor) || (secCard._permEffects && secCard._permEffects.iceArmor);
+    const _a = _ice ? (atkCard.stack || []).length : (parseInt(atkCard.dp) || 0);
+    const _d = _ice ? (secCard.stack || []).length : (parseInt(secCard.dp) || 0);
+    const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
+    setTimeout(() => {
+      try {
+        fxBattleClash(document.getElementById('sec-vs-cards') || overlay, _vsAtkArea, _vsDefArea, _vsLabel, _winner, () => {
+          setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 250);
+        });
+      } catch (_) { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }
+    }, 1350);
   } else {
     setTimeout(() => { resultEl.innerText = resultText; resultEl.style.color = resultColor; resultEl.style.textShadow = `0 0 20px ${resultColor}`; resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)'; }, 1500);
     setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 2800);
@@ -5627,8 +5645,19 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
   textEl.style.opacity = '0'; textEl.style.transform = 'scale(0.5)';
   subEl.innerText = sub || ''; subEl.style.opacity = '0';
   overlay.style.display = 'flex'; overlay.style.background = 'rgba(0,0,0,0.7)';
-  setTimeout(() => { textEl.style.opacity = '1'; textEl.style.transform = 'scale(1)'; setTimeout(() => { subEl.style.opacity = '1'; }, 200); }, 50);
-  setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 1500);
+  // 勝ち（Win!!・撃破！）は金色の光線と紙吹雪で大きく、負け（Lost...・両者消滅等）は赤い破片と揺れ
+  const _win = /win|撃破！/i.test(String(text)) && !/撃破された/.test(String(text));
+  const _lose = /lost|lose|両者/i.test(String(text));
+  let _cleanup = null;
+  if (_win || _lose) {
+    overlay.style.overflow = 'hidden';
+    overlay.style.background = _win ? 'radial-gradient(ellipse at center,rgba(60,40,0,0.85) 0%,rgba(0,0,0,0.8) 70%)' : 'radial-gradient(ellipse at center,rgba(60,0,0,0.85) 0%,rgba(0,0,0,0.85) 70%)';
+    try { _cleanup = fxBattleResultBurst(overlay, textEl, _win); } catch (_) { _cleanup = null; }
+    setTimeout(() => { subEl.style.opacity = '1'; }, 450);
+  } else {
+    setTimeout(() => { textEl.style.opacity = '1'; textEl.style.transform = 'scale(1)'; setTimeout(() => { subEl.style.opacity = '1'; }, 200); }, 50);
+  }
+  setTimeout(() => { overlay.style.display = 'none'; if (_cleanup) { try { _cleanup(); } catch (_) {} } callback && callback(); }, _cleanup ? 1900 : 1500);
 }
 
 // ----- セキュリティデジモンのバトル後 -----

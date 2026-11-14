@@ -2345,9 +2345,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (dConds.length > 0 && !checkConditions(dConds, c, ctx.bs, _dSideTag)) continue;
         // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）も併せて評価
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) continue;
-        // 【プログレス】等「相手の効果を受けない」: isOwn（自分のデジモンが対象）のときは
-        // 自分の効果なので対象外にしない
-        if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
+        // 「相手の効果を受けない」デジモンも選べる（公式ルール 15-15-5-3。影響は受けない＝doDestroy でバリアが防ぐ）。
+        // 「最もLv/DP/登場コストの低い〜」の判定にも数える
         destroyTargets.push(i);
       }
       // 「最もLv/DP/登場コストの低い（高い）〜1体」: 候補が揃ってから極値で絞る
@@ -3941,6 +3940,15 @@ function _fxBoltDestroySync(ctx, items, cb) {
     } catch (_) {}
   }
   window._fxBoltDestroy(items, done);
+}
+// doDestroy で消滅したカードの演出（効果での消滅）: 稲妻（まとめて消滅中は一覧に積む）。VS画面・回避演出の準備中は通常の演出
+function _effectDestroyFx(ctx, owner, c, cb) {
+  const skip = typeof window === 'undefined' || typeof window._fxBoltDestroy !== 'function'
+    || (typeof window._clashIsPending === 'function' && window._clashIsPending()) || !!(ctx && ctx.bs && ctx.bs._ddDodgePlan);
+  if (skip) { if (ctx && ctx.showDestroyEffect) ctx.showDestroyEffect(c, cb); else cb && cb(); return; }
+  const remote = !!(ctx && ctx.bs && owner === ctx.bs.ai);
+  if (window._destroyFxBatch && c) { c._boltFx = { remote }; window._destroyFxBatch.gone.push(c); cb && cb(); return; }
+  _fxBoltDestroySync(ctx, [{ card: c, remote }], cb);
 }
 function _destroyWithFx(owner, idx, ctx, fxFn, done, causeType) {
   const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
@@ -19915,12 +19923,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           doDestroy(opponent, t.idx, ctx, (removed) => {
             if (removed !== true) { destroyOneByOne(); return; } // 消滅しなかった
             _destroyedCount++;
-            // 消滅演出 → 完了後に次の1体
-            if (ctx.showDestroyEffect) {
-              ctx.showDestroyEffect(c, () => {
-                setTimeout(destroyOneByOne, 300); // 少し間を空けて次へ
-              });
-            } else { destroyOneByOne(); }
+            // 消滅演出（効果での消滅＝稲妻）→ 完了後に次の1体
+            _effectDestroyFx(ctx, opponent, c, () => setTimeout(destroyOneByOne, window._destroyFxBatch ? 0 : 300));
           });
         }
         destroyOneByOne();
@@ -19962,8 +19966,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 極値以外の対象の条件（アクティブ状態=suspended:false 等）も評価する
           // （例:「最もDPの低いアクティブ状態の相手のデジモン全て」）
           if (step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) continue;
-          // 【プログレス】等「相手の効果を受けない」相手のデジモンは対象外（通常の消滅と同じ）
-          if (!isOwnAll && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
+          // 「相手の効果を受けない」デジモンも対象に含める（公式ルール 15-15-5-3: 効果で選ぶことはでき、影響を受けないだけ）。
+          // 「最も登場コストの低い〜」の判定にも数え、消滅の処理（doDestroy）でバリアが防ぐ演出になる。
+          // 以前は先に外していたため、効果を受けないデジモンが最も低いとき、次に低いデジモンに対象が移っていた
           matchedIdxs.push(i);
         }
         if (step.filter && step.filter.dp_extreme && matchedIdxs.length > 0) {
@@ -20001,9 +20006,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           doDestroy(tgtPlayer, idx, ctx, (removed) => {
             if (removed !== true) { destroyMatchingNext(); return; } // 消滅しなかった
             _dmCount++;
-            if (ctx.showDestroyEffect) {
-              ctx.showDestroyEffect(c, () => setTimeout(destroyMatchingNext, 300));
-            } else { destroyMatchingNext(); }
+            // 効果での消滅＝稲妻（「全て」はまとめて落とす）
+            _effectDestroyFx(ctx, tgtPlayer, c, () => setTimeout(destroyMatchingNext, window._destroyFxBatch ? 0 : 300));
           });
         }
         let _dmCount = 0;

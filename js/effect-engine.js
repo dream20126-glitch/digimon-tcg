@@ -22721,6 +22721,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             return;
           }
           let _peMoved = 0;
+          const _peFx = []; // 移動演出（進化元 → セキュリティ）を出すカードと持ち主
           list.forEach((c) => {
             const h = _peHolderOf.get(c);
             const si = h && Array.isArray(h.stack) ? h.stack.indexOf(c) : -1;
@@ -22729,6 +22730,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (_peFaceUp) { c._faceUp = true; delete c._faceDown; } else delete c._faceUp;
             if (_peToBottom) player.security.push(c); else player.security.unshift(c);
             _peMoved++;
+            _peFx.push({ c, h });
             ctx.addLog && ctx.addLog('🛡 「' + (h.name || '') + '」の進化元の「' + c.name + '」をセキュリティの' + (_peToBottom ? '下' : '上') + 'に置く');
             if (ctx.side === 'player' && window._markEvoModified) {
               const bi = (player.battleArea || []).indexOf(h);
@@ -22745,7 +22747,19 @@ function executeRecipeStep(step, ctx, store, callback) {
               if (window._onlineSendStateSync) window._onlineSendStateSync();
             } catch (_) {}
           }
-          callback(_peIsCost && _peMoved === 0 ? false : undefined);
+          // 「〇〇」の進化元 → セキュリティの下（上）の移動演出（両方の画面）。演出が終わってから続ける
+          // （充填プラグインQ P-146 で、進化元からセキュリティへ置いたのに演出が無かった）
+          const _peMine = player === (ctx.bs && ctx.bs.player);
+          const _pePre = _peMine ? '' : '相手の', _peRpre = _peMine ? '相手の' : '';
+          const _peTo = 'セキュリティの' + (_peToBottom ? '下' : '上');
+          let _pei = 0;
+          const _peNext = () => {
+            if (_pei >= _peFx.length) { callback(_peIsCost && _peMoved === 0 ? false : undefined); return; }
+            const { c, h } = _peFx[_pei++];
+            const from = '「' + ((h && h.name) || '') + '」の進化元';
+            _fxMoveSync(ctx, c, _pePre + from, _pePre + _peTo, _peNext, { faceUp: _peFaceUp, remoteFrom: _peRpre + from, remoteTo: _peRpre + _peTo });
+          };
+          _peNext();
         };
         if (effectiveSide === 'ai' || _peStacked) { _pePlace(_peCands.slice(0, _peWant)); break; }
         showTrashCardPicker(_peCands, Math.min(_peWant, _peCands.length), _pickOptional(ctx, step, !!step.optional),

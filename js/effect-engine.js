@@ -3938,7 +3938,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // バフが付与されていれば消滅をキャンセルする（when_battle_destroyの_runWhenBattleDestroyと
   // 同じパターン。原因を問わず発火するため、バトル側の_runWhenBattleDestroyとは別に
   // ここでも判定する必要がある＝原因を指定しないレシピは両方の消滅で発動する）
-  if (hasRecipeTrigger(destroyed, 'when_destroy')) {
+  if (whenDestroyApplies(destroyed, 'when_destroy', causeType === 'battle' ? 'battle' : 'effect')) {
     const gateCtx = { bs: ctx.bs, side: _ddSide, card: destroyed, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
     // 「〜することで、消滅しない」（【フラグメント】等の置換効果）で付いた「消滅しない」は、この消滅を防ぐだけ。
     // 防いだら外す（以前はターン終了まで残り、ゴクモン BT26-077 が【エグゼキュート】の自壊でも消滅しなかった）
@@ -5282,6 +5282,7 @@ function _handInPlacePick(candidates, opts) {
 // opts: { optional: true なら「破棄しない」ボタンを出す（押すと callback(null)）,
 //         title: 上部の見出し（省略時「🗑 手札から N 枚破棄」） }
 function showHandDiscardPicker(hand, wantCount, callback, opts) {
+  if (_confirmedCostDepth > 0 && opts && opts.optional) opts = Object.assign({}, opts, { optional: false });
   // 手札の上で直接選ぶ（手札が見えないときだけ下の一覧）
   if (_handInPlacePick(hand, { title: (opts && opts.title) || ('🗑 手札から ' + wantCount + ' 枚破棄'), wantCount,
     optional: !!(opts && opts.optional), skipLabel: '破棄しない', upTo: !!(opts && opts.upTo),
@@ -5673,6 +5674,7 @@ if (typeof window !== 'undefined') window._showCardListConfirm = showCardListCon
 // opts.onSelectAll: 指定すると「✅ 全て選択する」ボタンを出す（押したら画面を閉じて onSelectAll() を呼ぶ。
 // 選んだカードの確認は呼び出し側で行う）
 export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash, opts) {
+  if (_confirmedCostDepth > 0) optional = false;
   // 候補が手札とトラッシュの両方にある1枚選び（「自分の手札/トラッシュから〜1枚」）は、先に「手札から／トラッシュから」を
   // 選んでから、そのゾーンの一覧で選ぶ（進化・登場と同じ選び方。カノーヴァイスモン EX12-014 の進化元の下に置く等で
   // 一覧に混ざっていた）。一覧の「↩ 戻る」で選び直せる
@@ -11263,17 +11265,27 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
 // そのステップの選択画面では「使わない」を出さない（発動する意思は確認済み。ナイトモン P-111 の進化元効果
 // 「手札から〜を登場できる」で、「はい」の後の手札の選択に「使わない」が出ていた）。「その後、〜できる」等の
 // 2つ目以降の任意のステップは、そこで初めて使うかを選ぶので「使わない」を残す
+// コスト付きの効果（「〜することで」）も、確認で「はい」を選んだならコストの選択画面（パル P-147 の手札から置くカード）に
+// 「使わない」を出さない（_confirmedCostDepth の間は showTrashCardPicker / 手札の選択の optional を外す）
 function _markConfirmedHead(ctx, recipe) {
   if (!ctx) return;
-  const head = Array.isArray(recipe) ? recipe.find(s => s && s.optional === true) : null;
+  const head = Array.isArray(recipe) ? recipe.find(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))) : null;
   ctx._confirmedHead = head ? { action: head.action, text: head.display_text || '' } : null;
+}
+function _markConfirmedStep(ctx, step) {
+  if (ctx && step) ctx._confirmedHead = { action: step.action, text: step.display_text || '' };
+}
+function _isConfirmedStep(ctx, step) {
+  const h = ctx && ctx._confirmedHead;
+  return !!(h && step && step.action === h.action && (step.display_text || '') === h.text);
 }
 function _pickOptional(ctx, step, opt) {
   if (!opt) return false;
-  const h = ctx && ctx._effectConfirmed && ctx._confirmedHead;
-  if (h && step && step.action === h.action && (step.display_text || '') === h.text) return false;
+  if (_confirmedCostDepth > 0) return false;
+  if (_isConfirmedStep(ctx, step)) return false;
   return true;
 }
+let _confirmedCostDepth = 0;
 const EFFECT_FAILED_NO_TARGET = '対象がいませんでした';
 // トラッシュ等のゾーンに選べるカードが無かったとき（「〜を手札に戻す」等、対象がカードの場合）
 const EFFECT_FAILED_NO_CARD = '対象がありませんでした';
@@ -16235,6 +16247,12 @@ function recipeWillExecuteAnything(recipe, ctx) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' cannot be activated → skip');
       continue;
     }
+    // 「空いている自分の育成エリアに移動できる」: 育成エリアにカード（孵化したデジモン・デジタマ）があれば移動できないので、
+    // 確認・発揮待ちにも出さない（ドリモゲモン P-143）
+    if (step.action === 'move_to_breed' && ctx.bs && ctx.bs[ctx.side] && ctx.bs[ctx.side].ikusei) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' breed area occupied → skip');
+      continue;
+    }
     if (_attackStepImpossible(step, ctx.card, ctx.bs, ctx.side)) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' attack impossible → skip');
       continue;
@@ -17096,7 +17114,7 @@ function runRecipe(steps, ctx, callback) {
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {
         showConfirmDialog(ctx.card, _askText, (accepted) => {
-          if (accepted) { _execStep(step, nextStep); return; }
+          if (accepted) { _markConfirmedStep(ctx, step); _execStep(step, nextStep); return; }
           ctx.addLog && ctx.addLog('☓ 「' + (ctx.card ? ctx.card.name : '?') + (_icLead && idx === 1 ? '」の任意の効果は使わなかった' : '」の「その後」以降の効果は発動しなかった'));
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: ctx.card ? ctx.card.name : '' });
@@ -18260,8 +18278,16 @@ function executeRecipeStep(step, ctx, store, callback) {
     const _costPickedBefore = ctx.bs ? ctx.bs._lastPickedCard : null;
     if (ctx.bs) ctx.bs._lastCostCards = [];
     ctx._lastCostPaid = false;
+    // 確認で「はい」を選んだ効果のコストなら、コストの選択画面に「使わない」を出さない
+    const _cfCost = _isConfirmedStep(ctx, step);
+    if (_cfCost) _confirmedCostDepth++;
+    let _cfDone = false;
+    const _cfEnd = () => { if (_cfCost && !_cfDone) { _cfDone = true; _confirmedCostDepth = Math.max(0, _confirmedCostDepth - 1); } };
+    const _cbOrig = callback;
+    callback = (...a) => { _cfEnd(); _cbOrig && _cbOrig(...a); };
     function runCost() {
       if (i >= _costList.length) {
+        _cfEnd();
         console.log('[cost] all cost steps succeeded, running main action=' + step.action);
         if (ctx.bs) {
           // コストのアクション自身が記録した処理カード（下の各コスト実行時に ctx._costCards へ積んだもの）を優先する。
@@ -24100,20 +24126,38 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         const _neLabel = ({ on_evolve: '【進化時】', on_play: '【登場時】', on_attack: '【アタック時】', main: '【メイン】' })[_neTrig] || _neTrig;
         if (!_neCard) { ctx.addLog && ctx.addLog('⚠ 効果を発揮するカードがいません'); callback(); break; }
-        const _neAll = (getRecipeForCard(_neCard, _neTrig) || []).filter(s => s && s !== step && !(s.action === 'negate' && !s.deny));
-        if (_neAll.length === 0) { ctx.addLog && ctx.addLog('💨 「' + _neCard.name + '」に' + _neLabel + '効果がありません'); callback(); break; }
+        const _neFlat = (getRecipeForCard(_neCard, _neTrig) || []).filter(s => s && s !== step && !(s.action === 'negate' && !s.deny));
+        if (_neFlat.length === 0) { ctx.addLog && ctx.addLog('💨 「' + _neCard.name + '」に' + _neLabel + '効果がありません'); callback(); break; }
+        // 「効果1つ」は印刷された効果1つ（レシピのトリガーのキーごと。「〜なら…。〜なら…」の2ステップも1つの効果）。
+        // 以前はステップ1つずつを効果として選ばせていた（パル P-147 でエキサモン P-150 の【進化時】が2つに分かれていた）
+        const _neAll = (() => {
+          const g = _splitTriggerStepGroups(_neCard, _neTrig);
+          const list = (g && g.length > 1 ? g : [_neFlat]).map(x => x.filter(s => _neFlat.includes(s))).filter(x => x.length > 0);
+          return list.length > 0 ? list : [_neFlat];
+        })();
         const _neMax = Math.max(1, parseInt(step.value, 10) || 1);
         // 場にいないカード（進化元に置いたカード等）の効果は「このデジモンの効果として」発揮する（効果の主体はこのデジモン）
         const _neOnField = ['player', 'ai'].some(sd => ((ctx.bs[sd] || {}).battleArea || []).includes(_neCard));
         const _neCtx = Object.assign({}, ctx, { card: _neOnField ? _neCard : ctx.card, block: null, _sourceCard: _neCard });
-        const _neRun = (list) => {
-          if (!list || list.length === 0) { callback(); return; }
-          ctx.addLog && ctx.addLog('✦ 「' + _neCard.name + '」の' + _neLabel + '効果を発揮');
-          runRecipe(list, _neCtx, () => callback());
+        // 発揮する効果（ステップのまとまり）を、通常の【進化時】と同じように効果発動のポップアップで見せてから発揮する
+        const _neRun = (groups) => {
+          if (!groups || groups.length === 0) { callback(); return; }
+          let gi = 0;
+          const nextG = () => {
+            if (gi >= groups.length) { callback(); return; }
+            const list = groups[gi++];
+            ctx.addLog && ctx.addLog('✦ 「' + _neCard.name + '」の' + _neLabel + '効果を発揮');
+            let _txt = list.map(s => s && s.display_text).filter(Boolean).join('');
+            try { if (!_txt) _txt = extractTriggerSectionText(_neCard.effect || '', _neTrig, list); } catch (_) {}
+            const _go = () => runRecipe(list, _neCtx, nextG);
+            if (_txt) showEffectAnnounce(_neCtx.card, _txt, ctx.side, _go, _neCard !== _neCtx.card ? _neCard : undefined);
+            else _go();
+          };
+          nextG();
         };
         if (_neAll.length <= _neMax || effectiveSide === 'ai') { _neRun(_neAll.slice(0, _neMax)); break; }
         // 複数あるときは発揮する効果を選ぶ（1つずつ。value 個まで）
-        const _neLabels = _neAll.map((s, i) => (s.display_text ? String(s.display_text).split('\n')[0].slice(0, 60) : (_neLabel + '効果' + (i + 1))));
+        const _neLabels = _neAll.map((g, i) => { const s0 = g[0] || {}; return s0.display_text ? String(s0.display_text).split('\n')[0].slice(0, 60) : (_neLabel + '効果' + (i + 1)); });
         if (step.optional) _neLabels.push('使わない');
         showAltActionChoice(_neLabels, (i) => {
           if (i == null || i >= _neAll.length) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
@@ -25972,6 +26016,28 @@ export function checkAbsorbEvolveDiscount(evoCard, bs, side, callback) {
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか
+// 「このデジモンが（バトルで/効果で）消滅するとき」（when_destroy）のうち、この消滅の原因（'battle' / 'effect'）で発揮する
+// ステップがあるか。このデジモン自身と、表向きの進化元の進化元効果を見る（充填プラグインQ P-146 の進化元「バトルで消滅するとき」）。
+// step.cause が無いものは原因を問わない。not_battle / not_effect（「〜以外で」）にも対応
+export function whenDestroyApplies(card, triggerCode, causeType) {
+  if (!card) return false;
+  const ok = (st) => {
+    if (!st) return false;
+    const c = (st.cause_by_code && st.cause_by_code[triggerCode]) || st.cause;
+    if (!c || !causeType) return true;
+    if (/^not_/.test(String(c))) return String(c).slice(4) !== causeType;
+    return c === causeType;
+  };
+  const lists = [];
+  try { const own = getRecipeForTrigger(card, triggerCode); if (Array.isArray(own)) lists.push(own); } catch (_) {}
+  if (Array.isArray(card._grantedRecipes)) card._grantedRecipes.forEach(g => { const st = _grantedStepsFor(g, triggerCode, card); if (Array.isArray(st)) lists.push(st); });
+  (Array.isArray(card.stack) ? card.stack : []).forEach((sc) => {
+    if (!sc || sc._faceDown) return;
+    const st = getRecipeForTrigger(sc, triggerCode, true);
+    if (Array.isArray(st)) lists.push(st);
+  });
+  return lists.some(l => l.some(ok));
+}
 export function hasEvoStackTrigger(card, triggerCode) {
   if (!card || !Array.isArray(card.stack)) return false;
   return card.stack.some(s => {

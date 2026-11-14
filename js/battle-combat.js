@@ -5857,13 +5857,21 @@ function _clashFinish(textHint, cb) {
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }
 }
 if (typeof window !== 'undefined') window._clashFinish = (hint, cb) => _clashFinish(hint, cb);
+// 決着の演出を始めることを相手の画面にも伝える（相手の画面も同時に決着の演出を始める）。以前は決着の演出が
+// 終わってから勝敗の表示（fx_battleResult）を送っていたので、相手の画面ではこちらの演出が終わった後に始まっていた
+function _clashFinishSync(hint, cb) {
+  if (_clashPending && _onlineMode && _sendCommand && !window._suppressFxSend) {
+    try { _sendCommand({ type: 'fx_clashFinish', hint: String(hint || '') }); } catch (_) {}
+  }
+  _clashFinish(hint, cb);
+}
 
 // ----- バトル結果演出 -----
 
 export function showBattleResult(text, color, sub, callback, oppText, oppColor) {
   _closeRemoteConfirm();
   // VS画面の押し合いが続いていれば、先に決着の演出を見せる
-  if (_clashPending) { _clashFinish(text, () => showBattleResult(text, color, sub, callback, oppText, oppColor)); return; }
+  if (_clashPending) { _clashFinishSync(text, () => showBattleResult(text, color, sub, callback, oppText, oppColor)); return; }
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_battleResult', text: oppText || text, color: oppColor || color, sub });
   const overlay = document.getElementById('battle-result-overlay');
   if (!overlay) { callback && callback(); return; }
@@ -5916,7 +5924,7 @@ function _secDigimonToZone(sec, owner, useOnlineFlag) {
 // ownerSide: セキュリティの持ち主（'ai'＝相手 / 'player'＝自分）。opts.remote: 相手から受信した演出（送り返さない）
 export function showSecurityDigimonLeave(sec, lost, toHand, ownerSide, callback, opts) {
   opts = opts || {};
-  if (_clashPending && _clashSideOf(sec)) { _clashFinish(lost ? '' : '回避', () => showSecurityDigimonLeave(sec, lost, toHand, ownerSide, callback, opts)); return; }
+  if (_clashPending && _clashSideOf(sec)) { (opts.remote ? _clashFinish : _clashFinishSync)(lost ? '' : '回避', () => showSecurityDigimonLeave(sec, lost, toHand, ownerSide, callback, opts)); return; }
   if (!opts.remote && _onlineMode && _sendCommand && !window._suppressFxSend) {
     _sendCommand({ type: 'fx_secDigimonLeave', cardName: sec.name || '', cardNo: sec.cardNo || '', cardImg: cardImg(sec) || '', lost: !!lost, toHand: !!toHand, ownerSide: ownerSide === 'ai' ? 'player' : 'ai' });
   }
@@ -5953,7 +5961,7 @@ if (typeof window !== 'undefined') window._showSecurityDigimonLeave = showSecuri
 // ----- 消滅演出 -----
 
 export function showDestroyEffect(card, callback) {
-  if (_clashPending && _clashSideOf(card)) { _clashFinish('', () => showDestroyEffect(card, callback)); return; }
+  if (_clashPending && _clashSideOf(card)) { (card && card._remoteFx ? _clashFinish : _clashFinishSync)('', () => showDestroyEffect(card, callback)); return; }
   // 1つの効果でまとめて消滅させている間（window._destroyFxBatch）は1体ずつの演出を出さず、
   // 最後に「以下のN体が消滅」の一括演出（showDestroyBatch）で見せる
   // まとめるのはこの画面で実際に場から消滅したカードだけ（相手の画面から届いた演出＝_remoteFx の仮カードや、

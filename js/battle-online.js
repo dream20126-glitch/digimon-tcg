@@ -1362,6 +1362,14 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_clashFinish': {
+      // 相手の端末で決着の演出が始まった → こちらのVS画面も同時に決着の演出を始める（終わるまで次の演出を待たせる）
+      enqueueFx((done) => {
+        if (typeof window._clashFinish === 'function') { try { window._clashFinish(cmd.hint || '', done); return; } catch (_) {} }
+        done();
+      });
+      break;
+    }
     case 'fx_effectDodge': {
       // 相手の端末で、効果による消滅を回避した演出（青い稲妻）
       if (typeof window._fxEffectDodge === 'function') {

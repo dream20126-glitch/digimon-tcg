@@ -3636,63 +3636,81 @@ export function fxBoardHit(kind, side, idx, value) {
     }
     life = 2200;
   } else if (kind === 'seal') {
-    // 鎖がカード全体に巻き付き、中央に錠がかかって封印される（盤面）
+    // 鎖がカードにぐるぐる巻き付き（らせん状。カードの裏を回る部分は隠れ、端で回り込む）、錠がかかって封印される（盤面）
     const w = r.width, h = r.height, ox = r.left, oy = r.top;
     const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', w + 40); svg.setAttribute('height', h + 40);
-    svg.style.cssText = 'position:absolute;left:' + (ox - 20) + 'px;top:' + (oy - 20) + 'px;overflow:visible;filter:drop-shadow(0 0 4px #000) drop-shadow(0 0 6px rgba(255,80,60,0.6));';
-    const P = (px, py) => (px + 20).toFixed(1) + ' ' + (py + 20).toFixed(1);
-    // 斜め2本＋横3本（カードの外から外まで）。鎖の輪っぽく、太い破線＋細い破線を重ねる
-    const lines = [[[-12, -12], [w + 12, h + 12]], [[w + 12, -12], [-12, h + 12]], [[-14, h * 0.22], [w + 14, h * 0.3]], [[-14, h * 0.55], [w + 14, h * 0.48]], [[-14, h * 0.82], [w + 14, h * 0.76]]];
-    // 鎖を輪っかで描く: 正面を向いた輪（楕円の輪）と横を向いた輪（細長い棒）を交互につなぐ。端から順に伸びていく
-    const L = Math.max(9, Math.min(15, w * 0.16)); // 輪1つの長さ
-    let maxT = 0;
-    lines.forEach(([[x1, y1], [x2, y2]], li) => {
-      const len = Math.hypot(x2 - x1, y2 - y1);
-      const ang = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-      const n = Math.max(2, Math.floor(len / (L * 0.78)));
-      for (let k = 0; k < n; k++) {
-        const t = (k + 0.5) / n;
-        const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
-        const g = document.createElementNS(svgNS, 'g');
-        g.setAttribute('transform', 'translate(' + P(px, py).replace(' ', ',') + ') rotate(' + ang.toFixed(1) + ')');
-        if (k % 2 === 0) {
-          // 正面の輪（外側の暗い縁・金属の輪・ハイライト）
-          [['#3a3a44', 5.2], ['#c9c9d6', 3], ['#ffffff', 0.9]].forEach(([col, sw]) => {
-            const e = document.createElementNS(svgNS, 'ellipse');
-            e.setAttribute('cx', 0); e.setAttribute('cy', 0); e.setAttribute('rx', L * 0.58); e.setAttribute('ry', L * 0.34);
-            e.setAttribute('fill', 'none'); e.setAttribute('stroke', col); e.setAttribute('stroke-width', sw);
-            g.appendChild(e);
-          });
-        } else {
-          // 横向きの輪（細長い板）
-          [['#3a3a44', L * 0.42, L * 1.25], ['#b8b8c6', L * 0.24, L * 1.12], ['#ffffff', L * 0.06, L * 0.9]].forEach(([col, hh, ww]) => {
-            const rc = document.createElementNS(svgNS, 'rect');
-            rc.setAttribute('x', -ww / 2); rc.setAttribute('y', -hh / 2); rc.setAttribute('width', ww); rc.setAttribute('height', hh);
-            rc.setAttribute('rx', hh / 2); rc.setAttribute('fill', col);
-            g.appendChild(rc);
-          });
-        }
-        const delay = li * 120 + k * 22;
-        maxT = Math.max(maxT, delay);
-        g.style.cssText = 'opacity:0;transition:opacity 0.08s;';
-        setTimeout(() => { g.style.opacity = '1'; }, delay);
-        svg.appendChild(g);
+    const mkSvg = (z) => {
+      const sv = document.createElementNS(svgNS, 'svg');
+      sv.setAttribute('width', w + 60); sv.setAttribute('height', h + 60);
+      sv.style.cssText = 'position:absolute;left:' + (ox - 30) + 'px;top:' + (oy - 30) + 'px;overflow:visible;z-index:' + z + ';';
+      layer.appendChild(sv);
+      return sv;
+    };
+    const back = mkSvg(1);   // カードの裏側を回る鎖（カードの写しに隠れる）
+    const cc = copy(susp ? 90 : 0); // カードの写し（裏の鎖を隠す）
+    cc.style.zIndex = '2';
+    const front = mkSvg(3);  // カードの表側を通る鎖
+    front.style.filter = 'drop-shadow(0 2px 2px rgba(0,0,0,0.7))';
+    const L = Math.max(8, Math.min(13, w * 0.15)); // 輪1つの長さ
+    const Rx = w / 2 + L * 0.55;                    // 巻き付く半径（カードより少し外）
+    const TURNS = 3.2;
+    const yTop = h * 0.1, yBot = h * 0.9;
+    const pitch = (yBot - yTop) / (TURNS * 2 * Math.PI); // θ あたりの下がり
+    const dTh = (L * 0.8) / Rx;
+    const link = (sv, k, px, py, ang, dark) => {
+      const g = document.createElementNS(svgNS, 'g');
+      g.setAttribute('transform', 'translate(' + (px + 30).toFixed(1) + ',' + (py + 30).toFixed(1) + ') rotate(' + ang.toFixed(1) + ')');
+      const C = dark ? ['#1c1c22', '#5c5c68', '#8a8a96'] : ['#3a3a44', '#d0d0dc', '#ffffff'];
+      if (k % 2 === 0) {
+        [[C[0], 5], [C[1], 2.8], [C[2], 0.8]].forEach(([col, sw]) => {
+          const e = document.createElementNS(svgNS, 'ellipse');
+          e.setAttribute('rx', L * 0.58); e.setAttribute('ry', L * 0.34); e.setAttribute('fill', 'none'); e.setAttribute('stroke', col); e.setAttribute('stroke-width', sw);
+          g.appendChild(e);
+        });
+      } else {
+        [[C[0], L * 0.42, L * 1.25], [C[1], L * 0.24, L * 1.12], [C[2], L * 0.06, L * 0.9]].forEach(([col, hh, ww]) => {
+          const rc = document.createElementNS(svgNS, 'rect');
+          rc.setAttribute('x', -ww / 2); rc.setAttribute('y', -hh / 2); rc.setAttribute('width', ww); rc.setAttribute('height', hh); rc.setAttribute('rx', hh / 2); rc.setAttribute('fill', col);
+          g.appendChild(rc);
+        });
       }
-    });
-    layer.appendChild(svg);
-    const tLock = maxT + 250;
-    // カードが暗く沈み、錠がかかる
-    const dim = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + w + 'px;height:' + h + 'px;border-radius:5px;background:rgba(40,0,0,0);transition:background 0.4s;');
-    setTimeout(() => { dim.style.background = 'rgba(40,0,10,0.45)'; }, 200);
+      g.style.opacity = '0';
+      sv.appendChild(g);
+      return g;
+    };
+    // らせんに沿って輪を並べ、端から順に出していく（表の輪は表の層、裏の輪は裏の層）
+    const total = Math.ceil(TURNS * 2 * Math.PI / dTh);
+    const STEP_MS = Math.max(8, Math.min(14, 1100 / total));
+    // 巻き始めはカードの左外から（θ=-π/2 で左端、そこから表を右へ）
+    for (let k = 0; k <= total; k++) {
+      const th = -Math.PI / 2 + k * dTh;
+      const px = w / 2 + Rx * Math.sin(th);
+      const py = yTop + pitch * (k * dTh);
+      const frontSide = Math.cos(th) > 0;
+      const ang = Math.atan2(pitch, Rx * Math.cos(th)) * 180 / Math.PI;
+      const g = link(frontSide ? front : back, k, px, py, ang, !frontSide);
+      setTimeout(() => { g.style.transition = 'opacity 0.06s'; g.style.opacity = '1'; }, 120 + k * STEP_MS);
+    }
+    const tWrap = 120 + total * STEP_MS;
+    // 巻き付くあいだカードがきしむ
+    setTimeout(() => { cc.style.animation = 'bhShake 0.25s linear'; }, tWrap * 0.5);
+    // 巻き終わり: ギュッと締まる → カードが暗く沈み、錠がかかる
     setTimeout(() => {
-      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;font-size:' + Math.max(22, w * 0.5) + 'px;filter:drop-shadow(0 0 8px #ff3b2f);animation:bhLock 0.35s ease-out forwards;z-index:2;', '🔒');
-      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;width:60px;height:60px;border-radius:50%;border:3px solid #ff8a7a;animation:hxRing 0.5s ease-out forwards;');
-      slot.style.animation = 'bhShake 0.25s linear'; setTimeout(() => { slot.style.animation = ''; }, 300);
+      front.style.transition = back.style.transition = 'transform 0.15s ease-in';
+      front.style.transformOrigin = back.style.transformOrigin = (w / 2 + 30) + 'px ' + (h / 2 + 30) + 'px';
+      front.style.transform = back.style.transform = 'scaleX(0.94)';
+      setTimeout(() => { front.style.transform = back.style.transform = 'scaleX(0.97)'; }, 160);
+      cc.style.transition = 'filter 0.4s';
+      cc.style.filter = 'brightness(0.55) saturate(0.6)';
+    }, tWrap);
+    const tLock = tWrap + 300;
+    setTimeout(() => {
+      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;font-size:' + Math.max(22, w * 0.5) + 'px;filter:drop-shadow(0 0 8px #ff3b2f);animation:bhLock 0.35s ease-out forwards;z-index:4;', '🔒');
+      add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h / 2) + 'px;width:60px;height:60px;border-radius:50%;border:3px solid #ff8a7a;animation:hxRing 0.5s ease-out forwards;z-index:4;');
+      cc.style.animation = 'bhShake 0.25s linear';
     }, tLock);
-    setTimeout(() => { const t = add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h + 14) + 'px;transform:translateX(-50%);white-space:nowrap;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,0.85);border:2px solid #ff6a5a;color:#fff;font-weight:900;font-size:13px;opacity:0;transition:opacity 0.2s;', '封印：' + (value || 'アタック・ブロック不可')); requestAnimationFrame(() => { t.style.opacity = '1'; }); }, tLock + 150);
-    life = tLock + 1700;
+    setTimeout(() => { const t = add('position:absolute;left:' + (ox + w / 2) + 'px;top:' + (oy + h + 14) + 'px;transform:translateX(-50%);white-space:nowrap;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,0.85);border:2px solid #ff6a5a;color:#fff;font-weight:900;font-size:13px;opacity:0;transition:opacity 0.2s;z-index:5;', '封印：' + (value || 'アタック・ブロック不可')); requestAnimationFrame(() => { t.style.opacity = '1'; }); }, tLock + 150);
+    life = tLock + 1800;
     setTimeout(() => { layer.style.transition = 'opacity 0.35s'; layer.style.opacity = '0'; }, life - 400);
   }
   setTimeout(() => layer.remove(), life);

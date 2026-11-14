@@ -2432,8 +2432,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             }
             doneCb(); return;
           }
-          const i = idxs[bi], c = cards[bi]; bi++;
-          if (!c || opponent.battleArea[i] !== c) { next(); return; }
+          let i = idxs[bi], c = cards[bi]; bi++;
+          if (!c) { next(); return; }
+          // 前のカードを戻している間（オンラインの返事待ち・状態の同期）に、相手のカードが作り直されていることがある。
+          // 同じ位置の同じカード（カードNo・名前）→ 同じカード（1枚だけ）の順に探し直す（2体選んだのに1体しか戻らず、演出も1枚だった）
+          if (opponent.battleArea[i] !== c) {
+            const _same = (x) => !!(x && (x.cardNo || '') === (c.cardNo || '') && (x.name || '') === (c.name || ''));
+            let j = opponent.battleArea.indexOf(c);
+            if (j === -1 && _same(opponent.battleArea[i])) j = i;
+            if (j === -1) { const hits = opponent.battleArea.filter(_same); if (hits.length === 1) j = opponent.battleArea.indexOf(hits[0]); }
+            if (j === -1) { next(); return; }
+            i = j; c = opponent.battleArea[j];
+          }
           doBounce(opponent, i, ctx, () => {
             if (!(opponent.hand || []).includes(c)) { next(); return; }
             if (_hitFxOn()) { next(); return; } // doBounce が演出を出した

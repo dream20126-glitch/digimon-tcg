@@ -2836,30 +2836,8 @@ export function fxEffectDodge(card, opts, callback) {
   });
   const subEl = subEls[0] || null;
   // 稲妻（ギザギザの線を上から対象まで）
-  const bolt = (tx, ty) => {
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', W); svg.setAttribute('height', H);
-    svg.style.cssText = 'position:absolute;left:0;top:0;animation:fdBolt 0.6s ease-out forwards;';
-    const mkPath = (w, color) => {
-      const p = document.createElementNS(svgNS, 'polyline');
-      let x = tx + (Math.random() - 0.5) * 60, y = -10; const pts = [x + ',' + y];
-      const steps = 9;
-      for (let i = 1; i <= steps; i++) { y = -10 + (ty + 10) * i / steps; x = (i === steps ? tx : tx + (Math.random() - 0.5) * 70 * (1 - i / steps)); pts.push(x + ',' + y); }
-      p.setAttribute('points', pts.join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w); p.setAttribute('stroke-linejoin', 'round');
-      return p;
-    };
-    svg.appendChild(mkPath(12, 'rgba(80,170,255,0.45)'));
-    svg.appendChild(mkPath(5, '#7fd8ff'));
-    svg.appendChild(mkPath(2, '#ffffff'));
-    ov.appendChild(svg);
-    const fl = document.createElement('div');
-    fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + tx + 'px ' + ty + 'px,rgba(200,235,255,0.95) 0%,rgba(80,170,255,0.5) 18%,rgba(0,0,0,0) 55%);animation:fdFlash 0.5s ease-out forwards;';
-    ov.appendChild(fl);
-    const ring = document.createElement('div');
-    ring.style.cssText = 'position:absolute;left:' + tx + 'px;top:' + ty + 'px;width:90px;height:90px;border-radius:50%;border:3px solid #7fd8ff;box-shadow:0 0 16px #4aa8ff;animation:fdRing 0.6s ease-out forwards;';
-    ov.appendChild(ring);
-  };
+  // 攻撃（斬撃）が来る（効果での消滅と同じ攻撃）
+  const bolt = (tx, ty) => { attackStrikeFx(ov, tx, ty, CW); };
   const label = () => {
     const t = document.createElement('div');
     t.style.cssText = 'position:absolute;left:50%;top:' + Math.max(16, cy - CH / 2 - 92) + 'px;transform:translateX(-50%);text-align:center;white-space:nowrap;animation:fdLbl 0.4s ease-out forwards;';
@@ -3119,9 +3097,7 @@ export function fxBoltShield(card, opts, callback) {
   // 稲妻がバリアの上に落ちて、はじかれる
   const topY = cy - bH / 2;
   setTimeout(() => {
-    ov.appendChild(_boltSvg(W, H, cx, topY));
-    add('position:absolute;inset:0;background:radial-gradient(circle at ' + cx + 'px ' + topY + 'px,rgba(200,235,255,0.9) 0%,rgba(80,170,255,0.45) 14%,rgba(0,0,0,0) 45%);animation:fdFlash 0.5s ease-out forwards;');
-    add('position:absolute;left:' + cx + 'px;top:' + topY + 'px;width:80px;height:80px;border-radius:50%;border:3px solid #ffffff;box-shadow:0 0 16px #7fd8ff;animation:fdRing 0.6s ease-out forwards;');
+    attackStrikeFx(ov, cx, topY, CW); // 斬撃がバリアに当たってはじかれる
     dome.style.filter = 'brightness(2.2)';
     setTimeout(() => { dome.style.filter = ''; }, 160);
     // はじかれた火花（左右へ）
@@ -3140,3 +3116,397 @@ export function fxBoltShield(card, opts, callback) {
   setTimeout(done, 5000);
 }
 if (typeof window !== 'undefined') window._fxBoltShield = fxBoltShield;
+
+
+// =====================================================
+//  効果を受ける演出（全カード共通）
+//  重い演出（画面中央）: destroy（斬撃を受けて砕け散る）/ hand（緑の渦に吸い込まれて手札へ）/ deck（光の鎖でデッキへ）/
+//                       security（盾の紋章に包まれてセキュリティへ）/ dedigivolve（上から欠片になって剥がれ、下のカードが現れる）/
+//                       evo_discard（進化元が下から引き抜かれてトラッシュへ）
+//  軽い演出（盤面のカードの上）: rest / active / dp_minus / dp_plus / seal
+// =====================================================
+function _ensureHitStyle() {
+  if (document.getElementById('fx-hit-style')) return;
+  const st = document.createElement('style');
+  st.id = 'fx-hit-style';
+  st.textContent = [
+    '@keyframes hxSlash{0%{transform:translate(-50%,-50%) rotate(var(--a)) scaleX(0);opacity:0}25%{opacity:1}55%{transform:translate(-50%,-50%) rotate(var(--a)) scaleX(1);opacity:1}100%{transform:translate(-50%,-50%) rotate(var(--a)) scaleX(1.05);opacity:0}}',
+    '@keyframes hxFlash{0%{opacity:0}10%{opacity:0.95}100%{opacity:0}}',
+    '@keyframes hxRing{0%{transform:translate(-50%,-50%) scale(0.2);opacity:1}100%{transform:translate(-50%,-50%) scale(3.2);opacity:0}}',
+    '@keyframes hxShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-9px,5px)}40%{transform:translate(8px,-6px)}60%{transform:translate(-6px,-3px)}80%{transform:translate(4px,4px)}}',
+    '@keyframes hxShard{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}',
+    '@keyframes hxLbl{0%{transform:translateX(-50%) scale(1.6);opacity:0}50%{transform:translateX(-50%) scale(0.96);opacity:1}100%{transform:translateX(-50%) scale(1);opacity:1}}',
+    '@keyframes hxSpin{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}',
+    '@keyframes hxRise{0%{transform:translate(-50%,0);opacity:0}20%{opacity:1}100%{transform:translate(-50%,-46px);opacity:0}}',
+    '@keyframes hxFall{0%{transform:translate(-50%,0);opacity:0}20%{opacity:1}100%{transform:translate(-50%,40px);opacity:0}}',
+    '@keyframes hxWave{0%{transform:translate(-50%,-50%) scale(0.4,0.15);opacity:0.9}100%{transform:translate(-50%,-50%) scale(1.6,0.5);opacity:0}}',
+    '@keyframes hxBeam{0%{transform:translateX(-50%) scaleY(0);opacity:0}30%{opacity:0.9}100%{transform:translateX(-50%) scaleY(1);opacity:0}}',
+    '@keyframes hxChain{0%{stroke-dashoffset:300}100%{stroke-dashoffset:0}}',
+  ].join('');
+  document.head.appendChild(st);
+}
+// 攻撃（斬撃3本＋閃光＋衝撃波）。演出の「攻撃が来る」部分の共通部品（回避・バリアでも使う）
+export function attackStrikeFx(ov, x, y, size) {
+  _ensureHitStyle();
+  const S = size || 160;
+  const add = (css) => { const d = document.createElement('div'); d.style.cssText = css; ov.appendChild(d); return d; };
+  [-38, -22, -54].forEach((a, i) => setTimeout(() => {
+    add('position:absolute;left:' + (x + (i - 1) * 14) + 'px;top:' + (y + (i - 1) * 10) + 'px;width:' + S * 1.5 + 'px;height:7px;border-radius:4px;--a:' + a + 'deg;'
+      + 'background:linear-gradient(90deg,transparent,#ff3b2f 20%,#fff 50%,#ff3b2f 80%,transparent);box-shadow:0 0 14px #ff3b2f,0 0 28px #ff8a00;animation:hxSlash 0.32s ease-out forwards;z-index:9;');
+  }, i * 70));
+  setTimeout(() => {
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(255,120,60,0.55) 14%,rgba(0,0,0,0) 45%);animation:hxFlash 0.45s ease-out forwards;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #ffd0a0;box-shadow:0 0 18px #ff6a00;animation:hxRing 0.55s ease-out forwards;z-index:8;');
+  }, 180);
+}
+if (typeof window !== 'undefined') window._attackStrikeFx = attackStrikeFx;
+
+function _hitOverlay(z) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:' + (z || 66000) + ';background:rgba(4,4,16,0.8);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  return ov;
+}
+function _hitCard(ov, card, x, y, CW, CH, border, label) {
+  const src = card ? (card.imgSrc || cardImg(card) || '') : '';
+  const d = document.createElement('div');
+  d.style.cssText = 'position:absolute;left:' + (x - CW / 2) + 'px;top:' + (y - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid ' + border + ';box-shadow:0 0 16px ' + border + ';background:#111;will-change:transform,opacity,filter;';
+  d.innerHTML = (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:11px;">' + ((card && card.name) || '') + '</div>')
+    + (label ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);font-size:9px;color:#fff;text-align:center;padding:1px;">' + label + '</div>' : '');
+  ov.appendChild(d);
+  return d;
+}
+function _hitTitle(ov, y, text, color) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:absolute;left:50%;top:' + y + 'px;transform:translateX(-50%);white-space:nowrap;font-size:clamp(1.3rem,6vw,2rem);font-weight:900;color:#fff;text-shadow:0 0 14px ' + color + ',0 0 3px #000;animation:hxLbl 0.4s ease-out forwards;';
+  t.innerHTML = text;
+  ov.appendChild(t);
+  return t;
+}
+function _zoneIcon(ov, x, y, icon, text, color) {
+  const b = document.createElement('div');
+  b.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;background:radial-gradient(circle,' + color + '55 0%,#0a0a0a 72%);border:3px solid ' + color + ';box-shadow:0 0 22px ' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:28px;transition:transform 0.2s,opacity 0.3s;';
+  b.innerHTML = icon + '<div style="font-size:9px;font-weight:bold;">' + text + '</div>';
+  ov.appendChild(b);
+  return b;
+}
+const _pulse = (b) => { b.style.transform = 'scale(1.25)'; setTimeout(() => { b.style.transform = ''; }, 180); };
+
+// ---- 消滅: 斬撃を受け、ひびが入り、砕け散ってトラッシュへ ----
+export function fxImpactDestroy(items, callback) {
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  const list = (items || []).filter(it => it && it.card).slice(0, 8);
+  if (typeof document === 'undefined' || !document.body || list.length === 0) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  const W = window.innerWidth, H = window.innerHeight, cy = H * 0.45, n = list.length;
+  const CW = Math.min(110, (W - 40) / n - 10, W * 0.3), CH = CW * 1.4;
+  const ov = _hitOverlay(66000);
+  const remoteAll = list.every(it => it.remote);
+  _hitTitle(ov, Math.max(14, cy - CH / 2 - 70), '💥 ' + (n >= 2 ? n + '体を消滅！' : '消滅！'), '#ff6a00');
+  const by = H - Math.max(78, H * 0.13);
+  const bin = _zoneIcon(ov, W / 2, by, '🗑', (remoteAll ? '相手の' : '') + 'トラッシュ', '#ff4d4d');
+  bin.style.opacity = '0';
+  const totalW = n * CW + (n - 1) * 12;
+  const els = list.map((it, i) => {
+    const x = W / 2 - totalW / 2 + i * (CW + 12) + CW / 2;
+    return { d: _hitCard(ov, it.card, x, cy, CW, CH, '#ffb08a', (it.remote ? '相手の' : '') + (it.card.name || '')), x, card: it.card };
+  });
+  // ① 斬撃を受ける（ヒットストップ・揺れ・ひび）
+  els.forEach(({ d, x }, i) => setTimeout(() => {
+    attackStrikeFx(ov, x, cy, CW);
+    setTimeout(() => {
+      d.style.animation = 'hxShake 0.35s linear';
+      d.style.filter = 'brightness(2.2) saturate(0.4)';
+      setTimeout(() => {
+        d.style.filter = 'brightness(0.75) saturate(0.6)';
+        const crack = document.createElement('div');
+        crack.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+        crack.innerHTML = '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M50 0 L44 30 L62 46 L38 72 L60 94 L42 140 M44 30 L16 40 M62 46 L90 56 M38 72 L10 86 M60 94 L88 112" stroke="#fff" stroke-width="2.4" fill="none" style="filter:drop-shadow(0 0 3px #ff3b2f)"/></svg>';
+        d.appendChild(crack);
+      }, 160);
+    }, 200);
+  }, 250 + i * 160));
+  // ② 砕け散ってトラッシュへ（カードの絵の破片）
+  const t2 = 250 + n * 160 + 650;
+  setTimeout(() => {
+    bin.style.opacity = '1';
+    els.forEach(({ d, x, card }, i) => setTimeout(() => {
+      const src = card.imgSrc || cardImg(card) || '';
+      const r = d.getBoundingClientRect();
+      d.style.opacity = '0';
+      for (let k = 0; k < 12; k++) {
+        const sx = (k % 3) / 3, sy = Math.floor(k / 3) / 4;
+        const sh = document.createElement('div');
+        const px = r.left + sx * r.width, py = r.top + sy * r.height;
+        const toX = W / 2 - (px + r.width / 6), toY = by - (py + r.height / 8);
+        sh.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:' + (r.width / 3) + 'px;height:' + (r.height / 4) + 'px;'
+          + (src ? 'background:url(' + src + ') ' + (-sx * r.width) + 'px ' + (-sy * r.height) + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#555;')
+          + 'clip-path:polygon(' + (Math.random() * 30) + '% 0,100% ' + (Math.random() * 30) + '%,' + (70 + Math.random() * 30) + '% 100%,0 ' + (70 + Math.random() * 30) + '%);'
+          + 'transition:transform 0.35s ease-out,opacity 0.3s;';
+        ov.appendChild(sh);
+        const ang = Math.random() * Math.PI * 2, dd = 30 + Math.random() * 60;
+        requestAnimationFrame(() => { sh.style.transform = 'translate(' + Math.cos(ang) * dd + 'px,' + Math.sin(ang) * dd + 'px) rotate(' + (Math.random() * 180 - 90) + 'deg)'; });
+        setTimeout(() => {
+          sh.style.transition = 'transform 0.55s cubic-bezier(.6,0,.9,.6),opacity 0.55s';
+          sh.style.transform = 'translate(' + toX + 'px,' + toY + 'px) rotate(' + (Math.random() * 720) + 'deg) scale(0.2)';
+          sh.style.opacity = '0';
+        }, 380 + k * 18);
+      }
+      setTimeout(() => _pulse(bin), 900);
+    }, i * 140));
+  }, t2);
+  const tEnd = t2 + n * 140 + 1200;
+  setTimeout(() => { ov.style.opacity = '0'; }, tEnd);
+  setTimeout(() => { ov.remove(); done(); }, tEnd + 250);
+  setTimeout(done, tEnd + 4000);
+}
+if (typeof window !== 'undefined') window._fxBoltDestroy = fxImpactDestroy; // 効果での消滅の演出をこちらに置き換え
+
+// ---- 重い演出（1枚ずつ）: hand / deck / security / dedigivolve / evo_discard ----
+// p: { card, remote, top(デッキの上か), after(退化後のカード), removed([退化・破棄したカード]), holder(進化元の持ち主) }
+export function fxEffectHit(kind, p, callback) {
+  p = p || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body || !p.card) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.45;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const ov = _hitOverlay(66000);
+  const pre = p.remote ? '相手の' : '';
+  const nm = (p.card && p.card.name) || '';
+  let total = 2200;
+  if (kind === 'hand') {
+    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '🌀 手札に戻す', '#44dd88');
+    const c = _hitCard(ov, p.card, cx, cy, CW, CH, '#44dd88', pre + nm);
+    // 足元に緑の渦
+    const vortex = document.createElement('div');
+    vortex.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + CH / 2) + 'px;width:' + CW * 1.8 + 'px;height:' + CW * 0.7 + 'px;border-radius:50%;border:4px dashed #44dd88;box-shadow:0 0 22px #44dd88,inset 0 0 22px #44dd88;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.3s;';
+    ov.appendChild(vortex);
+    setTimeout(() => { vortex.style.opacity = '1'; vortex.style.transform = 'translate(-50%,-50%) scale(1)'; }, 150);
+    let spin = 0; const sp = setInterval(() => { spin += 14; vortex.style.transform = 'translate(-50%,-50%) scale(1) rotate(' + spin + 'deg)'; }, 30);
+    setTimeout(() => { c.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s'; c.style.transform = 'translateY(' + CH * 0.6 + 'px) scale(0.1) rotate(200deg)'; c.style.opacity = '0.2'; }, 650);
+    // 光の玉が手札（下）へ
+    setTimeout(() => {
+      clearInterval(sp); vortex.style.opacity = '0';
+      const orb = document.createElement('div');
+      orb.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + CH / 2) + 'px;width:26px;height:26px;margin:-13px;border-radius:50%;background:radial-gradient(circle,#fff,#44dd88);box-shadow:0 0 20px #44dd88;transition:transform 0.55s cubic-bezier(.3,.7,.3,1);';
+      ov.appendChild(orb);
+      const hy = p.remote ? -(cy + CH / 2) + 30 : H - (cy + CH / 2) - 30;
+      requestAnimationFrame(() => { orb.style.transform = 'translate(0,' + hy + 'px) scale(0.6)'; });
+      _hitTitle(ov, Math.min(H - 60, cy + CH / 2 + 30), '<span style="font-size:0.7em;">' + pre + '「' + nm + '」を手札に戻した</span>', '#44dd88');
+    }, 1350);
+  } else if (kind === 'deck') {
+    const top = !!p.top;
+    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '⛓ デッキの' + (top ? '上' : '下') + 'に戻す', '#ffd84a');
+    const c = _hitCard(ov, p.card, cx, cy, CW, CH, '#ffd84a', pre + nm);
+    // 上から光の鎖が降りてきて巻き付く
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.style.cssText = 'position:absolute;left:0;top:0;';
+    [[-1, 0.2], [1, 0.45], [-1, 0.7]].forEach(([dir, fy], i) => {
+      const path = document.createElementNS(svgNS, 'path');
+      const yy = cy - CH / 2 + CH * fy;
+      path.setAttribute('d', 'M ' + (cx + dir * W * 0.4) + ' -10 Q ' + (cx + dir * 30) + ' ' + (yy - 80) + ' ' + (cx - dir * CW * 0.6) + ' ' + yy + ' L ' + (cx + dir * CW * 0.6) + ' ' + (yy + 10));
+      path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#ffe27a'); path.setAttribute('stroke-width', '5'); path.setAttribute('stroke-dasharray', '12 6');
+      path.style.cssText = 'filter:drop-shadow(0 0 6px #ffb000);stroke-dashoffset:300;animation:hxChain 0.6s ease-out ' + (i * 0.12) + 's forwards;';
+      svg.appendChild(path);
+    });
+    ov.appendChild(svg);
+    const deckX = p.remote ? W * 0.85 : W * 0.15, deckY = p.remote ? H * 0.16 : H * 0.84;
+    const dk = _zoneIcon(ov, deckX, deckY, '📚', pre + 'デッキ' + (top ? '（上）' : '（下）'), '#ffd84a');
+    setTimeout(() => {
+      c.style.transition = 'transform 0.75s cubic-bezier(.6,0,.9,.6),opacity 0.75s';
+      c.style.transform = 'translate(' + (deckX - cx) + 'px,' + (deckY - cy) + 'px) scale(0.15)';
+      c.style.opacity = '0.2';
+      svg.style.transition = 'opacity 0.5s'; svg.style.opacity = '0';
+    }, 1050);
+    setTimeout(() => _pulse(dk), 1800);
+  } else if (kind === 'security') {
+    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '🛡 セキュリティの' + (p.bottom ? '下' : '上') + 'に置く', '#b47cff');
+    const c = _hitCard(ov, p.card, cx, cy, CW, CH, '#b47cff', pre + nm);
+    // 盾の紋章がカードを包む
+    const em = document.createElement('div');
+    em.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + CW * 1.9 + 'px;height:' + CW * 1.9 + 'px;border-radius:50%;border:4px solid #d6b4ff;box-shadow:0 0 30px #b47cff,inset 0 0 30px #b47cff;'
+      + 'background:radial-gradient(circle,rgba(180,124,255,0.15) 0%,rgba(180,124,255,0.4) 70%,transparent 72%);display:flex;align-items:center;justify-content:center;font-size:' + CW * 0.9 + 'px;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.35s cubic-bezier(.2,.9,.3,1.3);';
+    em.innerHTML = '<span style="opacity:0.35;">🛡</span>';
+    ov.appendChild(em);
+    setTimeout(() => { em.style.opacity = '1'; em.style.transform = 'translate(-50%,-50%) scale(1)'; }, 150);
+    const sx = p.remote ? W * 0.85 : W * 0.15, sy = p.remote ? H * 0.2 : H * 0.8;
+    const si = _zoneIcon(ov, sx, sy, '🛡', pre + 'セキュリティ', '#b47cff');
+    // 裏返りながらセキュリティへ
+    setTimeout(() => {
+      c.style.transition = 'transform 0.35s ease-in';
+      if (!p.faceUp) c.style.transform = 'rotateY(90deg)';
+      setTimeout(() => {
+        const back = (window._cardBackUrl || '');
+        if (!p.faceUp) c.innerHTML = back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '';
+        c.style.transform = 'rotateY(0deg)';
+        setTimeout(() => {
+          c.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s';
+          c.style.transform = 'translate(' + (sx - cx) + 'px,' + (sy - cy) + 'px) scale(0.15)';
+          c.style.opacity = '0.3';
+          em.style.opacity = '0';
+        }, 300);
+      }, 350);
+    }, 800);
+    setTimeout(() => _pulse(si), 2100);
+    total = 2500;
+  } else if (kind === 'dedigivolve') {
+    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '🔻 退化', '#aa66ff');
+    // 下のカード（退化後）を先に置き、上に今のカードを重ねる。上のカードが欠片になって剥がれる
+    const after = p.after ? _hitCard(ov, p.after, cx, cy, CW, CH, '#aa66ff', pre + (p.after.name || '')) : null;
+    const top = _hitCard(ov, p.card, cx, cy, CW, CH, '#aa66ff', pre + nm);
+    setTimeout(() => {
+      attackStrikeFx(ov, cx, cy, CW);
+      const src = p.card.imgSrc || cardImg(p.card) || '';
+      setTimeout(() => {
+        const r = top.getBoundingClientRect();
+        top.style.opacity = '0';
+        for (let k = 0; k < 15; k++) {
+          const sx2 = (k % 3) / 3, sy2 = Math.floor(k / 3) / 5;
+          const sh = document.createElement('div');
+          sh.style.cssText = 'position:absolute;left:' + (r.left + sx2 * r.width) + 'px;top:' + (r.top + sy2 * r.height) + 'px;width:' + (r.width / 3) + 'px;height:' + (r.height / 5) + 'px;'
+            + (src ? 'background:url(' + src + ') ' + (-sx2 * r.width) + 'px ' + (-sy2 * r.height) + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#555;')
+            + '--dx:' + ((Math.random() - 0.5) * 200) + 'px;--dy:' + (-60 - Math.random() * 160) + 'px;--r:' + (Math.random() * 360 - 180) + 'deg;animation:hxShard 0.9s ease-out ' + (k * 0.025) + 's forwards;box-shadow:0 0 8px #aa66ff;';
+          ov.appendChild(sh);
+        }
+        if (after) { after.style.transition = 'box-shadow 0.4s'; after.style.boxShadow = '0 0 30px #aa66ff,0 0 60px #aa66ff'; }
+        const n2 = (p.removed || []).length;
+        _hitTitle(ov, Math.min(H - 60, cy + CH / 2 + 30), '<span style="font-size:0.7em;">' + pre + '「' + nm + '」' + (p.after ? '→「' + (p.after.name || '') + '」' : '') + (n2 > 1 ? '（' + n2 + '枚破棄）' : '') + '</span>', '#aa66ff');
+      }, 260);
+    }, 400);
+  } else if (kind === 'evo_discard') {
+    const holder = p.holder || p.card;
+    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '📤 進化元を破棄', '#ff9933');
+    const removed = (p.removed || [p.card]).slice(0, 4);
+    const evos = removed.map((rc, i) => { const e = _hitCard(ov, rc, cx + (i - (removed.length - 1) / 2) * 14, cy + 20 + i * 6, CW * 0.85, CH * 0.85, '#ff9933', ''); e.style.zIndex = '1'; return e; });
+    const h = _hitCard(ov, holder, cx, cy, CW, CH, '#ff9933', pre + ((holder && holder.name) || ''));
+    h.style.zIndex = '2';
+    const by = H - Math.max(78, H * 0.13);
+    const bin = _zoneIcon(ov, cx, by, '🗑', pre + 'トラッシュ', '#ff4d4d');
+    // 下から引き抜かれる → トラッシュへ
+    evos.forEach((e, i) => {
+      setTimeout(() => { e.style.transition = 'transform 0.35s ease-out'; e.style.transform = 'translate(' + ((i % 2 ? 1 : -1) * (CW * 0.9 + i * 10)) + 'px,' + (CH * 0.35) + 'px) rotate(' + ((i % 2 ? 1 : -1) * 15) + 'deg)'; }, 450 + i * 160);
+      setTimeout(() => {
+        const r = e.getBoundingClientRect();
+        e.style.transition = 'transform 0.6s cubic-bezier(.6,0,.9,.6),opacity 0.6s';
+        e.style.transform = 'translate(' + (cx - (r.left + r.width / 2) + (r.left + r.width / 2 - cx)) * 0 + 'px,0) translate(' + (cx - (r.left + r.width / 2)) + 'px,' + (by - (r.top + r.height / 2)) + 'px) scale(0.12) rotate(540deg)';
+        e.style.opacity = '0.2';
+        setTimeout(() => _pulse(bin), 600);
+      }, 1050 + i * 160);
+    });
+    total = 2100 + removed.length * 160;
+  }
+  setTimeout(() => { ov.style.opacity = '0'; }, total);
+  setTimeout(() => { ov.remove(); done(); }, total + 250);
+  setTimeout(done, total + 4000);
+}
+if (typeof window !== 'undefined') window._fxEffectHit = fxEffectHit;
+
+// ---- 軽い演出（盤面のカードの上に重ねる・待たない）: rest / active / dp_minus / dp_plus / seal ----
+export function fxBoardHit(kind, side, idx, value) {
+  if (typeof document === 'undefined' || !document.body) return;
+  _ensureHitStyle();
+  const row = document.getElementById(side === 'player' ? 'pl-battle-row' : 'ai-battle-row');
+  const slot = row ? row.querySelectorAll('.b-slot')[idx] : null;
+  if (!slot) return;
+  const r = slot.getBoundingClientRect();
+  if (!r.width) return;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46500;overflow:hidden;';
+  document.body.appendChild(layer);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const txt = (s, color, up) => add('position:absolute;left:' + x + 'px;top:' + (up ? r.top + 6 : y) + 'px;white-space:nowrap;font-size:18px;font-weight:900;color:' + color + ';text-shadow:0 0 8px ' + color + ',0 0 2px #000;animation:' + (up ? 'hxRise' : 'hxFall') + ' 0.9s ease-out forwards;', s);
+  if (kind === 'rest') {
+    // 上から紫の重力の波紋が押しつぶす
+    for (let i = 0; i < 3; i++) add('position:absolute;left:' + x + 'px;top:' + (r.top + i * 10) + 'px;width:' + r.width * 1.3 + 'px;height:' + r.width * 0.6 + 'px;border-radius:50%;border:3px solid #b47cff;box-shadow:0 0 12px #8a3dff;animation:hxWave 0.6s ease-out ' + (i * 0.1) + 's forwards;opacity:0;');
+    txt('💤 レスト', '#d6b4ff', false);
+  } else if (kind === 'active') {
+    add('position:absolute;left:' + x + 'px;top:' + r.top + 'px;width:' + r.width * 0.9 + 'px;height:' + r.height + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(68,221,136,0.8),rgba(68,221,136,0));animation:hxBeam 0.7s ease-out forwards;');
+    txt('⤴ アクティブ', '#7dffb0', true);
+  } else if (kind === 'dp_minus') {
+    // 赤い楔が打ち込まれ、ひびが入り、数字が下へ落ちる
+    add('position:absolute;left:' + x + 'px;top:' + (r.top - 30) + 'px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:34px solid #ff3b2f;filter:drop-shadow(0 0 8px #ff3b2f);transform:translateX(-50%);transition:transform 0.18s ease-in;', '');
+    const wedge = layer.lastChild;
+    requestAnimationFrame(() => { wedge.style.transform = 'translate(-50%,' + (r.height * 0.35) + 'px)'; });
+    setTimeout(() => {
+      wedge.style.opacity = '0';
+      add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;', '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M50 40 L42 62 L58 76 L46 100 M42 62 L24 70 M58 76 L80 84" stroke="#ff8a7a" stroke-width="2.5" fill="none" style="filter:drop-shadow(0 0 3px #ff3b2f)"/></svg>');
+      add('position:absolute;left:' + x + 'px;top:' + (r.top + r.height * 0.35) + 'px;width:60px;height:60px;border-radius:50%;border:3px solid #ff3b2f;animation:hxRing 0.5s ease-out forwards;');
+      txt('-' + Math.abs(value || 0), '#ff6a5a', false);
+    }, 200);
+  } else if (kind === 'dp_plus') {
+    add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:8px;box-shadow:0 0 22px #ffd84a,0 0 40px #ffb000,inset 0 0 18px #ffd84a;opacity:0;transition:opacity 0.25s;');
+    const aura = layer.lastChild; requestAnimationFrame(() => { aura.style.opacity = '1'; }); setTimeout(() => { aura.style.opacity = '0'; }, 650);
+    for (let i = 0; i < 8; i++) add('position:absolute;left:' + (r.left + Math.random() * r.width) + 'px;top:' + (r.top + r.height * 0.8) + 'px;width:5px;height:5px;border-radius:50%;background:#ffe27a;box-shadow:0 0 6px #ffb000;--dx:' + ((Math.random() - 0.5) * 20) + 'px;--dy:' + (-40 - Math.random() * 50) + 'px;--r:0deg;animation:hxShard 0.8s ease-out forwards;');
+    txt('+' + Math.abs(value || 0), '#ffe27a', true);
+  } else if (kind === 'seal') {
+    // 鎖の×印の封印
+    add('position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;opacity:0;transition:opacity 0.2s;',
+      '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M10 10 L90 130 M90 10 L10 130" stroke="#c8c8d8" stroke-width="7" stroke-dasharray="10 5" fill="none" style="filter:drop-shadow(0 0 4px #ff3b2f)"/></svg>');
+    const seal = layer.lastChild; requestAnimationFrame(() => { seal.style.opacity = '1'; }); setTimeout(() => { seal.style.opacity = '0'; }, 750);
+    txt('🔒 ' + (value || '封印'), '#ffb0a8', false);
+  }
+  setTimeout(() => layer.remove(), 1100);
+}
+if (typeof window !== 'undefined') window._fxBoardHit = fxBoardHit;
+
+// ---- 盤面の状態の変化（DP・レスト・封印）を見て、効果の処理中に変わったものに軽い演出を出す ----
+// renderAll の最後に呼ぶ。相手の画面には fx_boardHit で送る（相手の画面ではこちらの変化として出す）
+const _boardSnap = new WeakMap();
+const _boardRecentMap = {};
+function _boardMark(sd, idx, k) { _boardRecentMap[sd + ':' + idx + ':' + k] = Date.now(); }
+function _boardRecent(sd, idx, k) { const t = _boardRecentMap[sd + ':' + idx + ':' + k]; return !!t && Date.now() - t < 2500; }
+// 相手の端末から届いた盤面の演出（fx_boardHit）
+export function remoteBoardHit(kind, sd, idx, value) {
+  if (_boardRecent(sd, idx, kind)) return;
+  _boardMark(sd, idx, kind);
+  setTimeout(() => fxBoardHit(kind, sd, idx, value), 30);
+}
+if (typeof window !== 'undefined') window._fxRemoteBoardHit = remoteBoardHit;
+export function boardStateDiff() {
+  try {
+    const bs = window._lastBattleState;
+    if (!bs) return;
+    const active = typeof window._isEffectProcessing === 'function' && window._isEffectProcessing();
+    const sealOf = (c) => {
+      const b = Array.isArray(c.buffs) ? c.buffs : [];
+      const a = !!c.cantAttack || b.some(x => x && (x.type === 'cant_attack' || x.type === 'cant_attack_block'));
+      const k = !!c.cantBlock || b.some(x => x && (x.type === 'cant_block' || x.type === 'cant_attack_block'));
+      return (a ? 'A' : '') + (k ? 'B' : '');
+    };
+    ['player', 'ai'].forEach((sd) => {
+      (bs[sd].battleArea || []).forEach((c, idx) => {
+        if (!c) return;
+        const now = { s: !!c.suspended, dp: parseInt(c.dp, 10) || 0, seal: sealOf(c), no: c.cardNo || '' };
+        const prev = _boardSnap.get(c);
+        _boardSnap.set(c, now);
+        // 効果の処理中の変化だけ（進化等でカードが変わったときは出さない）
+        if (!prev || prev.no !== now.no || !active || window._fxMoveHold > 0) return;
+        const hits = [];
+        if (prev.s !== now.s) hits.push([now.s ? 'rest' : 'active', null]);
+        if (prev.dp !== now.dp) hits.push([now.dp < prev.dp ? 'dp_minus' : 'dp_plus', Math.abs(now.dp - prev.dp)]);
+        if (prev.seal !== now.seal && now.seal.length > prev.seal.length) {
+          hits.push(['seal', now.seal === 'AB' ? 'アタック・ブロック不可' : now.seal === 'A' ? 'アタック不可' : 'ブロック不可']);
+        }
+        hits.forEach(([k, v], i) => {
+          // 相手の端末から同じ演出が届いた直後なら重ねない（両方の端末で処理中のとき）
+          if (_boardRecent(sd, idx, k)) return;
+          _boardMark(sd, idx, k);
+          setTimeout(() => fxBoardHit(k, sd, idx, v), i * 250);
+          if (typeof window._onlineSendCommand === 'function' && typeof window._isOnlineMode === 'function' && window._isOnlineMode() && !window._suppressFxSend) {
+            try { window._onlineSendCommand({ type: 'fx_boardHit', kind: k, side: sd === 'player' ? 'ai' : 'player', idx, value: v }); } catch (_) {}
+          }
+        });
+      });
+    });
+  } catch (e) { console.error('[boardStateDiff]', e); }
+}
+if (typeof window !== 'undefined') window._fxBoardStateDiff = boardStateDiff;

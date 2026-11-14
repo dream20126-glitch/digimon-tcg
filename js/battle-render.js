@@ -277,6 +277,8 @@ export function renderAll(force) {
   }
   // 発揮待ちの効果の表示（場を離れて発揮できなくなったものを消す）
   if (typeof window !== 'undefined' && window._hudRefresh) window._hudRefresh();
+  // 効果の処理中に変わったレスト/アクティブ・DP・アタック/ブロック不可を、盤面のカードの上で演出する
+  if (typeof window !== 'undefined' && window._fxBoardStateDiff) window._fxBoardStateDiff();
 }
 
 // ===== セキュリティ描画 =====

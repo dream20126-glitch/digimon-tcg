@@ -722,8 +722,10 @@ function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
     }
     ctx.renderAll && ctx.renderAll();
     const dk = 'デッキ' + (top ? '(上)' : '(下)');
-    _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + dk, () => _deckIncreased(ctx, sideName, () => done && done(true)),
-      { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + dk });
+    const _afterDeck = () => _deckIncreased(ctx, sideName, () => done && done(true));
+    // 光の鎖でデッキへ（両方の画面）
+    _effectHitSync(ctx, 'deck', { card: c, top: !!top, remote: sideName === 'ai' }, _afterDeck,
+      () => _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + dk, _afterDeck, { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + dk }));
   });
 }
 
@@ -1622,6 +1624,7 @@ function executeCostAndActions(block, ctx, callback) {
 // 選択効果の結果（カード画像＋アクション）を相手に送信
 function sendEffectResult(card, actionType, ctx) {
   if (!window._isOnlineMode || !window._isOnlineMode()) return;
+  if (actionType === 'bounce' && _hitFxOn()) return; // 手札に戻す演出（fx_effectHit）を送るので出さない
   if (ctx.side !== 'player') return; // 自分の効果のみ送信
   const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || '') : '';
   const labels = { summon: '登場！', destroy: '消滅！', bounce: '手札に戻す！', rest: 'レスト！', active: 'アクティブ！', evolve: '進化！', recover: 'リカバリー！', dp_plus: 'DP強化！', dp_minus: 'DP弱体化！' };
@@ -2422,6 +2425,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (!c || opponent.battleArea[i] !== c) { next(); return; }
           doBounce(opponent, i, ctx, () => {
             if (!(opponent.hand || []).includes(c)) { next(); return; }
+            if (_hitFxOn()) { next(); return; } // doBounce が演出を出した
             _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の手札', next, { remoteFrom: '自分のバトルエリア', remoteTo: '自分の手札' });
           });
         };
@@ -2882,7 +2886,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           // 上か下から順に消していて、選んだのと違うカードが残っていた（メタルガルルモン EX12-035 → グソクモン）
           const _bef = _edBefore.get(tgt) || [];
           const stackIdxs = discarded.map(c => _bef.indexOf(c));
-          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top',
+          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top', hitFx: _hitFxOn(),
             stackIdxs: stackIdxs.every(x => x >= 0) ? stackIdxs : null, cardNos: discarded.map(c => c.cardNo || '') });
           if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
         }
@@ -2890,7 +2894,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // （盤面は state_sync で同期。以前は相手の画面に何も出ていなかった）
         // 3枚以上は下の一覧の演出（_moveBatchIntro → fx_moveBatch）が相手の画面にも出るので、1枚ずつの演出は送らない
         else if (edOwner === player && discarded.length < 3 && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-          try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???') }); } catch (_) {}
+          try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???'), hitFx: _hitFxOn() }); } catch (_) {}
         }
         // カード移動演出（1枚ずつ順番に）
         let idx = 0;
@@ -2904,6 +2908,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             setTimeout(showNextDiscard, 500);
           }
         }
+        // 進化元が下から引き抜かれてトラッシュへ（両方の画面）
+        if (_hitFxOn()) { _effectHitSync(ctx, 'evo_discard', { card: discarded[0], holder: tgt, removed: discarded, remote: !!(ctx.bs && edOwner === ctx.bs.ai) }, () => onDone && onDone(true)); return; }
         _moveBatchIntro(ctx, discarded, tgt.name + 'の進化元', 'トラッシュ', showNextDiscard, { noRemote: true });
       };
       // 破棄元と破棄したカード（破棄時点で一番下/一番上だったか）を「破棄されたとき」の判定用に記録する
@@ -4724,7 +4730,8 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
       if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
     }
     ctx.renderAll();
-    finish();
+    // 緑の渦に吸い込まれて手札へ（両方の画面）
+    _effectHitSync(ctx, 'hand', { card: bounced, remote: targetSideName === 'ai' }, finish);
   });
 }
 
@@ -5756,6 +5763,23 @@ function _moveBatchSkipping(card) {
 
 // エンジン外（battle-combat.js の【トレーニング】等）から同じ移動演出を使うための公開口
 if (typeof window !== 'undefined') window._fxMoveSyncSide = (side, card, fromLabel, toLabel, cb, opts) => _fxMoveSync({ side }, card, fromLabel, toLabel, cb, opts);
+// 効果を受ける演出（手札に戻す・デッキに戻す・セキュリティに置く・退化・進化元を破棄）を出すか。
+// バトル（VS画面）や「消滅するとき」の処理中（_fxMoveHold）はそちらの演出に任せる
+function _hitFxOn() { return typeof window !== 'undefined' && typeof window._fxEffectHit === 'function' && !(window._fxMoveHold > 0); }
+// kind: 'hand'|'deck'|'security'|'dedigivolve'|'evo_discard'。p: { card, remote, top, bottom, faceUp, after, removed, holder }
+// 両方の画面に出す。出せないとき（_hitFxOn が false）は fallback（いつもの移動演出）
+function _effectHitSync(ctx, kind, p, cb, fallback) {
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[effectHit]', e); } };
+  if (!_hitFxOn() || !p || !p.card) { if (fallback) fallback(); else done(); return; }
+  if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try {
+      const ser = (c) => c ? { name: c.name || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' } : null;
+      window._onlineSendCommand({ type: 'fx_effectHit', kind, card: ser(p.card), after: ser(p.after), holder: ser(p.holder),
+        removed: (p.removed || []).slice(0, 4).map(ser), top: !!p.top, bottom: !!p.bottom, faceUp: !!p.faceUp, remote: !p.remote });
+    } catch (_) {}
+  }
+  window._fxEffectHit(kind, p, done);
+}
 function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   opts = opts || {};
   const done = () => { try { cb && cb(); } catch (e) { console.error('[_fxMoveSync]', e); } };
@@ -20163,6 +20187,7 @@ function executeRecipeStep(step, ctx, store, callback) {
                   targetIdx: idx,
                   onSide: isOwn ? 'opp' : 'self', // 受信側視点: 'self'=自分側 / 'opp'=相手側
                   removeCount: actualN,
+                  hitFx: _hitFxOn(), // 退化の演出は fx_effectHit で送るので、受信側の移動演出は出さない
                 });
                 // 受信側の bs.player 上書き防止用 + 自側 (送信側) の bs.ai 上書き防止用
                 // (markEvoModified は両方向で機能する flag)
@@ -20180,6 +20205,8 @@ function executeRecipeStep(step, ctx, store, callback) {
               window._fxCardMove(card, tgt.name + (card === tgt ? '' : 'の進化元'), 'トラッシュ', showRemovedAnim);
             } else { setTimeout(showRemovedAnim, 300); }
           }
+          // 上のカードが欠片になって剥がれ、下のカードが現れる（両方の画面）
+          if (_hitFxOn()) { _effectHitSync(ctx, 'dedigivolve', { card: tgt, after: newCarrier, removed, remote: !!(ctx.bs && tgtPlayer === ctx.bs.ai) }, dediNext); return; }
           _moveBatchIntro(ctx, removed, tgt.name + 'の進化元', 'トラッシュ', showRemovedAnim, { noRemote: true });
         }
         dediNext();
@@ -22753,7 +22780,9 @@ function executeRecipeStep(step, ctx, store, callback) {
                 const _psZone = _pl.zone === 'tamerArea' ? 'テイマーエリア' : 'バトルエリア';
                 const _psOwner = _pl.opp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
                 const _psSec = ((_pl.opp ? opponent : player).security || []).length;
-                _fxSecMoveSync(ctx, _pl.card, 'in', _psOwner, { bottom: !!_psToBottom, faceUp: !!_psFaceUp, fromZone: _psZone, secCount: Math.max(0, _psSec - 1) }, () => _psNext(k + 1));
+                // 盾の紋章に包まれてセキュリティへ（両方の画面）
+                _effectHitSync(ctx, 'security', { card: _pl.card, remote: _psOwner === 'ai', bottom: !!_psToBottom, faceUp: !!_psFaceUp }, () => _psNext(k + 1),
+                  () => _fxSecMoveSync(ctx, _pl.card, 'in', _psOwner, { bottom: !!_psToBottom, faceUp: !!_psFaceUp, fromZone: _psZone, secCount: Math.max(0, _psSec - 1) }, () => _psNext(k + 1)));
               });
             };
             const _psPlace = (e0) => {

@@ -1390,6 +1390,21 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    // 相手の効果を受ける演出（手札に戻す・デッキに戻す・セキュリティに置く・退化・進化元を破棄）
+    case 'fx_effectHit': {
+      if (typeof window._fxEffectHit === 'function' && cmd.card) {
+        const mk = (o) => o ? { name: o.name || '', imgSrc: o.imgSrc || '', _remoteFx: true } : null;
+        const p = { card: mk(cmd.card), after: mk(cmd.after), holder: mk(cmd.holder), removed: (cmd.removed || []).map(mk).filter(Boolean),
+          top: !!cmd.top, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, remote: !!cmd.remote };
+        enqueueFx((done) => window._fxEffectHit(cmd.kind, p, done));
+      }
+      break;
+    }
+    // 相手の端末で効果を処理中に変わった盤面のカード（レスト/アクティブ・DP・アタック/ブロック不可）
+    case 'fx_boardHit': {
+      if (typeof window._fxRemoteBoardHit === 'function') window._fxRemoteBoardHit(cmd.kind, cmd.side, cmd.idx, cmd.value);
+      break;
+    }
     case 'fx_boltDestroy': {
       // 相手の効果での消滅（青い稲妻 → トラッシュ）
       if (typeof window._fxBoltDestroy === 'function' && Array.isArray(cmd.items)) {
@@ -1968,7 +1983,7 @@ function onRemoteCommand(cmd) {
           window._fxCardMove(card, targetName + 'の進化元', 'トラッシュ', next);
         } else { setTimeout(next, 500); }
       }
-      if (discardedNames.length > 0) next();
+      if (discardedNames.length > 0 && !cmd.hitFx) next(); // hitFx: 演出は fx_effectHit で届く
       break;
     }
     case 'fx_remoteSuspend': {
@@ -2076,6 +2091,7 @@ function onRemoteCommand(cmd) {
         // 反映後の state を相手機にも送信
         if (window._onlineSendStateSync) window._onlineSendStateSync();
       } catch(_) {}
+      if (cmd.hitFx) break; // 退化の演出は fx_effectHit で届く
       // 1枚ずつ移動演出（3枚以上なら一覧の演出を1回出して、1枚ずつは省略する）
       if (removed.length >= 3) break; // 一覧の演出（fx_moveBatch）で表示する
       let dedi = 0;
@@ -2192,6 +2208,7 @@ function onRemoteCommand(cmd) {
         }
       }
       addLog('📤 「' + (cmd.targetName || '???') + '」の進化元から「' + (cmd.discardedNames || '???') + '」破棄！');
+      if (cmd.hitFx) break; // 進化元を破棄する演出は fx_effectHit で届く
       // カード移動演出（1枚ずつ。3枚以上なら一覧の演出を1回出す）
       if (discardedCards.length >= 3) break; // 一覧の演出（fx_moveBatch）で表示する
       let di = 0;

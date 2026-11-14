@@ -16664,7 +16664,10 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
     // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
     if (!_hasChainOrSubj
-        && ['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action)
+        // 対象を選ぶ盤面の処理（_NC_BOARD_ACTIONS: デッキに戻す・セキュリティに置く等も含む）は、条件を対象の絞り込みとして見る
+        // （テラーズクラスター BT2-102「レスト状態の相手のデジモン1体をデッキの下に戻す」が、cond_rest を使ったオプション自身の
+        // 状態として判定され、発動しなかった）
+        && (_NC_BOARD_ACTIONS.has(step.action) || ['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action))
         && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
         && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
       const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));
@@ -23471,8 +23474,10 @@ function executeRecipeStep(step, ctx, store, callback) {
             // デッキへ戻る演出（テラーズクラスター等）
             // 相手の画面にも「自分のデジモンがデッキに戻った」演出を出す（相手視点のラベル）
             const _rdDk = 'デッキ' + (_rdTop ? '(上)' : '(下)');
-            _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + _rdDk, () => _fireDeckIncrease(() => doneCb && doneCb()),
-              { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + _rdDk });
+            // 光の鎖でデッキへ（効果を受ける演出。両方の画面）
+            _effectHitSync(ctx, 'deck', { card: c, top: !!_rdTop, remote: _rdSideName === 'ai' }, () => _fireDeckIncrease(() => doneCb && doneCb()),
+              () => _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + _rdDk, () => _fireDeckIncrease(() => doneCb && doneCb()),
+                { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + _rdDk }));
           });
         };
         if (effectiveSide === 'ai') {

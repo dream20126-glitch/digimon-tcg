@@ -442,6 +442,10 @@ export function setupCommonWindowExports() {
     try { fxCardMoveMulti(cards, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
   };
   window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {
+    // 効果を受ける演出（手札に戻す・デッキに戻す等）を出した直後の同じカードは、移動演出を重ねない
+    if (card && Array.isArray(window._fxHitRecent) && window._fxHitRecent.some(e => e && Date.now() - e.at < 8000 && (e.card === card || (card._remoteFx && e.name && e.name === card.name)))) {
+      setTimeout(() => { callback && callback(); }, 0); return;
+    }
     // VS画面の決着・効果での消滅回避（稲妻）の演出で「代わりにトラッシュへ送るカード」を見せている間は、
     // 同じカードのトラッシュへの移動演出を重ねない（window._fxMoveHold。battle-combat.js / effect-engine.js が立てる）
     if (window._fxMoveHold > 0 && /トラッシュ/.test(String(toLabel || ''))) { setTimeout(() => { callback && callback(); }, 0); return; }

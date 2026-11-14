@@ -3318,6 +3318,13 @@ if (typeof window !== 'undefined') window._fxBoltDestroy = fxImpactDestroy; // �
 // p: { card, remote, top(デッキの上か), after(退化後のカード), removed([退化・破棄したカード]), holder(進化元の持ち主) }
 export function fxEffectHit(kind, p, callback) {
   p = p || {};
+  // このカードの「いつもの移動演出」は出さない（効果を受ける演出で見せたので。window._fxCardMove / fx_remoteCardMove が見る）
+  try {
+    const now = Date.now();
+    window._fxHitRecent = (window._fxHitRecent || []).filter(e => now - e.at < 8000);
+    [p.card, p.after, p.holder].concat(p.removed || [], (p.cards || []).map(it => it && it.card)).filter(Boolean)
+      .forEach(c => window._fxHitRecent.push({ card: c, name: c.name || '', at: now }));
+  } catch (_) {}
   let fin = false;
   const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
   if (typeof document === 'undefined' || !document.body || !p.card) { callback && callback(); return; }
@@ -3330,25 +3337,50 @@ export function fxEffectHit(kind, p, callback) {
   const nm = (p.card && p.card.name) || '';
   let total = 2200;
   if (kind === 'hand') {
-    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '🌀 手札に戻す', '#44dd88');
-    const c = _hitCard(ov, p.card, cx, cy, CW, CH, '#44dd88', pre + nm);
-    // 足元に緑の渦
-    const vortex = document.createElement('div');
-    vortex.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + CH / 2) + 'px;width:' + CW * 1.8 + 'px;height:' + CW * 0.7 + 'px;border-radius:50%;border:4px dashed #44dd88;box-shadow:0 0 22px #44dd88,inset 0 0 22px #44dd88;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.3s;';
-    ov.appendChild(vortex);
-    setTimeout(() => { vortex.style.opacity = '1'; vortex.style.transform = 'translate(-50%,-50%) scale(1)'; }, 150);
-    let spin = 0; const sp = setInterval(() => { spin += 14; vortex.style.transform = 'translate(-50%,-50%) scale(1) rotate(' + spin + 'deg)'; }, 30);
-    setTimeout(() => { c.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s'; c.style.transform = 'translateY(' + CH * 0.6 + 'px) scale(0.1) rotate(200deg)'; c.style.opacity = '0.2'; }, 650);
-    // 光の玉が手札（下）へ
-    setTimeout(() => {
-      clearInterval(sp); vortex.style.opacity = '0';
-      const orb = document.createElement('div');
-      orb.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + CH / 2) + 'px;width:26px;height:26px;margin:-13px;border-radius:50%;background:radial-gradient(circle,#fff,#44dd88);box-shadow:0 0 20px #44dd88;transition:transform 0.55s cubic-bezier(.3,.7,.3,1);';
-      ov.appendChild(orb);
-      const hy = p.remote ? -(cy + CH / 2) + 30 : H - (cy + CH / 2) - 30;
-      requestAnimationFrame(() => { orb.style.transform = 'translate(0,' + hy + 'px) scale(0.6)'; });
-      _hitTitle(ov, Math.min(H - 60, cy + CH / 2 + 30), '<span style="font-size:0.7em;">' + pre + '「' + nm + '」を手札に戻した</span>', '#44dd88');
-    }, 1350);
+    // 手札に戻す: 下に「手札」を表示し、カードが緑の渦に巻かれながら1枚ずつ手札へ吸い込まれる（複数でも1回の演出で順に）
+    ov.innerHTML = '';
+    const list = (Array.isArray(p.cards) && p.cards.length ? p.cards : [{ card: p.card, remote: p.remote }]).filter(it => it && it.card).slice(0, 6);
+    const n = list.length;
+    const HW = Math.min(110, (W - 40) / n - 10, W * 0.3), HH = HW * 1.4;
+    const allRemote = list.every(it => it.remote);
+    _hitTitle(ov, Math.max(14, cy - HH / 2 - 80), '🌀 ' + (n >= 2 ? n + '体を' : '') + '手札に戻す', '#44dd88');
+    const hy = H - Math.max(78, H * 0.13);
+    const hand = _zoneIcon(ov, cx, hy, '✋', (allRemote ? '相手の' : '') + '手札', '#44dd88');
+    const totalW = n * HW + (n - 1) * 12;
+    const els = list.map((it, k) => {
+      const x = cx - totalW / 2 + k * (HW + 12) + HW / 2;
+      return { d: _hitCard(ov, it.card, x, cy, HW, HH, '#44dd88', (it.remote ? '相手の' : '') + (it.card.name || '')), x };
+    });
+    const STEP = 1100;
+    els.forEach(({ d, x }, k) => {
+      const t0 = 500 + k * STEP;
+      // 足元に緑の渦が開く
+      setTimeout(() => {
+        const vortex = document.createElement('div');
+        vortex.style.cssText = 'position:absolute;left:' + x + 'px;top:' + (cy + HH / 2) + 'px;width:' + HW * 1.8 + 'px;height:' + HW * 0.7 + 'px;border-radius:50%;border:4px dashed #44dd88;box-shadow:0 0 22px #44dd88,inset 0 0 22px #44dd88;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.3s;';
+        ov.appendChild(vortex);
+        requestAnimationFrame(() => { vortex.style.opacity = '1'; vortex.style.transform = 'translate(-50%,-50%) scale(1)'; });
+        let spin = 0; const sp = setInterval(() => { spin += 14; vortex.style.transform = 'translate(-50%,-50%) scale(1) rotate(' + spin + 'deg)'; }, 30);
+        d.style.transition = 'transform 0.35s ease-in-out';
+        d.style.transform = 'rotate(-8deg) scale(0.95)';
+        // 渦に巻かれて、回りながら下の「手札」へ吸い込まれる
+        setTimeout(() => {
+          d.style.transition = 'transform 0.75s cubic-bezier(.6,0,.9,.6),opacity 0.75s';
+          d.style.transform = 'translate(' + (cx - x) + 'px,' + (hy - cy) + 'px) scale(0.12) rotate(540deg)';
+          d.style.opacity = '0.3';
+          // 緑の光の粒が一緒に流れ込む
+          for (let q = 0; q < 8; q++) {
+            const pt = document.createElement('div');
+            pt.style.cssText = 'position:absolute;left:' + (x + (Math.random() - 0.5) * HW) + 'px;top:' + (cy + (Math.random() - 0.5) * HH) + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#bfffd8;box-shadow:0 0 8px #44dd88;transition:transform 0.7s cubic-bezier(.6,0,.9,.6) ' + (q * 0.03) + 's,opacity 0.7s;';
+            ov.appendChild(pt);
+            const r0 = { x: parseFloat(pt.style.left), y: parseFloat(pt.style.top) };
+            requestAnimationFrame(() => { pt.style.transform = 'translate(' + (cx - r0.x) + 'px,' + (hy - r0.y) + 'px) scale(0.3)'; pt.style.opacity = '0'; });
+          }
+        }, 380);
+        setTimeout(() => { clearInterval(sp); vortex.style.opacity = '0'; d.style.opacity = '0'; _pulse(hand); }, 1150);
+      }, t0);
+    });
+    total = 500 + n * STEP + 600;
   } else if (kind === 'deck') {
     const top = !!p.top;
     _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '⛓ デッキの' + (top ? '上' : '下') + 'に戻す', '#ffd84a');
@@ -3587,12 +3619,13 @@ export function fxMagicAbsorb(card, opts, callback) {
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
   const pre = opts.remote ? '相手の' : '';
   _hitCard(ov, card, cx, cy, CW, CH, '#ffd86a', pre + (card.name || ''));
-  // ① 攻撃の魔法陣（紫）が上に広がり、魔力が集まる
+  // ① 攻撃の魔法陣（紫）が上に広がり、魔力が集まる（離れないために使ったカードがあるときは、その分遅らせる）
   const AS = CW * 1.5;
-  add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:' + AS + 'px;height:' + AS + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle 2.2s ease-out forwards;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
+  const AD = opts.cost ? 0.8 : 0;
+  add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:' + AS + 'px;height:' + AS + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle 2.2s ease-out ' + AD + 's both;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
   for (let k = 0; k < 14; k++) {
     const ang = Math.random() * Math.PI * 2, dd = AS * 0.5 + Math.random() * AS * 0.4;
-    add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather 0.9s ease-in ' + (0.4 + Math.random() * 0.3) + 's forwards;opacity:0;');
+    add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather 0.9s ease-in ' + (AD + 0.4 + Math.random() * 0.3) + 's forwards;opacity:0;');
   }
   // ② 守りの魔法陣（金色・逆回転）がカードの前に現れる
   const GS = CW * 1.7;
@@ -3620,29 +3653,77 @@ export function fxMagicAbsorb(card, opts, callback) {
     const note = ov.lastChild; setTimeout(() => { note.style.opacity = '1'; }, 1300);
     tOrb = 2400;
   }
-  // ④ 魔法攻撃の魔力の玉が落ちてくる → 守りの魔法陣に渦を巻いて吸い込まれる
+  // ④ 攻撃の魔法陣から稲妻が放たれる → 守りの魔法陣に捕まり、ねじれながら中心へ吸い込まれていく
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const boltLayer = document.createElementNS(svgNS, 'svg');
+  boltLayer.setAttribute('width', W); boltLayer.setAttribute('height', H);
+  boltLayer.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;';
+  ov.appendChild(boltLayer);
+  const jag = (x1, y1, x2, y2, amp, steps) => {
+    const pts = [];
+    for (let q = 0; q <= steps; q++) {
+      const t = q / steps;
+      const nx = -(y2 - y1), ny = x2 - x1, len = Math.hypot(nx, ny) || 1;
+      const off = (q === 0 || q === steps) ? 0 : (Math.random() - 0.5) * amp * 2;
+      pts.push((x1 + (x2 - x1) * t + nx / len * off).toFixed(1) + ',' + (y1 + (y2 - y1) * t + ny / len * off).toFixed(1));
+    }
+    return pts.join(' ');
+  };
+  const line = (pts, w, color) => { const l = document.createElementNS(svgNS, 'polyline'); l.setAttribute('points', pts); l.setAttribute('fill', 'none'); l.setAttribute('stroke', color); l.setAttribute('stroke-width', w); l.setAttribute('stroke-linejoin', 'round'); l.setAttribute('stroke-linecap', 'round'); boltLayer.appendChild(l); };
+  const drawBolt = (x1, y1, x2, y2, amp, scale) => {
+    const pts = jag(x1, y1, x2, y2, amp, 10);
+    line(pts, 13 * scale, 'rgba(150,90,255,0.4)');
+    line(pts, 5 * scale, '#d9b8ff');
+    line(pts, 2 * scale, '#ffffff');
+  };
   setTimeout(() => {
-    add('position:absolute;inset:0;background:radial-gradient(circle at ' + ax + 'px ' + ay + 'px,rgba(255,255,255,0.8) 0%,rgba(190,130,255,0.45) 12%,rgba(0,0,0,0) 30%);animation:hxFlash 0.6s ease-out forwards;');
-    const orb = add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:46px;height:46px;margin:-23px;border-radius:50%;background:radial-gradient(circle,#fff 0%,#d9b8ff 35%,#8a3dff 70%,rgba(138,61,255,0) 100%);box-shadow:0 0 26px #b06cff,0 0 50px #7a3dff;transition:transform 0.55s cubic-bezier(.5,0,.8,.6);');
-    requestAnimationFrame(() => requestAnimationFrame(() => { orb.style.transform = 'translate(' + (cx - ax) + 'px,' + (cy - ay) + 'px)'; }));
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + ax + 'px ' + ay + 'px,rgba(255,255,255,0.85) 0%,rgba(190,130,255,0.5) 12%,rgba(0,0,0,0) 32%);animation:hxFlash 0.6s ease-out forwards;');
+    const R = GS * 0.46;
+    const t0 = Date.now(), DUR = 1500, HIT = 420; // HIT: 稲妻が魔法陣に届くまで
+    let flick = 0;
+    const tick = setInterval(() => {
+      const el = Date.now() - t0;
+      while (boltLayer.firstChild) boltLayer.removeChild(boltLayer.firstChild);
+      if (el >= DUR) { clearInterval(tick); return; }
+      if (el < HIT) {
+        // 稲妻が魔法陣へ向かって伸びる（3本）
+        const k = el / HIT;
+        [-0.35, 0, 0.35].forEach((o) => drawBolt(ax + o * AS * 0.3, ay, ax + o * AS * 0.3 + (cx - ax - o * AS * 0.3) * k, ay + (cy - R - ay) * k, 16, 1));
+      } else {
+        const k = (el - HIT) / (DUR - HIT); // 0→1 吸い込まれていく
+        if (!flick) { flick = 1; flare(); add('position:absolute;left:' + cx + 'px;top:' + (cy - R) + 'px;width:80px;height:80px;border-radius:50%;border:3px solid #fff3c0;box-shadow:0 0 18px #ffc83a;animation:hxRing 0.6s ease-out forwards;'); }
+        // 稲妻の根元が魔法陣に引き寄せられ（上から縮んでいく）、先は魔法陣の中心へねじれながら吸い込まれる
+        const sy = ay + (cy - R - ay) * Math.min(1, k * 1.15);
+        const sc = Math.max(0.25, 1 - k * 0.75);
+        if (sy < cy - R - 4) [-0.35, 0, 0.35].forEach((o) => drawBolt(ax + o * AS * 0.3 * (1 - k), sy, cx + o * R * 0.5, cy - R, 14 * sc, sc));
+        // 魔法陣の縁から中心へ、回りながら吸い込まれる稲妻
+        const n2 = 4;
+        for (let q = 0; q < n2; q++) {
+          const ang = (q / n2) * Math.PI * 2 + el / 140;
+          const rr = R * (1 - k * 0.5);
+          drawBolt(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr, cx, cy, 10 * sc, sc * 0.8);
+        }
+        if (Math.random() < 0.25) flare();
+      }
+    }, 55);
+    // 紫の魔力の粒が渦を巻いて中心へ
     setTimeout(() => {
-      flare();
-      orb.style.transition = 'transform 0.8s ease-in,opacity 0.8s';
-      orb.style.transform = 'translate(' + (cx - ax) + 'px,' + (cy - ay) + 'px) scale(0.05) rotate(720deg)';
-      orb.style.opacity = '0';
-      // 紫の魔力が渦を巻いて中心へ
       for (let k = 0; k < 22; k++) {
         const r = GS * (0.25 + Math.random() * 0.35);
-        const p = add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:0;height:0;transform:rotate(' + (k * 16) + 'deg);');
+        const pp = add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:0;height:0;transform:rotate(' + (k * 16) + 'deg);');
         const dot = document.createElement('div');
         dot.style.cssText = 'position:absolute;left:0;top:0;width:8px;height:8px;margin:-4px;border-radius:50%;background:' + (k % 2 ? '#d9b8ff' : '#b06cff') + ';box-shadow:0 0 8px #8a3dff;--r:' + r + 'px;animation:abSwirl 0.9s ease-in ' + (k * 0.02) + 's forwards;opacity:0;';
-        p.appendChild(dot);
+        pp.appendChild(dot);
       }
-      setTimeout(flare, 500);
-    }, 600);
+    }, HIT + 200);
+    // 吸い込み終わりに、魔法陣の中心が白く光る
+    setTimeout(() => {
+      add('position:absolute;inset:0;background:radial-gradient(circle at ' + cx + 'px ' + cy + 'px,rgba(255,250,220,0.9) 0%,rgba(255,200,60,0.45) 10%,rgba(0,0,0,0) 30%);animation:hxFlash 0.6s ease-out forwards;');
+      flare();
+    }, DUR);
   }, tOrb);
   // ⑤ 吸い込み終わると、守りの魔法陣が強く光って閉じる。カードは無傷
-  const tClose = tOrb + 1700;
+  const tClose = tOrb + 2200;
   setTimeout(() => {
     add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #fff3c0;box-shadow:0 0 22px #ffc83a;animation:hxRing 0.8s ease-out forwards;');
     guard.style.transition = 'transform 0.6s ease-in,opacity 0.6s';

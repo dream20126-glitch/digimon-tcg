@@ -1395,7 +1395,8 @@ function onRemoteCommand(cmd) {
       if (typeof window._fxEffectHit === 'function' && cmd.card) {
         const mk = (o) => o ? { name: o.name || '', imgSrc: o.imgSrc || '', _remoteFx: true } : null;
         const p = { card: mk(cmd.card), after: mk(cmd.after), holder: mk(cmd.holder), removed: (cmd.removed || []).map(mk).filter(Boolean),
-          top: !!cmd.top, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, remote: !!cmd.remote };
+          top: !!cmd.top, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, remote: !!cmd.remote,
+          cards: Array.isArray(cmd.cards) ? cmd.cards.map(it => ({ card: mk(it.c), remote: !!it.remote })).filter(it => it.card) : null };
         enqueueFx((done) => window._fxEffectHit(cmd.kind, p, done));
       }
       break;
@@ -1905,7 +1906,7 @@ function onRemoteCommand(cmd) {
       // faceDown: 非公開情報（相手の手札から戻したカード等）は裏向きで表示。
       // 連続して届いても重ならないよう、演出キューで1枚ずつ再生する
       if (window._fxCardMove) {
-        const dummy = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', cardNo: cmd.cardNo || '' };
+        const dummy = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', cardNo: cmd.cardNo || '', _remoteFx: true };
         const from = cmd.rawLabels ? (cmd.fromLabel || '') : '相手の' + (cmd.fromLabel || '');
         const to = cmd.rawLabels ? (cmd.toLabel || '') : '相手の' + (cmd.toLabel || '');
         enqueueFx((done) => {

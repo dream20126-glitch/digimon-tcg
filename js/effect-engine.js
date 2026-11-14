@@ -2419,8 +2419,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _bounceSequential = (idxs, doneCb) => {
         const cards = idxs.map(i => opponent.battleArea[i]);
         let bi = 0;
+        // 効果を受ける演出: 全部戻してから、並べたカードを1枚ずつ「手札」へ吸い込む1回の演出にする
+        const _useHit = _hitFxOn() && idxs.length >= 2;
+        if (_useHit) _hitCollect = [];
         const next = () => {
-          if (bi >= idxs.length) { doneCb(); return; }
+          if (bi >= idxs.length) {
+            if (_useHit) {
+              const got = _hitCollect || []; _hitCollect = null;
+              if (got.length === 0) { doneCb(); return; }
+              _effectHitSync(ctx, 'hand', { card: got[0].card, remote: got[0].remote, cards: got }, doneCb);
+              return;
+            }
+            doneCb(); return;
+          }
           const i = idxs[bi], c = cards[bi]; bi++;
           if (!c || opponent.battleArea[i] !== c) { next(); return; }
           doBounce(opponent, i, ctx, () => {
@@ -2429,6 +2440,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の手札', next, { remoteFrom: '自分のバトルエリア', remoteTo: '自分の手札' });
           });
         };
+        if (_useHit) { next(); return; }
         _moveBatchIntro(ctx, cards, '相手のバトルエリア', '相手の手札', next, { remoteFrom: 'バトルエリア', remoteTo: '手札' });
       };
       if (bounceNeed > 1 || bounceUpTo) {
@@ -5801,14 +5813,18 @@ if (typeof window !== 'undefined') window._fxMoveSyncSide = (side, card, fromLab
 function _hitFxOn() { return typeof window !== 'undefined' && typeof window._fxEffectHit === 'function' && !(window._fxMoveHold > 0); }
 // kind: 'hand'|'deck'|'security'|'dedigivolve'|'evo_discard'。p: { card, remote, top, bottom, faceUp, after, removed, holder }
 // 両方の画面に出す。出せないとき（_hitFxOn が false）は fallback（いつもの移動演出）
+// 複数体をまとめて手札に戻している間は、1体ずつの演出を出さずに集める（最後に1回の演出で順に吸い込む）
+let _hitCollect = null;
 function _effectHitSync(ctx, kind, p, cb, fallback) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[effectHit]', e); } };
   if (!_hitFxOn() || !p || !p.card) { if (fallback) fallback(); else done(); return; }
+  if (_hitCollect && kind === 'hand' && !p.cards) { _hitCollect.push({ card: p.card, remote: !!p.remote }); done(); return; }
   if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     try {
       const ser = (c) => c ? { name: c.name || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' } : null;
       window._onlineSendCommand({ type: 'fx_effectHit', kind, card: ser(p.card), after: ser(p.after), holder: ser(p.holder),
-        removed: (p.removed || []).slice(0, 4).map(ser), top: !!p.top, bottom: !!p.bottom, faceUp: !!p.faceUp, remote: !p.remote });
+        removed: (p.removed || []).slice(0, 4).map(ser), top: !!p.top, bottom: !!p.bottom, faceUp: !!p.faceUp, remote: !p.remote,
+        cards: Array.isArray(p.cards) ? p.cards.slice(0, 6).map(it => ({ c: ser(it.card), remote: !it.remote })) : null });
     } catch (_) {}
   }
   window._fxEffectHit(kind, p, done);

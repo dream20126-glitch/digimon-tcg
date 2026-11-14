@@ -2396,57 +2396,82 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         return 1800;
       }
       case 'recoil': {
-        // 【道連れ】: 負けた側が吹き飛んだあと、「【道連れ】」が出て、負けた側のトラッシュから黒いもやが現れ、勝った側の
-        // カードを包み込み、引きずり込むようにトラッシュへ連れていく
+        // 【道連れ】: ① 負けた側がトラッシュに入った直後に「【道連れ】」② トラッシュから黒いもやが伸びる
+        // ③ もやが勝った側のカードの周りを渦巻いて包み込み、カードが黒く染まって震える ④ もやごとゆっくりトラッシュへ引きずり込む
+        if (!document.getElementById('fx-michi-style')) {
+          const st = document.createElement('style');
+          st.id = 'fx-michi-style';
+          st.textContent = '@keyframes mzSpin{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}'
+            + '@keyframes mzPulse{0%,100%{opacity:0.85}50%{opacity:1}}'
+            + '@keyframes mzLbl{0%{transform:translate(-50%,-50%) scale(1.8);opacity:0;filter:blur(6px)}50%{transform:translate(-50%,-50%) scale(0.95);opacity:1;filter:blur(0)}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}';
+          document.head.appendChild(st);
+        }
         const loserDir = -dir;
-        const T0 = 1500; // 負けた側がトラッシュに着くまで
+        const bxL = loserDir < 0 ? Math.max(56, W * 0.13) : Math.min(W - 56, W * 0.87), by = H - Math.max(80, H * 0.14);
+        const T0 = 1450; // 負けた側がトラッシュに着くまで（blowTo の着弾）
+        let aura = null, dim = null, big = null;
+        // ①「【道連れ】」（画面中央に大きく）
         setTimeout(() => {
-          lbl(_CLASH_KW_LABEL.recoil, '#b05cff');
-          const [wx, wy] = centerOf(area);
-          const bxL = loserDir < 0 ? Math.max(56, W * 0.13) : Math.min(W - 56, W * 0.87), by = H - Math.max(80, H * 0.14);
-          // 画面を少し暗く
-          const dim = el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(20,0,30,0.2) 0%,rgba(10,0,20,0.7) 100%);opacity:0;transition:opacity 0.5s;z-index:1;');
+          dim = el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(25,0,40,0.35) 0%,rgba(8,0,16,0.8) 100%);opacity:0;transition:opacity 0.6s;z-index:1;');
           requestAnimationFrame(() => { dim.style.opacity = '1'; });
-          // 黒いもや（いくつもの暗い煙の塊がトラッシュから伸びてカードへ）
-          const puffs = [];
-          for (let i = 0; i < 16; i++) {
-            const sz = 50 + Math.random() * 60;
-            const pf = el('position:absolute;left:' + (bxL - sz / 2) + 'px;top:' + (by - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;'
-              + 'background:radial-gradient(circle,rgba(30,0,45,0.95) 0%,rgba(60,10,80,0.6) 45%,rgba(20,0,30,0) 72%);opacity:0;will-change:transform,opacity;'
-              + 'transition:transform ' + (0.7 + i * 0.03) + 's cubic-bezier(.4,0,.2,1) ' + (i * 0.04) + 's,opacity 0.4s ' + (i * 0.04) + 's;z-index:5;');
-            puffs.push({ pf, sz });
-          }
-          requestAnimationFrame(() => {
-            puffs.forEach(({ pf }, i) => {
-              const ang = (i / puffs.length) * Math.PI * 2, rr = 30 + (i % 3) * 18;
-              pf.style.opacity = '1';
-              pf.style.transform = 'translate(' + (wx - bxL + Math.cos(ang) * rr) + 'px,' + (wy - by + Math.sin(ang) * rr * 1.3) + 'px) scale(' + (1 + (i % 4) * 0.15) + ')';
-            });
-          });
-          // 包まれたカードが黒く染まって震える
-          const im = area.querySelector('[id$="card-img"]');
-          setTimeout(() => {
-            if (im) { im.style.transition = 'filter 0.4s, box-shadow 0.4s'; im.style.filter = 'brightness(0.45) saturate(0.4) hue-rotate(220deg)'; im.style.boxShadow = '0 0 30px #6a00a8'; }
-            area.style.transition = 'transform 0.08s';
-            let n = 0;
-            const sh = setInterval(() => { n++; area.style.transform = 'translate(' + ((Math.random() - 0.5) * 8) + 'px,' + ((Math.random() - 0.5) * 6) + 'px)'; if (n > 8) clearInterval(sh); }, 70);
-          }, 700);
-          // 引きずり込む（もやごとトラッシュへ）
-          setTimeout(() => {
-            const [cx1, cy1] = centerOf(area);
-            area.style.transition = 'transform 0.9s cubic-bezier(.55,0,.85,.4), opacity 0.9s';
-            area.style.transform = 'translate(' + (bxL - cx1) + 'px,' + (by - cy1) + 'px) rotate(' + (loserDir * 25) + 'deg) scale(0.1)';
-            area.style.opacity = '0.2';
-            puffs.forEach(({ pf }, i) => { pf.style.transition = 'transform 0.9s cubic-bezier(.55,0,.85,.4) ' + (i * 0.02) + 's,opacity 0.9s'; pf.style.transform = 'translate(0,0) scale(0.4)'; pf.style.opacity = '0'; });
-          }, 1300);
-          setTimeout(() => {
-            area.style.opacity = '0';
-            flashAt(bxL, by, 0.5, 'rgba(120,40,160,0.6)');
-            ringsAt(bxL, by, ['#b05cff', '#3a0050'], 60);
-            dim.style.opacity = '0';
-          }, 2250);
+          big = el('position:absolute;left:50%;top:20%;white-space:nowrap;font-size:' + Math.min(48, W * 0.11) + 'px;font-weight:900;color:#e9c8ff;text-shadow:0 0 14px #9b3dff,0 0 34px #5a0099,0 0 3px #000;animation:mzLbl 0.6s ease-out forwards;z-index:7;', '💀【道連れ】');
         }, T0);
-        return T0 + 2600;
+        // ② トラッシュから黒いもやが伸びて、カードへ向かう
+        const [wx, wy] = centerOf(area);
+        const r0 = (area.querySelector('[id$="card-img"]') || area).getBoundingClientRect();
+        setTimeout(() => {
+          for (let i = 0; i < 12; i++) {
+            const t = i / 11, sz = 40 + Math.random() * 30;
+            const px = bxL + (wx - bxL) * t + (Math.random() - 0.5) * 24, py = by + (wy - by) * t + (Math.random() - 0.5) * 24;
+            const pf = el('position:absolute;left:' + (px - sz / 2) + 'px;top:' + (py - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.95) 0%,rgba(70,10,100,0.55) 50%,rgba(20,0,30,0) 72%);opacity:0;transform:scale(0.3);transition:opacity 0.35s ' + (i * 0.06) + 's,transform 0.5s ' + (i * 0.06) + 's;z-index:4;');
+            requestAnimationFrame(() => { pf.style.opacity = '1'; pf.style.transform = 'scale(1)'; });
+            setTimeout(() => { pf.style.transition = 'opacity 0.6s'; pf.style.opacity = '0'; setTimeout(() => pf.remove(), 650); }, 1700 + i * 40);
+          }
+        }, T0 + 500);
+        // ③ カードの周りを渦巻いて包み込む（カードより一回り大きいもやの輪が回る）
+        setTimeout(() => {
+          const AW = r0.width * 2.1, AH = r0.height * 1.7;
+          aura = el('position:absolute;left:' + wx + 'px;top:' + wy + 'px;width:0;height:0;z-index:5;');
+          for (let i = 0; i < 2; i++) {
+            const ring = document.createElement('div');
+            ring.style.cssText = 'position:absolute;left:0;top:0;width:' + (AW * (1 - i * 0.18)) + 'px;height:' + (AH * (1 - i * 0.18)) + 'px;border-radius:50%;'
+              + 'background:conic-gradient(from ' + (i * 90) + 'deg,rgba(15,0,25,0.95),rgba(80,15,120,0.55),rgba(15,0,25,0.95),rgba(60,0,90,0.4),rgba(15,0,25,0.95));'
+              + '-webkit-mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);'
+              + 'animation:mzSpin ' + (1.4 - i * 0.4) + 's linear infinite' + (i ? ' reverse' : '') + ';opacity:0;transition:opacity 0.5s;';
+            aura.appendChild(ring);
+            requestAnimationFrame(() => { ring.style.opacity = '1'; });
+          }
+          // カードにかぶさる暗い膜
+          const veil = document.createElement('div');
+          veil.style.cssText = 'position:absolute;left:' + (-r0.width / 2) + 'px;top:' + (-r0.height / 2) + 'px;width:' + r0.width + 'px;height:' + r0.height + 'px;border-radius:10px;background:radial-gradient(ellipse,rgba(40,0,60,0.25) 0%,rgba(15,0,25,0.85) 100%);opacity:0;transition:opacity 0.8s;animation:mzPulse 0.8s ease-in-out infinite;';
+          aura.appendChild(veil);
+          requestAnimationFrame(() => { veil.style.opacity = '1'; });
+          const im = area.querySelector('[id$="card-img"]');
+          if (im) { im.style.transition = 'filter 0.8s, box-shadow 0.8s'; im.style.filter = 'brightness(0.5) saturate(0.4) hue-rotate(230deg)'; im.style.boxShadow = '0 0 36px #6a00a8'; }
+          // 震える
+          let n = 0;
+          const sh = setInterval(() => { n++; area.style.transition = 'transform 0.07s'; area.style.transform = 'translate(' + ((Math.random() - 0.5) * 8) + 'px,' + ((Math.random() - 0.5) * 6) + 'px)'; if (n > 16) clearInterval(sh); }, 75);
+        }, T0 + 1100);
+        // ④ もやごとゆっくりトラッシュへ引きずり込む
+        setTimeout(() => {
+          const [cx1, cy1] = centerOf(area);
+          const dx = bxL - cx1, dy = by - cy1;
+          area.style.transition = 'transform 1.4s cubic-bezier(.55,0,.8,.45), opacity 1.4s';
+          area.style.transform = 'translate(' + dx + 'px,' + dy + 'px) rotate(' + (loserDir * 30) + 'deg) scale(0.1)';
+          area.style.opacity = '0.15';
+          if (aura) { aura.style.transition = 'transform 1.4s cubic-bezier(.55,0,.8,.45), opacity 1.4s'; aura.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(0.12)'; }
+        }, T0 + 2700);
+        // 吸い込まれて消える
+        setTimeout(() => {
+          area.style.opacity = '0';
+          if (aura) aura.style.opacity = '0';
+          flashAt(bxL, by, 0.55, 'rgba(120,40,160,0.6)');
+          ringsAt(bxL, by, ['#b05cff', '#3a0050', '#ffffff'], 60);
+          shake('fcShakeS', 280);
+          if (big) { big.style.transition = 'opacity 0.5s'; big.style.opacity = '0'; }
+          if (dim) dim.style.opacity = '0';
+        }, T0 + 4150);
+        return T0 + 4700;
       }
       default: return 0;
     }

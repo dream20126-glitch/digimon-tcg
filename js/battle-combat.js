@@ -5834,9 +5834,18 @@ function _closeRemoteConfirm() {
   // 決着の時点で、相手の確認（【防壁】等）の「相手が効果を発動中…」が残っていれば閉じる
   try { const el = document.getElementById('_remote-effect-announce'); if (el && el.parentNode) el.parentNode.removeChild(el); } catch (_) {}
 }
-function _clashFinish(textHint, cb) {
+// 【道連れ】になるか（負けた側が【道連れ】を持ち、勝った側がVS開始時に場のデジモンだった）
+function _clashRecoilSide(p) {
+  if (!p || p.winner === 'tie') return null;
+  const ls = p.winner === 'atk' ? 'def' : 'atk';
+  const winOnField = p.winner === 'def' ? p.defOnField : p.atkOnField;
+  return (hasMichizure(p[ls]) && winOnField) ? p.winner : null;
+}
+function _clashFinish(textHint, cb, remoteInfo) {
   const p = _clashPending;
   if (!p) { cb && cb(); return; }
+  // 相手の端末で決まった【道連れ】（こちらの画面の相手のカードには【道連れ】の情報が無いことがある）
+  if (remoteInfo && remoteInfo.recoilName) p._forceRecoilName = remoteInfo.recoilName;
   _clashPending = null;
   _closeRemoteConfirm();
   const hint = String(textHint || '');
@@ -5857,8 +5866,8 @@ function _clashFinish(textHint, cb) {
     // 勝った側が場のデジモンのときだけ（セキュリティのデジモンとのバトルでは【道連れ】は発揮しない。セキュリティのデジモンは
     // 通常どおり勝ち）。相手の画面では作り直したカードなので名前でも探す
     // （場にいたかはVSの開始時に記録。決着の時点では【道連れ】で既に場から外れていることがある）
-    const _winOnField = p.winner === 'def' ? p.defOnField : p.atkOnField;
-    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && hasMichizure(p[ls]) && _winOnField) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); }
+    const _forced = p._forceRecoilName && p[p.winner] && p[p.winner].name === p._forceRecoilName;
+    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && (_clashRecoilSide(p) === p.winner || _forced)) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); }
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });
@@ -5868,12 +5877,13 @@ function _clashFinish(textHint, cb) {
   if (!p.ctrl) { end(); return; }
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }
 }
-if (typeof window !== 'undefined') window._clashFinish = (hint, cb) => _clashFinish(hint, cb);
+if (typeof window !== 'undefined') window._clashFinish = (hint, cb, info) => _clashFinish(hint, cb, info);
 // 決着の演出を始めることを相手の画面にも伝える（相手の画面も同時に決着の演出を始める）。以前は決着の演出が
 // 終わってから勝敗の表示（fx_battleResult）を送っていたので、相手の画面ではこちらの演出が終わった後に始まっていた
 function _clashFinishSync(hint, cb) {
   if (_clashPending && _onlineMode && _sendCommand && !window._suppressFxSend) {
-    try { _sendCommand({ type: 'fx_clashFinish', hint: String(hint || '') }); } catch (_) {}
+    const _rs = _clashRecoilSide(_clashPending);
+    try { _sendCommand({ type: 'fx_clashFinish', hint: String(hint || ''), recoilName: _rs ? (_clashPending[_rs].name || '') : '' }); } catch (_) {}
   }
   _clashFinish(hint, cb);
 }

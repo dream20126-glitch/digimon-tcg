@@ -1385,7 +1385,7 @@ function onRemoteCommand(cmd) {
     case 'fx_clashFinish': {
       // 相手の端末で決着の演出が始まった → こちらのVS画面も同時に決着の演出を始める（終わるまで次の演出を待たせる）
       enqueueFx((done) => {
-        if (typeof window._clashFinish === 'function') { try { window._clashFinish(cmd.hint || '', done); return; } catch (_) {} }
+        if (typeof window._clashFinish === 'function') { try { window._clashFinish(cmd.hint || '', done, { recoilName: cmd.recoilName || '' }); return; } catch (_) {} }
         done();
       });
       break;

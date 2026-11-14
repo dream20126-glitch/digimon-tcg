@@ -3945,7 +3945,10 @@ function _fxBoltDestroySync(ctx, items, cb) {
 function _destroyWithFx(owner, idx, ctx, fxFn, done, causeType) {
   const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
   // 効果での消滅（バトル以外）は、どのカードでも「青い稲妻が落ちてトラッシュへ」の演出にする
-  if (causeType !== 'battle' && typeof window !== 'undefined' && typeof window._fxBoltDestroy === 'function') {
+  // ただし、VS画面の押し合い中（バトルで負けるときの【スケープゴート】の身代わり等）や、効果での消滅を回避する演出の
+  // 準備中（身代わりは回避の演出で見せる）は出さない（以前は身代わりの演出と稲妻の演出が両方出ていた）
+  const _boltSkip = typeof window !== 'undefined' && ((typeof window._clashIsPending === 'function' && window._clashIsPending()) || !!(ctx && ctx.bs && ctx.bs._ddDodgePlan));
+  if (causeType !== 'battle' && !_boltSkip && typeof window !== 'undefined' && typeof window._fxBoltDestroy === 'function') {
     const _remote = !!(ctx && ctx.bs && owner === ctx.bs.ai);
     fxFn = (c, cb) => {
       // 1つの効果でまとめて消滅させている間は一覧に積み、最後にまとめて稲妻を落とす

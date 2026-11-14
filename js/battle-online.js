@@ -1200,6 +1200,10 @@ function onRemoteCommand(cmd) {
             try { window._flushNonTurnDeferred(() => { renderAll(); sendStateSync(); _fireDelegated(); }); } catch (_) { _fireDelegated(); }
           } else _fireDelegated();
         });
+      } else if (cmd.kind === 'destroy_subject') {
+        // 「デジモンが消滅したとき」の反応: 相手から届いた消滅の演出を見せ終わってから発揮する
+        // （ラストティラノモン P-173「相手のデジモンがバトルで消滅したとき」の確認が、相手のデジモンの消滅演出より先に出ていた）
+        _waitFxIdle(_fireDelegated);
       } else _fireDelegated();
       break;
     }
@@ -1491,7 +1495,11 @@ function onRemoteCommand(cmd) {
       const restoreCard = (data) => {
         if (!data) return null;
         // 最近削除されたバフはフィルタリング（state_syncで復活しないように）
+        // 【衝突】で付いたブロッカー（source:'collision'）は、こちらの【衝突】のアタック中だけのもの。アタックが終わった後に
+        // 届いた古い同期で付き直し、ブロッカーのバッジが残り続けていた（ラストティラノモン P-173）
+        const _inMyAttack = !!(window._isAttackInProgress && window._isAttackInProgress());
         const filteredBuffs = (data.buffs || []).filter(b => {
+          if (b && b.source === 'collision' && !_inMyAttack) return false;
           if (isBuffRecentlyExpired(data.name, b.type, b.duration)) return false;
           return true;
         });
@@ -1606,6 +1614,8 @@ function onRemoteCommand(cmd) {
       if (typeof window._hudClearSubjectDestroy === 'function') window._hudClearSubjectDestroy();
       // 相手のアタックが全て終わった → 保留していた DP0 の消滅を行う
       bs._oppAttackInProgress = false;
+      // 相手の【衝突】のアタック中だけ付けたブロッカーを外す（ブロックの解決を通らずに終わった場合も残さない）
+      if (window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
       break;
     }

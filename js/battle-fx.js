@@ -3690,26 +3690,65 @@ export function fxBoardHit(kind, side, idx, value) {
     const STEP_MS = Math.max(6, Math.min(12, 520 / nPer));
     const a1 = Math.atan2(h, w);
     const diags = [a1, -a1];                // 左上→右下 / 左下→右上
-    let tEnd = 0;
+    // 鎖の先端（光る留め具）が対角線の向きにカードの表→端→裏→端→表…とぐるぐる回り、通ったあとに鎖が残る。
+    // 裏を回っている間は、先端も鎖も暗く小さく（奥にある）、カードの写しに透けて薄く見える。
+    // 鎖に引かれてカードが左右にねじれる（奥行きの傾き）
+    const ghost = mkSvg(3);  // 裏の鎖が透けて見える層（薄く）
+    ghost.style.opacity = '0.32';
+    cc.style.transformStyle = 'preserve-3d';
+    layer.style.perspective = '500px';
+    const head = add('position:absolute;left:0;top:0;width:' + (L * 1.3) + 'px;height:' + (L * 1.3) + 'px;margin:' + (-L * 0.65) + 'px 0 0 ' + (-L * 0.65) + 'px;border-radius:50%;'
+      + 'background:radial-gradient(circle at 35% 35%,#ffffff,#d0d0dc 45%,#5a5a66 100%);box-shadow:0 0 10px #ffd84a,0 0 20px rgba(255,200,80,0.7);opacity:0;z-index:4;');
+    const plan = [];
     diags.forEach((al, di) => {
       const dx = Math.cos(al), dy = Math.sin(al);   // 鎖の向き
       const nx = -dy, ny = dx;                       // 巻くごとにずれる向き
-      const base = 120 + di * (nPer * STEP_MS + 180);
       for (let k = 0; k <= nPer; k++) {
         const th = -Math.PI / 2 + k * dTh;           // 外側の端から表へ
         const u = Ru * Math.sin(th);
         const off = -spread / 2 + spread * (k / Math.max(1, nPer));
         const px = w / 2 + dx * u + nx * off, py = h / 2 + dy * u + ny * off;
-        const frontSide = Math.cos(th) > 0;
-        // 輪の向き: 表と裏では鎖の進む向きに沿う。端で回り込むところは少し縦に
-        const ang = al * 180 / Math.PI + (Math.cos(th) < 0.25 && Math.cos(th) > -0.25 ? 90 * Math.sign(Math.sin(th)) * 0.35 : 0);
+        const depth = Math.cos(th);                  // 1: 手前 / -1: 奥
+        const frontSide = depth > 0;
+        const ang = al * 180 / Math.PI + (Math.abs(depth) < 0.25 ? 90 * Math.sign(Math.sin(th)) * 0.35 : 0);
         const g = link(frontSide ? front : back, k + di, px, py, ang, !frontSide);
-        setTimeout(() => { g.style.transition = 'opacity 0.06s'; g.style.opacity = '1'; }, base + k * STEP_MS);
+        const gg = frontSide ? null : link(ghost, k + di, px, py, ang, true);
+        // 奥にある輪は少し小さく（遠近）
+        const sc = 0.8 + 0.2 * (depth + 1) / 2;
+        g.setAttribute('transform', g.getAttribute('transform') + ' scale(' + sc.toFixed(2) + ')');
+        if (gg) gg.setAttribute('transform', gg.getAttribute('transform') + ' scale(' + sc.toFixed(2) + ')');
+        plan.push({ g, gg, px, py, depth, th, di });
       }
-      tEnd = base + nPer * STEP_MS;
+      plan.push(null); // 1本目と2本目の間の間
     });
-    void perTurn;
-    const tWrap = tEnd;
+    const STEP = Math.max(9, Math.min(16, 900 / (nPer + 1)));
+    const t0 = Date.now() + 150;
+    let shown = 0;
+    const tick = setInterval(() => {
+      const n = Math.min(plan.length, Math.floor((Date.now() - t0) / STEP));
+      while (shown < n) {
+        const pl = plan[shown++];
+        if (!pl) continue;
+        pl.g.style.opacity = '1';
+        if (pl.gg) pl.gg.style.opacity = '1';
+      }
+      const cur = plan[Math.max(0, n - 1)];
+      if (cur) {
+        // 先端: 奥にあるときは暗く小さく、手前は明るく大きく
+        const sc = 0.6 + 0.5 * (cur.depth + 1) / 2;
+        head.style.opacity = cur.depth > 0 ? '1' : '0.45';
+        head.style.zIndex = cur.depth > 0 ? '4' : '1';
+        head.style.transform = 'translate(' + (ox + cur.px) + 'px,' + (oy + cur.py) + 'px) scale(' + sc.toFixed(2) + ')';
+        // 鎖に引かれてカードがねじれる（先端が回る向きに少し傾く）
+        cc.style.transform = (susp ? 'rotate(90deg) ' : '') + 'rotateY(' + (Math.sin(cur.th) * 14 * (cur.di ? -1 : 1)).toFixed(1) + 'deg)';
+      }
+      if (n >= plan.length) {
+        clearInterval(tick);
+        head.style.transition = 'opacity 0.2s'; head.style.opacity = '0';
+        cc.style.transition = 'transform 0.2s'; cc.style.transform = susp ? 'rotate(90deg)' : '';
+      }
+    }, 16);
+    const tWrap = 150 + plan.length * STEP + 60;
     // 巻き付くあいだカードがきしむ
     setTimeout(() => { cc.style.animation = 'bhShake 0.25s linear'; }, tWrap * 0.5);
     // 巻き終わり: ギュッと締まる → カードが暗く沈み、錠がかかる

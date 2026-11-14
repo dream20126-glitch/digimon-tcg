@@ -1356,6 +1356,12 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_clashNote': {
+      // 相手の端末で決まった消滅回避の仕方（分離・フラグメント・消滅しない等）と代わりのカードの画像を、こちらのVS画面の決着の演出に使う。
+      // VS画面（fx_securityCheck）の後に処理されるよう、演出の順番待ちに入れる
+      enqueueFx((done) => { try { if (typeof window._clashNote === 'function') window._clashNote({ name: cmd.cardName || '' }, cmd.kind || 'shield', Array.isArray(cmd.subImgs) ? cmd.subImgs : []); } catch (_) {} done(); });
+      break;
+    }
     case 'fx_barrierDone': {
       // 相手が【防壁】の確認を終えた →「相手が効果を発動中…」を閉じる
       if (m.fxRemoteEffectClose) m.fxRemoteEffectClose();

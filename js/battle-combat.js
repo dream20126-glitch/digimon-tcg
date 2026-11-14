@@ -350,7 +350,9 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
         const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
         kind = _clashKindByZone(card) || (ln < _linkN0 ? 'separate' : sn < _stackN0 ? 'fragment' : 'shield');
       }
-      _clashNote(card, kind, _subImgsNow());
+      // キーワード（防壁・回避等）は fx_cancelFlash で相手に伝わる。それ以外（「離れるとき〜離れない」等）はここで送る
+      if (_CANCEL_FLASH_LABEL[r.reason]) _clashNote(card, kind, _subImgsNow());
+      else _clashNoteAndSend(card, kind, _subImgsNow());
     }
     _cb0(r);
   };
@@ -485,6 +487,18 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
   bs._lastDestroyCause = { type: 'battle', causerSide: side === 'ai' ? 'player' : 'ai', causerCard: null };
   const _wbRestore = () => { bs._lastDestroyCause = _wbPrevCause; };
   { const _od = onDestroy, _oc = onCancel; onDestroy = (...a) => { _wbRestore(); return _od(...a); }; onCancel = (...a) => { _wbRestore(); return _oc(...a); }; }
+  // VS画面の決着の演出用: 消滅しなかったら、前後の差から回避の仕方と代わりにトラッシュへ送ったカードを記録する（相手の画面にも）
+  if (_clashPending) {
+    const _owner = side === 'ai' ? bs.ai : bs.player;
+    const _snapW = _clashSnapshot(card, _owner);
+    const _oc2 = onCancel;
+    onCancel = (...a) => {
+      try {
+        if (_clashSideOf(card)) _clashNoteAndSend(card, _clashKindByDiff(_snapW, card), _clashSubCards(_snapW, card, _owner).map(c => cardImg(c)).filter(Boolean));
+      } catch (e) { console.error('[clash note wbd]', e); }
+      return _oc2(...a);
+    };
+  }
   const ctxWBD = _hooks.makeEffectContext(card, side);
   // 置換効果（「〜することで、消滅しない」）で付いた「消滅しない」は、この消滅を防ぐだけで外す（ターン終了まで残さない）
   const _wbBefore = new Set(Array.isArray(card.buffs) ? card.buffs : []);
@@ -5735,6 +5749,19 @@ function _clashNote(card, kind, subImgs) {
   }
   return !!side;
 }
+// 回避の仕方と代わりのカードの画像を、こちらのVS画面に記録し、相手の画面にも送る（相手の画面の決着の演出用）
+function _clashNoteAndSend(card, kind, imgs) {
+  _clashNote(card, kind, imgs);
+  if (_onlineMode && _sendCommand && card) {
+    try { _sendCommand({ type: 'fx_clashNote', cardName: card.name || '', kind, subImgs: Array.isArray(imgs) ? imgs : [] }); } catch (_) {}
+  }
+}
+// 回避の前後の差から決める演出の種類（リンクカードが減った＝分離／進化元が減った＝フラグメント／場所が移った／それ以外は「消滅しない」）
+function _clashKindByDiff(snap, card) {
+  const ln = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
+  const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
+  return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? 'fragment' : 'shield');
+}
 // 消滅回避の前後の差から、代わりにトラッシュへ送られたカード（進化元・リンクカード・身代わりのデジモン・破棄したセキュリティ）を探す
 function _clashSnapshot(card, owner) {
   return {
@@ -5772,7 +5799,7 @@ function _clashForceClose() {
   try { p.ctrl && p.ctrl.close(); } catch (_) {}
   try { p.close(); } catch (_) {}
 }
-if (typeof window !== 'undefined') window._clashNote = (card, kind) => _clashNote(card, kind);
+if (typeof window !== 'undefined') window._clashNote = (card, kind, imgs) => _clashNote(card, kind, imgs);
 function _closeRemoteConfirm() {
   // 決着の時点で、相手の確認（【防壁】等）の「相手が効果を発動中…」が残っていれば閉じる
   try { const el = document.getElementById('_remote-effect-announce'); if (el && el.parentNode) el.parentNode.removeChild(el); } catch (_) {}

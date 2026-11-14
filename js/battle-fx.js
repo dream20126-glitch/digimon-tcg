@@ -2454,3 +2454,180 @@ export function fxBattleResultBurst(overlay, textEl, win) {
     textEl.style.transition = 'opacity 0.3s, transform 0.3s'; // battle.html の元の指定に戻す
   };
 }
+
+
+// =====================================================
+//  セキュリティへ置く／セキュリティからトラッシュへ送る専用の演出（通常の移動演出より丁寧に見せる）
+//  mode 'in' : 場（バトルエリア/テイマーエリア）のカードが表向きで持ち上がり、弧を描いてセキュリティの束へ。途中で裏返り
+//              （表向きで置くときはそのまま）、束の上（または下）に入って枚数が +1 になる
+//  mode 'out': セキュリティの束の一番上（または下）のカードが抜け出し、めくれて表になって名前を見せ、トラッシュへ飛び込む
+//  opts: { opp: 相手のカードか, bottom: 下か, faceUp: 表向きで置くか, fromZone: 'バトルエリア'|'テイマーエリア', secCount: 置く前/送る前の枚数 }
+// =====================================================
+export function fxSecurityMove(card, mode, opts, callback) {
+  opts = opts || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  if (!document.getElementById('fx-secmove-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-secmove-style';
+    st.textContent = [
+      '@keyframes smGlow{0%,100%{box-shadow:0 0 14px var(--c),0 0 28px var(--c)}50%{box-shadow:0 0 26px #fff,0 0 50px var(--c)}}',
+      '@keyframes smPlus{0%{opacity:0;transform:translate(-50%,6px) scale(0.6)}25%{opacity:1;transform:translate(-50%,0) scale(1.15)}100%{opacity:0;transform:translate(-50%,-30px) scale(1)}}',
+      '@keyframes smRing{0%{transform:translate(-50%,-50%) scale(0.3);opacity:1}100%{transform:translate(-50%,-50%) scale(2.6);opacity:0}}',
+      '@keyframes smEmber{0%{transform:translate(0,0);opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}',
+      '@keyframes smIn{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const pre = opts.opp ? '相手の' : '';
+  const SEC = '#b47cff', TRASH = '#ff5566', FIELD = '#ffd84a';
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:66000;background:rgba(0,0,0,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.25s;';
+  const nm = card && card.name ? '「' + esc(card.name) + '」を' : '';
+  const where = mode === 'in' ? (pre + 'セキュリティの' + (opts.bottom ? '下' : '上') + 'に置く') : (pre + 'セキュリティから' + pre + 'トラッシュに送る');
+  const showName = mode === 'out' || opts.faceUp || mode === 'in'; // 場のカードは公開情報なので置く前は名前を出す
+  ov.innerHTML = '<div style="font-size:16px;font-weight:900;color:#fff;text-align:center;padding:0 14px;text-shadow:0 0 10px ' + (mode === 'in' ? SEC : TRASH) + ',0 0 22px ' + (mode === 'in' ? SEC : TRASH) + ';animation:smIn 0.3s ease-out;">'
+    + (mode === 'in' ? '🛡 ' : '🗑 ') + (showName ? nm : '') + esc(where) + '</div>';
+  const SW = Math.min(330, window.innerWidth - 32), SH = 200;
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;';
+  ov.appendChild(stage);
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const CW = 80, CH = 112;
+  const leftX = 8, rightX = SW - CW - 18, topY = 30;
+  const back = (window._cardBackUrl || '');
+  const img = card ? (card.imgSrc || cardImg(card)) : '';
+  const faceHtml = (img ? '<img src="' + img + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:10px;padding:6px;">' + esc(card && card.name) + '</div>');
+  const backHtml = back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#2a3c66,#0b1020);"></div>';
+  const zoneLabel = (x, text, color) => {
+    const l = document.createElement('div');
+    l.style.cssText = 'position:absolute;left:' + (x + CW / 2) + 'px;top:' + (topY + CH + 34) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:bold;color:' + color + ';';
+    l.innerText = text; stage.appendChild(l); return l;
+  };
+  const zoneBox = (x, color, icon) => {
+    const z = document.createElement('div');
+    z.style.cssText = 'position:absolute;left:' + (x - 6) + 'px;top:' + (topY - 6) + 'px;width:' + (CW + 12) + 'px;height:' + (CH + 30) + 'px;border-radius:10px;border:2px solid ' + color + '88;background:' + color + '12;box-shadow:inset 0 0 18px ' + color + '22;';
+    z.innerHTML = '<div style="position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:14px;opacity:0.8;">' + icon + '</div>';
+    stage.appendChild(z); return z;
+  };
+  // セキュリティの束（裏向きのカードを少しずらして重ねる）
+  const secX = mode === 'in' ? rightX : leftX;
+  const n0 = Math.max(0, parseInt(opts.secCount, 10) || 0);
+  const secBox = zoneBox(secX, SEC, '🛡');
+  const shown = Math.min(5, Math.max(1, mode === 'out' ? n0 : n0));
+  const stack = [];
+  const stackPos = (i, total) => ({ x: secX + (total - 1 - i) * 3, y: topY + (total - 1 - i) * 3 }); // i=0 が一番上
+  if (n0 > 0 || mode === 'out') {
+    const total = mode === 'out' ? Math.max(1, Math.min(5, n0)) : Math.min(5, n0);
+    for (let i = total - 1; i >= 0; i--) {
+      const c = document.createElement('div');
+      const p = stackPos(i, total);
+      c.style.cssText = 'position:absolute;left:' + p.x + 'px;top:' + p.y + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:6px;overflow:hidden;border:1px solid ' + SEC + '88;box-shadow:0 2px 6px #000;transition:transform 0.3s, left 0.3s, top 0.3s;';
+      c.innerHTML = backHtml;
+      stage.appendChild(c); stack.unshift(c);
+    }
+  }
+  void shown;
+  const secLbl = zoneLabel(secX, pre + 'セキュリティ（' + n0 + '枚）', SEC);
+  const plus = (x, text, color) => {
+    const p = document.createElement('div');
+    p.style.cssText = 'position:absolute;left:' + (x + CW / 2) + 'px;top:' + (topY - 26) + 'px;font-size:18px;font-weight:900;color:' + color + ';text-shadow:0 0 10px ' + color + ';animation:smPlus 1s ease-out forwards;';
+    p.innerText = text; stage.appendChild(p);
+    const r = document.createElement('div');
+    r.style.cssText = 'position:absolute;left:' + (x + CW / 2) + 'px;top:' + (topY + CH / 2) + 'px;width:80px;height:80px;border-radius:50%;border:3px solid ' + color + ';box-shadow:0 0 18px ' + color + ';animation:smRing 0.6s ease-out forwards;';
+    stage.appendChild(r);
+  };
+  // 動かすカード（表と裏の2面。rotateY で裏返す）
+  const mover = document.createElement('div');
+  mover.style.cssText = 'position:absolute;left:0;top:0;width:' + CW + 'px;height:' + CH + 'px;z-index:5;transform-style:preserve-3d;transition:transform 0.5s cubic-bezier(.3,.7,.3,1);';
+  const faceF = document.createElement('div'), faceB = document.createElement('div');
+  const faceCss = 'position:absolute;inset:0;border-radius:6px;overflow:hidden;backface-visibility:hidden;-webkit-backface-visibility:hidden;';
+  faceF.style.cssText = faceCss + 'border:2px solid var(--c);--c:' + FIELD + ';animation:smGlow 0.9s ease-in-out infinite;';
+  faceB.style.cssText = faceCss + 'transform:rotateY(180deg);border:2px solid ' + SEC + ';box-shadow:0 0 16px ' + SEC + ';';
+  faceF.innerHTML = faceHtml; faceB.innerHTML = backHtml;
+  mover.appendChild(faceF); mover.appendChild(faceB);
+  const nameTag = document.createElement('div');
+  nameTag.style.cssText = 'position:absolute;left:50%;top:' + (CH + 4) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:bold;color:#fff;text-shadow:0 0 4px #000;transition:opacity 0.3s;';
+  nameTag.innerText = (card && card.name) || '';
+  const pos = (x, y, rotY, sc, rotZ) => 'translate(' + x + 'px,' + y + 'px) rotateY(' + (rotY || 0) + 'deg) rotateZ(' + (rotZ || 0) + 'deg) scale(' + (sc || 1) + ')';
+
+  if (mode === 'in') {
+    zoneBox(leftX, FIELD, '⚔');
+    zoneLabel(leftX, pre + (opts.fromZone || 'バトルエリア'), FIELD);
+    mover.style.transition = 'none';
+    mover.style.transform = pos(leftX, topY, 0, 1);
+    mover.appendChild(nameTag);
+    stage.appendChild(mover);
+    const flipTo = opts.faceUp ? 0 : 180;
+    // ① 持ち上がる
+    setTimeout(() => { mover.style.transition = 'transform 0.35s ease-out'; mover.style.transform = pos(leftX, topY - 22, 0, 1.12, -4); }, 250);
+    // ② 弧を描いて束の上へ（途中で裏返る）
+    setTimeout(() => {
+      nameTag.style.opacity = opts.faceUp ? '1' : '0';
+      mover.style.transition = 'transform 0.75s cubic-bezier(.4,.1,.3,1)';
+      mover.style.transform = pos((leftX + secX) / 2, topY - 46, flipTo / 2, 1.05, 4);
+      setTimeout(() => { mover.style.transform = pos(secX, topY - 14, flipTo, 1.02, 0); }, 360);
+    }, 650);
+    // ③ 束に入る（上なら一番上に重なる・下なら束の下へ潜り込む）
+    setTimeout(() => {
+      if (opts.bottom) {
+        stack.forEach((c) => { c.style.transform = 'translateY(-10px)'; });
+        mover.style.transition = 'transform 0.4s ease-in-out';
+        mover.style.zIndex = '0';
+        mover.style.transform = pos(secX + Math.min(5, n0 + 1) * 3, topY + Math.min(5, n0 + 1) * 3, flipTo, 1, 0);
+        setTimeout(() => stack.forEach((c) => { c.style.transform = ''; }), 380);
+      } else {
+        mover.style.transition = 'transform 0.3s cubic-bezier(.5,0,.8,.4)';
+        mover.style.transform = pos(secX - 3, topY - 3, flipTo, 1, 0);
+      }
+      faceF.style.animation = '';
+      secBox.style.boxShadow = '0 0 26px ' + SEC + ',inset 0 0 26px ' + SEC + '66';
+      setTimeout(() => { plus(secX, '+1', SEC); secLbl.innerText = pre + 'セキュリティ（' + (n0 + 1) + '枚）'; }, 280);
+    }, 1550);
+    setTimeout(() => { ov.style.opacity = '0'; }, 2600);
+    setTimeout(() => { ov.remove(); done(); }, 2850);
+  } else {
+    const trashBox = zoneBox(rightX, TRASH, '🗑');
+    zoneLabel(rightX, pre + 'トラッシュ', TRASH);
+    // 束の一番上（下）を動かすカードに置き換える
+    const takeIdx = opts.bottom ? stack.length - 1 : 0;
+    const startP = stack.length ? stackPos(takeIdx, stack.length) : { x: secX, y: topY };
+    if (stack[takeIdx]) stack[takeIdx].remove();
+    mover.style.transition = 'none';
+    mover.style.transform = pos(startP.x, startP.y, 180, 1);
+    stage.appendChild(mover);
+    // ① 束から抜け出す
+    setTimeout(() => { mover.style.transition = 'transform 0.35s ease-out'; mover.style.transform = pos(startP.x + 14, startP.y - 30, 180, 1.1); secLbl.innerText = pre + 'セキュリティ（' + Math.max(0, n0 - 1) + '枚）'; }, 250);
+    // ② めくれて表になり、名前を見せる
+    setTimeout(() => {
+      mover.style.transition = 'transform 0.45s ease-in-out';
+      mover.style.transform = pos((secX + rightX) / 2 - 10, topY - 40, 0, 1.25);
+      mover.appendChild(nameTag); nameTag.style.opacity = '1';
+    }, 650);
+    // ③ トラッシュへ飛び込む
+    setTimeout(() => {
+      faceF.style.setProperty('--c', TRASH);
+      mover.style.transition = 'transform 0.45s cubic-bezier(.6,0,.9,.5)';
+      mover.style.transform = pos(rightX, topY, 0, 0.95, 8);
+    }, 1450);
+    setTimeout(() => {
+      trashBox.style.boxShadow = '0 0 26px ' + TRASH + ',inset 0 0 26px ' + TRASH + '66';
+      plus(rightX, '+1', TRASH);
+      for (let i = 0; i < 12; i++) {
+        const e = document.createElement('div');
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, d = 30 + Math.random() * 50;
+        e.style.cssText = 'position:absolute;left:' + (rightX + CW / 2) + 'px;top:' + (topY + CH / 2) + 'px;width:5px;height:5px;border-radius:50%;background:#ff8a5a;box-shadow:0 0 8px ' + TRASH + ';--dx:' + Math.cos(ang) * d + 'px;--dy:' + Math.sin(ang) * d + 'px;animation:smEmber 0.6s ease-out forwards;';
+        stage.appendChild(e);
+      }
+    }, 1900);
+    setTimeout(() => { ov.style.opacity = '0'; }, 2700);
+    setTimeout(() => { ov.remove(); done(); }, 2950);
+  }
+  // 万一止まっても進むように
+  setTimeout(done, 6000);
+}
+if (typeof window !== 'undefined') window._fxSecurityMove = fxSecurityMove;

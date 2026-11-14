@@ -2746,6 +2746,20 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // セキュリティ→トラッシュの移動演出。破棄されたカードは公開情報なので、自分・相手どちらの画面も表向き
       // （オオクワモン BT26-042 進化元「相手のセキュリティを上から1枚破棄する」で演出が無かった）
       const _sttPre = (ctx.side === 'player') !== _sttOwn ? '相手の' : '';
+      // 1〜2枚なら、セキュリティの束から1枚ずつめくってトラッシュへ送る専用の演出（3枚以上は一覧の演出）
+      if (_sttCards.length > 0 && _sttCards.length < 3) {
+        const _sttOwner = (ctx.bs && opponent === ctx.bs.ai) ? 'ai' : 'player';
+        let _si = 0;
+        const _sttNext2 = () => {
+          if (_si >= _sttCards.length) { callback(); return; }
+          const sc = _sttCards[_si];
+          const before = opponent.security.length + (_sttCards.length - _si);
+          _si++;
+          _fxSecMoveSync(ctx, sc, 'out', _sttOwner, { secCount: before }, _sttNext2);
+        };
+        _sttNext2();
+        break;
+      }
       _moveBatchIntro(ctx, _sttCards, _sttPre + 'セキュリティ', _sttPre + 'トラッシュ', () => {
         let _si = 0;
         const _sttNext = () => {
@@ -5553,6 +5567,23 @@ function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
     try { window._fxCardMove(card, fromLabel, toLabel, done, opts.faceUp ? false : (opts.faceDown ? true : undefined)); return; } catch (_) {}
   }
   setTimeout(done, 300);
+}
+
+// セキュリティに置く（mode 'in'）／セキュリティからトラッシュへ送る（mode 'out'）専用の丁寧な移動演出（両方の画面）。
+// ownerSide: そのカード（セキュリティ）の持ち主 'player'|'ai'。o: { bottom, faceUp, fromZone, secCount }
+function _fxSecMoveSync(ctx, card, mode, ownerSide, o, cb) {
+  o = o || {};
+  const opts = Object.assign({}, o, { opp: ownerSide === 'ai' });
+  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try {
+      window._onlineSendCommand({ type: 'fx_secMove', mode, cardName: card.name || '', cardNo: card.cardNo || '',
+        cardImg: card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '',
+        opp: ownerSide !== 'ai', bottom: !!o.bottom, faceUp: !!o.faceUp, fromZone: o.fromZone || '', secCount: o.secCount || 0 });
+    } catch (_) {}
+  }
+  if (typeof window !== 'undefined' && typeof window._fxSecurityMove === 'function') { window._fxSecurityMove(card, mode, opts, cb); return; }
+  const pre = ownerSide === 'ai' ? '相手の' : '';
+  _fxMoveSync(Object.assign({}, ctx, { side: 'ai' }), card, mode === 'in' ? pre + (o.fromZone || 'バトルエリア') : pre + 'セキュリティ', mode === 'in' ? pre + 'セキュリティ' : pre + 'トラッシュ', cb, { faceUp: mode === 'out' || !!o.faceUp });
 }
 
 // 効果エンジンの外（battle-combat.js のバースト進化等）から、両画面の移動演出を出す
@@ -22421,11 +22452,10 @@ function executeRecipeStep(step, ctx, store, callback) {
                 if (!_pl) { _psNext(k + 1); return; }
                 // バトルエリア → セキュリティの移動演出（自分・相手の画面とも）。置いた後に続ける
                 // （マスティモン P-187 で相手のデジモンをセキュリティに置いたとき、演出が出ていなかった）
-                const _psPre = _pl.opp ? '相手の' : '';
                 const _psZone = _pl.zone === 'tamerArea' ? 'テイマーエリア' : 'バトルエリア';
-                const _psTo = 'セキュリティの' + (_psToBottom ? '下' : '上');
-                _fxMoveSync(ctx, _pl.card, _psPre + _psZone, _psPre + _psTo, () => _psNext(k + 1),
-                  { faceUp: !!_psFaceUp, remoteFrom: (_pl.opp ? '' : '相手の') + _psZone, remoteTo: (_pl.opp ? '' : '相手の') + _psTo });
+                const _psOwner = _pl.opp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+                const _psSec = ((_pl.opp ? opponent : player).security || []).length;
+                _fxSecMoveSync(ctx, _pl.card, 'in', _psOwner, { bottom: !!_psToBottom, faceUp: !!_psFaceUp, fromZone: _psZone, secCount: Math.max(0, _psSec - 1) }, () => _psNext(k + 1));
               });
             };
             const _psPlace = (e0) => {

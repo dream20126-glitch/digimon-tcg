@@ -1813,6 +1813,14 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_secMove': {
+      // 相手の画面の「セキュリティに置く／セキュリティからトラッシュへ」の専用演出（opp は受信側から見た持ち主が相手か）
+      if (typeof window._fxSecurityMove === 'function') {
+        const dummy = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', cardNo: cmd.cardNo || '' };
+        enqueueFx((done) => window._fxSecurityMove(dummy, cmd.mode, { opp: !!cmd.opp, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, fromZone: cmd.fromZone || '', secCount: cmd.secCount || 0 }, done));
+      }
+      break;
+    }
     case 'fx_remoteCardMove': {
       // 相手側でのカード移動演出を自分側でも再生（受信側視点で from/to ラベルは反転表示しない）。
       // rawLabels: 送信側が受信側視点のラベルを指定済み（相手の効果でこちらのカードが動いた等）。

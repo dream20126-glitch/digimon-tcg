@@ -22380,12 +22380,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_psBoth || _psM[1] === 'opponent') _psCollect(opponent, true);
           // コスト（「〜をセキュリティの上に置くことで」）で1体も置けなければ支払えなかった扱い（本体を実行しない）
           const _psIsCost = _COST_STEP_SET.has(step);
-          if (_psEntries.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(_psIsCost ? false : undefined); break; }
+          if (_psEntries.length === 0) { console.warn('[place_on_security_top] 候補なし', step.target, step.condition); ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(_psIsCost ? false : undefined); break; }
           const _psCount = _psM[3] === 'all' ? _psEntries.length : Math.min(parseInt(_psM[3], 10) || 1, _psEntries.length);
           const _psFaceUp = Array.isArray(step.options) && step.options.includes('face_up');
           let _psToBottom = step.position === 'bottom';
           // position:'select'＝「セキュリティの上か下に置く」: 置く前に上か下かを選ぶ（CPU は上）
           const _psMove = (list) => {
+            if ((list || []).length === 0) console.warn('[place_on_security_top] 選択なしで戻った');
             if (step.position !== 'select' || effectiveSide === 'ai' || (list || []).length === 0) { _psMoveNow(list); return; }
             showAltActionChoice(['セキュリティの上に置く', 'セキュリティの下に置く'], (ci) => { _psToBottom = ci === 1; _psMoveNow(list); });
           };
@@ -22412,18 +22413,22 @@ function executeRecipeStep(step, ctx, store, callback) {
               if (ctx.bs) ctx.bs._leaveCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
               tryCancelViaLeaveBattle(c, _psSideName, ctx.bs, _psCtxBase, (canceled) => {
                 if (ctx.bs) ctx.bs._leaveCause = _prevLeaveCause;
-                if (canceled) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」はバトルエリアを離れなかった'); _psNext(k + 1); return; }
+                if (canceled) { console.warn('[place_on_security_top] 離れなかった', c && c.name); ctx.addLog && ctx.addLog('🛡 「' + c.name + '」はバトルエリアを離れなかった'); _psNext(k + 1); return; }
                 _psPlace(e);
                 _psNext(k + 1);
               });
             };
-            const _psPlace = (e) => {
+            const _psPlace = (e0) => {
+              // 選んでから置くまでの間（上か下かの選択・「離れるとき」の確認。オンラインでは相手の端末の返事待ち）に、
+              // 状態の同期で相手のカードが作り直されていることがある。同じカードを探し直してから置く
+              // （マスティモン P-187 のコストで相手のデジモンを選ぶと、置けずにコスト失敗→相手のセキュリティが破棄されなかった）
+              const e = _refreshSideEntry(e0, ctx);
               const c = e.card;
               const _psOpp = !e.own;
               const _psP = _psOpp ? opponent : player;
               const zArr = _psP[e.zone] || [];
               const zi = zArr.indexOf(c);
-              if (zi === -1) return;
+              if (zi === -1) { console.warn('[place_on_security_top] 選んだカードが場に見つからない', c && c.name, e.zone, e.own); return; }
               _psMoved++;
               if (e.zone === 'battleArea') zArr[zi] = null; else zArr.splice(zi, 1);
               (c.stack || []).forEach(x => _psP.trash.push(x));

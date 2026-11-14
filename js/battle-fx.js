@@ -3559,3 +3559,102 @@ export function boardStateDiff() {
   } catch (e) { console.error('[boardStateDiff]', e); }
 }
 if (typeof window !== 'undefined') window._fxBoardStateDiff = boardStateDiff;
+
+
+// =====================================================
+//  効果を受けない・〜することで離れない: 守りの魔法陣（金色・逆回転）が魔法攻撃を吸い込んで消す
+//  opts: { label, sub, remote, cost: { name, imgSrc, faceDown } }（cost: 離れないために使ったカード。魔法陣に飛び込む）
+// =====================================================
+export function fxMagicAbsorb(card, opts, callback) {
+  opts = opts || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body || !card) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle(); _ensureMagicStyle();
+  if (!document.getElementById('fx-absorb-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-absorb-style';
+    st.textContent = '@keyframes abSpin{to{transform:rotate(-360deg)}}@keyframes abSpinR{to{transform:rotate(360deg)}}'
+      + '@keyframes abSwirl{0%{transform:rotate(0deg) translateX(var(--r)) scale(1);opacity:0}20%{opacity:1}100%{transform:rotate(540deg) translateX(0) scale(0.2);opacity:0}}';
+    document.head.appendChild(st);
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  const CW = Math.min(110, W * 0.28), CH = CW * 1.4;
+  const cx = W / 2, cy = Math.min(H * 0.6, H - CH / 2 - 90);
+  const ax = cx, ay = Math.max(70, cy - CH / 2 - CW * 1.25); // 攻撃の魔法陣（上）
+  const ov = _hitOverlay(70500);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  const pre = opts.remote ? '相手の' : '';
+  _hitCard(ov, card, cx, cy, CW, CH, '#ffd86a', pre + (card.name || ''));
+  // ① 攻撃の魔法陣（紫）が上に広がり、魔力が集まる
+  const AS = CW * 1.5;
+  add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:' + AS + 'px;height:' + AS + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle 2.2s ease-out forwards;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
+  for (let k = 0; k < 14; k++) {
+    const ang = Math.random() * Math.PI * 2, dd = AS * 0.5 + Math.random() * AS * 0.4;
+    add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather 0.9s ease-in ' + (0.4 + Math.random() * 0.3) + 's forwards;opacity:0;');
+  }
+  // ② 守りの魔法陣（金色・逆回転）がカードの前に現れる
+  const GS = CW * 1.7;
+  const guard = add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + GS + 'px;height:' + GS + 'px;margin:' + (-GS / 2) + 'px 0 0 ' + (-GS / 2) + 'px;opacity:0;transform:scale(0.2);transition:opacity 0.4s,transform 0.5s cubic-bezier(.2,.9,.3,1.3),filter 0.2s;filter:drop-shadow(0 0 8px #ffc83a) drop-shadow(0 0 20px #ffb000);');
+  const gIn = document.createElement('div');
+  gIn.style.cssText = 'width:100%;height:100%;animation:abSpin 2.4s linear infinite;';
+  gIn.innerHTML = _MAGIC_SVG('#ffe9a0', '#fff6d0');
+  guard.appendChild(gIn);
+  const gIn2 = document.createElement('div');
+  gIn2.style.cssText = 'position:absolute;left:22%;top:22%;width:56%;height:56%;animation:abSpinR 1.8s linear infinite;';
+  gIn2.innerHTML = _MAGIC_SVG('#ffd86a', '#ffffff');
+  guard.appendChild(gIn2);
+  setTimeout(() => { guard.style.opacity = '0.95'; guard.style.transform = 'scale(1)'; }, 700);
+  const flare = () => { guard.style.filter = 'drop-shadow(0 0 14px #fff) drop-shadow(0 0 34px #ffc83a) brightness(1.6)'; setTimeout(() => { guard.style.filter = 'drop-shadow(0 0 8px #ffc83a) drop-shadow(0 0 20px #ffb000)'; }, 260); };
+  // ③ （離れないために使ったカードがあれば）そのカードが下から魔法陣へ飛び込み、力に変わる
+  let tOrb = 1600;
+  if (opts.cost) {
+    const back = window._cardBackUrl || '';
+    const cs = opts.cost.faceDown ? (back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '') : (opts.cost.imgSrc ? '<img src="' + opts.cost.imgSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:10px;padding:4px;">' + (opts.cost.name || '') + '</div>');
+    const sy = opts.remote ? -CH : H + CH * 0.3;
+    const cc = add('position:absolute;left:' + (cx - CW * 0.35) + 'px;top:' + (sy - CH * 0.35) + 'px;width:' + CW * 0.7 + 'px;height:' + CH * 0.7 + 'px;border-radius:6px;overflow:hidden;border:2px solid #ffd86a;box-shadow:0 0 16px #ffc83a;background:#111;transition:transform 0.8s cubic-bezier(.3,.7,.3,1),opacity 0.4s;', cs);
+    setTimeout(() => { cc.style.transform = 'translateY(' + (cy - sy) + 'px)'; }, 1000);
+    setTimeout(() => { cc.style.transition = 'transform 0.4s ease-in,opacity 0.4s'; cc.style.transform = 'translateY(' + (cy - sy) + 'px) scale(0.1) rotate(270deg)'; cc.style.opacity = '0'; flare(); }, 1850);
+    add('position:absolute;left:50%;top:' + Math.min(H - 40, cy + GS / 2 + 4) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:12px;color:#ffe9a0;text-shadow:0 0 6px #000;opacity:0;transition:opacity 0.3s;', '「' + (opts.cost.faceDown ? 'セキュリティのカード' : (opts.cost.name || '')) + '」を使って離れない');
+    const note = ov.lastChild; setTimeout(() => { note.style.opacity = '1'; }, 1300);
+    tOrb = 2400;
+  }
+  // ④ 魔法攻撃の魔力の玉が落ちてくる → 守りの魔法陣に渦を巻いて吸い込まれる
+  setTimeout(() => {
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + ax + 'px ' + ay + 'px,rgba(255,255,255,0.8) 0%,rgba(190,130,255,0.45) 12%,rgba(0,0,0,0) 30%);animation:hxFlash 0.6s ease-out forwards;');
+    const orb = add('position:absolute;left:' + ax + 'px;top:' + ay + 'px;width:46px;height:46px;margin:-23px;border-radius:50%;background:radial-gradient(circle,#fff 0%,#d9b8ff 35%,#8a3dff 70%,rgba(138,61,255,0) 100%);box-shadow:0 0 26px #b06cff,0 0 50px #7a3dff;transition:transform 0.55s cubic-bezier(.5,0,.8,.6);');
+    requestAnimationFrame(() => requestAnimationFrame(() => { orb.style.transform = 'translate(' + (cx - ax) + 'px,' + (cy - ay) + 'px)'; }));
+    setTimeout(() => {
+      flare();
+      orb.style.transition = 'transform 0.8s ease-in,opacity 0.8s';
+      orb.style.transform = 'translate(' + (cx - ax) + 'px,' + (cy - ay) + 'px) scale(0.05) rotate(720deg)';
+      orb.style.opacity = '0';
+      // 紫の魔力が渦を巻いて中心へ
+      for (let k = 0; k < 22; k++) {
+        const r = GS * (0.25 + Math.random() * 0.35);
+        const p = add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:0;height:0;transform:rotate(' + (k * 16) + 'deg);');
+        const dot = document.createElement('div');
+        dot.style.cssText = 'position:absolute;left:0;top:0;width:8px;height:8px;margin:-4px;border-radius:50%;background:' + (k % 2 ? '#d9b8ff' : '#b06cff') + ';box-shadow:0 0 8px #8a3dff;--r:' + r + 'px;animation:abSwirl 0.9s ease-in ' + (k * 0.02) + 's forwards;opacity:0;';
+        p.appendChild(dot);
+      }
+      setTimeout(flare, 500);
+    }, 600);
+  }, tOrb);
+  // ⑤ 吸い込み終わると、守りの魔法陣が強く光って閉じる。カードは無傷
+  const tClose = tOrb + 1700;
+  setTimeout(() => {
+    add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #fff3c0;box-shadow:0 0 22px #ffc83a;animation:hxRing 0.8s ease-out forwards;');
+    guard.style.transition = 'transform 0.6s ease-in,opacity 0.6s';
+    guard.style.transform = 'scale(0.1) rotate(-180deg)';
+    guard.style.opacity = '0';
+    add('position:absolute;left:50%;top:' + Math.max(10, ay - AS / 2 - 10) + 'px;transform:translateX(-50%);text-align:center;white-space:nowrap;animation:hxLbl 0.4s ease-out forwards;',
+      '<div style="font-size:clamp(1.5rem,6.5vw,2.4rem);font-weight:900;color:#ffe27a;text-shadow:0 0 16px #ffb000,0 0 3px #000;">' + (opts.label || '効果を受けない！') + '</div>'
+      + '<div style="font-size:clamp(0.85rem,3.4vw,1.05rem);color:#fff;text-shadow:0 0 6px #000;margin-top:4px;">' + pre + '「' + (card.name || '') + '」は' + (opts.sub || '効果を受けない') + '</div>');
+  }, tClose);
+  const tEnd = tClose + 1700;
+  setTimeout(() => { ov.style.opacity = '0'; }, tEnd);
+  setTimeout(() => { ov.remove(); done(); }, tEnd + 250);
+  setTimeout(done, tEnd + 4000);
+}
+if (typeof window !== 'undefined') window._fxMagicAbsorb = fxMagicAbsorb;

@@ -1418,7 +1418,8 @@ function onRemoteCommand(cmd) {
       if (typeof window._fxEffectDodge === 'function') {
         const c = { name: cmd.cardName || '', imgSrc: cmd.cardImg || '' };
         const subs = Array.isArray(cmd.subs) ? cmd.subs : [];
-        if (cmd.shield && typeof window._fxBoltShield === 'function') enqueueFx((done) => window._fxBoltShield(c, { label: cmd.label || '', sub: cmd.sub || '', remote: !!cmd.ownerIsSender }, done));
+        if (cmd.absorb && typeof window._fxMagicAbsorb === 'function') enqueueFx((done) => window._fxMagicAbsorb(c, { label: cmd.label || '', sub: cmd.sub || '', remote: !!cmd.ownerIsSender, cost: cmd.cost || null }, done));
+        else if (cmd.shield && typeof window._fxBoltShield === 'function') enqueueFx((done) => window._fxBoltShield(c, { label: cmd.label || '', sub: cmd.sub || '', remote: !!cmd.ownerIsSender }, done));
         else enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', peel: !!cmd.peel, remote: !!cmd.ownerIsSender }, done));
       }
       break;

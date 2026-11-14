@@ -3990,8 +3990,14 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
       const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
       const subs = Array.isArray(sub) ? sub : (sub ? [sub] : []);
       window._onlineSendCommand({ type: 'fx_effectDodge', cardName: card.name || '', cardImg: img(card), label: (opts && opts.label) || '', sub: (opts && opts.sub) || '',
-        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', peel: !!(opts && opts.peel), shield: !!(opts && opts.shield), ownerIsSender: ownerSide === 'player' });
+        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', peel: !!(opts && opts.peel), shield: !!(opts && opts.shield),
+        absorb: !!(opts && opts.absorb), cost: (opts && opts.cost) ? { name: opts.cost.faceDown ? '' : (opts.cost.card.name || ''), imgSrc: opts.cost.faceDown ? '' : img(opts.cost.card), faceDown: !!opts.cost.faceDown } : null,
+        ownerIsSender: ownerSide === 'player' });
     } catch (_) {}
+  }
+  if (opts && opts.absorb && typeof window._fxMagicAbsorb === 'function') {
+    const cost = opts.cost ? { name: opts.cost.card.name || '', imgSrc: opts.cost.card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(opts.cost.card) : '') || '', faceDown: !!opts.cost.faceDown } : null;
+    window._fxMagicAbsorb(card, { label: opts.label, sub: opts.sub, remote: ownerSide === 'ai', cost }, done); return;
   }
   if (opts && opts.shield && typeof window._fxBoltShield === 'function') { window._fxBoltShield(card, Object.assign({}, opts, { remote: ownerSide === 'ai' }), done); return; }
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
@@ -4056,6 +4062,30 @@ function _ddPlayDodge(plan, cur, cb) {
   _ddDodgeFx(plan.ctx, cur, plan.side, { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged, shield }, cb);
 }
 
+// 「〜することで離れない」で使ったカードを見つけるための、持ち主のカードの位置の控え
+function _leaveCostSnap(p) {
+  if (!p) return null;
+  const field = [...(p.battleArea || []), ...(p.tamerArea || [])].filter(Boolean);
+  const under = [];
+  field.forEach(c => { (c.stack || []).forEach(x => under.push(x)); (c.linkedCards || []).forEach(x => under.push(x)); });
+  return { sec: (p.security || []).slice(), hand: (p.hand || []).slice(), field, under };
+}
+// 控えから位置が変わったカード（1枚）。{ card, faceDown（セキュリティのカード＝裏向き） }。見つからなければ null
+function _leaveCostMoved(p, snap, selfs) {
+  if (!p || !snap) return null;
+  const now = _leaveCostSnap(p);
+  const skip = (x) => !x || (selfs || []).includes(x);
+  const c1 = snap.sec.find(x => !skip(x) && !now.sec.includes(x));
+  if (c1) return { card: c1, faceDown: !c1._faceUp };
+  const c2 = snap.under.find(x => !skip(x) && !now.under.includes(x) && !now.field.includes(x));
+  if (c2) return { card: c2, faceDown: false };
+  const c3 = snap.field.find(x => !skip(x) && !now.field.includes(x) && !now.under.includes(x));
+  if (c3) return { card: c3, faceDown: false };
+  const c4 = snap.hand.find(x => !skip(x) && !now.hand.includes(x));
+  if (c4) return { card: c4, faceDown: false };
+  return null;
+}
+
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
   // 呼び出し側が「同じオブジェクトがまだその位置にいるか」で判定すると、離れなかったのに消滅扱いになる
@@ -4070,7 +4100,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   if (causeType === 'effect' && _isImmuneToEffect(destroyed, ctx)) {
     ctx.addLog && ctx.addLog('🛡 「' + destroyed.name + '」は効果を受けない');
     // バリアが稲妻をはじく演出（全カード共通）
-    _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '効果を受けない！', sub: '効果を受けないので消滅しない', shield: true }, () => { callback && callback(); });
+    _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '効果を受けない！', sub: '効果を受けないので消滅しない', absorb: true }, () => { callback && callback(); });
     return;
   }
   // cant_destroy（消滅できない付与）: keyword_prevent_destroyは原因を問わず常にブロック。
@@ -4210,12 +4240,15 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   const _ddPrevLeaveCause = ctx.bs ? ctx.bs._leaveCause : undefined;
   if (ctx.bs && causeType !== 'battle') ctx.bs._leaveCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
   // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
+  const _lvSnap = _leaveCostSnap(targetSide);
   tryCancelViaLeaveBattle(destroyed, destroyedSideName, ctx.bs, ctxBase, (canceled) => {
     if (ctx.bs) ctx.bs._leaveCause = _ddPrevLeaveCause;
     if (canceled) {
       // 離れなかったカード（進化して別のカードになった等は、その位置の今のカード）
       const _lvNow = targetSide.battleArea[slotIdx] || destroyed;
-      if (causeType !== 'battle') { _ddDodgeFx(ctx, _lvNow, destroyedSideName, { label: '消滅しない！', sub: '消滅しない', shield: true }, () => { callback && callback(); }); return; }
+      // 離れないために使ったカード（セキュリティ・進化元・場・手札から移ったカード）が守りの魔法陣に飛び込み、攻撃を吸い込む
+      const _lvCost = _leaveCostMoved(targetSide, _lvSnap, [destroyed, _lvNow]);
+      if (causeType !== 'battle') { _ddDodgeFx(ctx, _lvNow, destroyedSideName, { label: '離れない！', sub: (_lvCost ? '代わりにカードを使って' : '') + 'バトルエリアを離れない', absorb: true, cost: _lvCost }, () => { callback && callback(); }); return; }
       callback && callback(); return;
     }
     _ddRemoved = true;

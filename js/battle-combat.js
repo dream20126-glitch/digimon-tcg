@@ -3698,6 +3698,12 @@ export function removeBattleBuffs(applied) {
 // （バトルなら勝った側のカード）。省略時は「原因の対象=このデジモン」判定が「自分側」への
 // 近似にフォールバックする（_destroyCauseMatches参照）
 function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide) {
+  // 両者消滅（相打ち）で同時に誘発した消滅時効果は、ターンプレイヤー側から発揮する（公式ルール 15-4-3-5。
+  // P1 のターンにレイヴモンとミレニアモンが相打ちになったとき、非ターンプレイヤーのミレニアモンから発揮していた）
+  if (Array.isArray(sides) && sides.length >= 2) {
+    const _turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+    sides = sides.slice().sort((a, b) => (a === _turnSide ? 0 : 1) - (b === _turnSide ? 0 : 1));
+  }
   let i = 0;
   // この後に誘発する自分の「デジモンが消滅したとき」（久遠寺マコト BT26-095 等）を、消滅時効果の処理中も発揮待ちに表示
   if (typeof window._hudPreviewSubjectDestroy === 'function') window._hudPreviewSubjectDestroy(sides, true);
@@ -3762,9 +3768,13 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide)
         };
         // on_destroy の発動主体=自分/相手/両方 の反応（新設。既存カードは on_destroy に
         // subjectを持たないため影響なし）
+        const _battleCause = bs._lastDestroyCause;
         _fireOnDestroySubjectReactions(s, bs, ctxBase, () => {
-          bs._lastDestroyCause = null;
+          // 消滅したカード自身の【消滅時】（進化元効果を含む）も原因＝バトルのまま判定する（ファルコモン P-142 の進化元
+          // 「【消滅時】バトル以外で消滅していたなら」が、バトルで消滅したのに発揮していた。以前はここで原因を消していた）
+          bs._lastDestroyCause = _battleCause;
           afterOnDestroy(() => {
+            bs._lastDestroyCause = null;
             try {
               _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
             } catch (_) { next(); }

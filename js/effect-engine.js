@@ -3888,7 +3888,9 @@ function _drawForOpponent(n, ctx, done) {
 export function isCardInAnyZone(card, p) {
   if (!card || !p) return false;
   if (p.ikusei === card) return true;
-  return ['battleArea', 'tamerArea', 'hand', 'deck', 'security', 'trash'].some(z => Array.isArray(p[z]) && p[z].includes(card));
+  if (['battleArea', 'tamerArea', 'hand', 'deck', 'security', 'trash'].some(z => Array.isArray(p[z]) && p[z].includes(card))) return true;
+  // デジモンの進化元の下に置かれた（充填プラグインQ P-146「このカードを〜の進化元の下に置く」）
+  return (p.battleArea || []).some(d => d && Array.isArray(d.stack) && d.stack.includes(card));
 }
 
 // 消滅させてから、実際に場を離れたときだけ消滅演出を出す（fxFn(card, cb)）。done(離れたか)。
@@ -6040,7 +6042,9 @@ function resolveDpFilterMarkers(filter, selfCard, bs, side) {
 // （自分の効果はimmune_effectsの影響を受けない）。source_type:'digimon'指定時は
 // デジモンの効果のみ対象（他の効果は防がない）— effectSourceTypeで渡す
 function hasActiveImmuneEffects(card, effectSide, effectSourceType, effectAction) {
-  if (!card || !Array.isArray(card.buffs)) return false;
+  if (!card) return false;
+  if (_continuousImmune(card, effectSide, effectSourceType, effectAction)) return true;
+  if (!Array.isArray(card.buffs)) return false;
   return card.buffs.some((b) => {
     if (!b || b.type !== 'keyword_immune') return false;
     if (!b._appliedSide) return false;
@@ -6059,6 +6063,28 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType, effectAction
     if (b.sourceType && effectSourceType && b.sourceType !== effectSourceType) return false;
     return true;
   });
+}
+// 継続効果の「効果を受けない」（【お互いのターン】等の during_*_turn にある immune_effects。アトラーカブテリモン P-140 /
+// シーヴァモンACE LM-024「【お互いのターン】このデジモンがレスト状態の間、このデジモンは相手のデジモンの効果を受けない」）。
+// バフにはせず、その時点の状態（レスト中か等の condition・誰のターンか）で毎回判定する。以前は未対応で、レスト中でも
+// 相手のデジモンの効果の対象になっていた。「相手の」効果だけ（自分の効果は受ける）。source_type は種別の絞り込み
+const _IMMUNE_SRC_TYPES = new Set(['digimon', 'option', 'tamer', 'digitama']);
+function _continuousImmune(card, effectSide, effectSourceType, effectAction) {
+  try {
+    const bs = typeof window !== 'undefined' ? window._lastBattleState : null;
+    if (!bs || !effectSide) return false;
+    const owner = ['player', 'ai'].find(sd => bs[sd] && (((bs[sd].battleArea || []).includes(card)) || ((bs[sd].tamerArea || []).includes(card))));
+    if (!owner || owner === effectSide) return false;
+    const ownTurn = (owner === 'player') === !!bs.isPlayerTurn;
+    const keys = ['during_any_turn', ownTurn ? 'during_own_turn' : 'during_opp_turn'];
+    return _continuousStepsOf(card, keys).some((st) => {
+      if (!st || st.action !== 'immune_effects') return false;
+      if (!/^self(_card)?$/.test(String(st.target || 'self_card'))) return false;
+      if (st.source_type === 'dedigivolve') { if (effectAction !== 'dedigivolve') return false; }
+      else if (_IMMUNE_SRC_TYPES.has(st.source_type) && effectSourceType && st.source_type !== effectSourceType) return false;
+      return _evalStepConditionGate(st, card, bs, owner);
+    });
+  } catch (_) { return false; }
 }
 // ===== 「効果を受けない」の共通判定 =====
 // 実行中の効果（runRecipe / executeRecipeStep が _curEffectCtx に記録）から見て、相手側の場のカードが
@@ -15716,8 +15742,10 @@ function _cardHasDescriptionText(card, text) {
   if (!card || !text) return false;
   // カンマ区切り: どれか1つの記述があれば一致（名称と同じ）
   if (String(text).includes(',')) return String(text).split(',').map(s => s.trim()).filter(Boolean).some(t => _cardHasDescriptionText(card, t));
-  return [card.name, card.feature, card.effect, card.evoSourceEffect, card.securityEffect]
-    .some(f => String(f || '').includes(text));
+  // 公式ルール 4-23-1:「カード全体の記述されている情報」。進化条件・リンク条件も含む（エキサモン P-150 は進化条件の
+  // 名称「パルスモン」だけで「パルスモン」の記述があるカード。パル P-147 の手札の候補に出ていなかった）。'なし' は除く
+  return [card.name, card.feature, card.effect, card.evoSourceEffect, card.securityEffect, card.evolveCond, card.linkCond, card.useCond]
+    .some(f => f && f !== 'なし' && String(f).includes(text));
 }
 
 // ===== アタックできる相手か（デジモンへのアタック） =====
@@ -21994,6 +22022,32 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 下に置かれたカードはエリアを離れる）。下のカードへの移動なので《オーバーフロー》は処理しない（4-19-4。checkOverflow は
       // 下のカードに居る間は処理しない）。「離れるとき」の中で置いたなら、元の離れる処理（消滅・手札に戻す等）は行わない
       // （_stayedInBattleArea＝離れる処理が置き換わった印。これが無いと、置いた後に消滅処理でトラッシュにも置かれてしまう）
+      // 使用中のオプション（どの領域にも無い）自身を置く（充填プラグインQ P-146「【メイン】このカードを白以外の自分のデジモン
+      // 1体の進化元の下に置く」）。置き先の絞り込み（filter。target_evo_source 等の印は除く）を見る。以前は「このデジモンが
+      // 場にいません」で止まっていた。置いたカードは領域にあるので、使用後にトラッシュへ送られない（isCardInAnyZone）
+      if (_pudFromZones.length === 1 && _pudFromZones[0] === 'self_card' && ctx.card && !isCardInAnyZone(ctx.card, player)
+          && !(player.battleArea || []).some(d => d && Array.isArray(d.stack) && d.stack.includes(ctx.card))) {
+        const _uoCard = ctx.card;
+        const _uoF = Object.assign({}, step.filter || {});
+        ['target_evo_source', 'target_stack', 'target_evo_source_position', 'target_stack_position'].forEach(k => delete _uoF[k]);
+        const _uoHasF = Object.keys(_uoF).length > 0;
+        const _uoValid = [];
+        player.battleArea.forEach((c, i) => {
+          if (!c || (c.type && c.type !== 'デジモン' && c.type !== 'デュアル')) return;
+          if (_uoHasF && !cardMatchesFilter(c, _uoF, ctx.bs, ctx.side, ctx.card)) return;
+          if (_COST_STEP_SET.has(step) && step.condition && !checkConditions(parseRecipeCondition(step.condition), c, ctx.bs, ctx.side)) return;
+          _uoValid.push(i);
+        });
+        if (_uoValid.length === 0) { ctx.addLog('💨 置き先のデジモンがいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(_COST_STEP_SET.has(step) ? false : undefined)); break; }
+        const _uoGo = (idx) => {
+          const digi = idx == null ? null : player.battleArea[idx];
+          if (!digi) { callback(); return; }
+          placeUnderAndFinish(digi, _uoCard, null);
+        };
+        if (_uoValid.length === 1 || effectiveSide === 'ai') { _uoGo(_uoValid[0]); break; }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _uoValid, '「' + _uoCard.name + '」を進化元の下に置くデジモンを選んでください', '#00ff88', (sel) => _uoGo(sel));
+        break;
+      }
       if (_pudFromZones.length === 1 && _pudFromZones[0] === 'self_card') {
         const _scCard = ctx.card;
         const _scArea = _scCard ? player.battleArea : null;

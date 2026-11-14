@@ -15590,7 +15590,18 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     if (!reaction.eventSourceCard) reaction = Object.assign({}, reaction, { eventSourceCard: destroyedCard });
     _runReactionEffect(reaction, destroyedSide, bs, ctxBase, () => _drainDerivedAfterReaction(bs, ctxBase, _snap, runOne), { alwaysConfirm: true });
   };
+  // 消滅したカードがトラッシュから離れた（【不屈】で登場し直した等＝新しいカードになった）なら、残りの【消滅時】は発揮できない
+  // （公式ルール 15-4-4-3。【不屈】を先に発揮したのに、カグヤモン EX12-065 の【消滅時】がその後に発揮されていた）
+  const _sdOwner = bs[destroyedSide];
+  const _sdWasInTrash = !!(_sdOwner && Array.isArray(_sdOwner.trash) && _sdOwner.trash.includes(destroyedCard));
+  const _sdLeftTrash = () => (triggerKey === 'on_destroy' || triggerKey === 'on_battle_destroy') && _sdWasInTrash
+    && !(_sdOwner.trash || []).includes(destroyedCard);
   function runOne() {
+    if (remaining.length > 0 && _sdLeftTrash()) {
+      const names = remaining.splice(0).map((r) => (r.sourceCard || r.card).name || '');
+      ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + (destroyedCard.name || '') + '」はトラッシュから離れたので、残りの消滅時の効果は発揮しない');
+      void names;
+    }
     if (remaining.length === 0) { finish(); return; }
     if (canChoose && remaining.length >= 2) {
       hudUpdate(remaining);

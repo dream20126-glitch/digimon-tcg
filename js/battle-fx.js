@@ -3145,19 +3145,53 @@ function _ensureHitStyle() {
   ].join('');
   document.head.appendChild(st);
 }
-// 攻撃（斬撃3本＋閃光＋衝撃波）。演出の「攻撃が来る」部分の共通部品（回避・バリアでも使う）
+// 魔法攻撃（魔法陣が浮かび、光が集まり、魔力が炸裂する）。演出の「攻撃が来る」部分の共通部品（回避・バリアでも使う）。
+// 当たる瞬間は呼んでから約0.2秒後（呼ぶ側はその時刻に合わせて揺れ・よける等を出す）
+function _ensureMagicStyle() {
+  if (document.getElementById('fx-magic-style')) return;
+  const st = document.createElement('style');
+  st.id = 'fx-magic-style';
+  st.textContent = [
+    '@keyframes mgCircle{0%{transform:translate(-50%,-50%) scale(0.2) rotate(0deg);opacity:0}35%{opacity:1}70%{transform:translate(-50%,-50%) scale(1) rotate(160deg);opacity:1}100%{transform:translate(-50%,-50%) scale(0.15) rotate(260deg);opacity:0}}',
+    '@keyframes mgCircle2{0%{transform:translate(-50%,-50%) scale(0.2) rotate(0deg);opacity:0}35%{opacity:0.9}70%{transform:translate(-50%,-50%) scale(1) rotate(-200deg);opacity:0.9}100%{transform:translate(-50%,-50%) scale(0.1) rotate(-300deg);opacity:0}}',
+    '@keyframes mgGather{0%{transform:translate(var(--dx),var(--dy)) scale(1);opacity:0}30%{opacity:1}100%{transform:translate(0,0) scale(0.3);opacity:0.9}}',
+    '@keyframes mgBurst{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(0.2);opacity:0}}',
+    '@keyframes mgPillar{0%{transform:translateX(-50%) scaleX(0.1);opacity:0}25%{transform:translateX(-50%) scaleX(1);opacity:1}100%{transform:translateX(-50%) scaleX(0.05);opacity:0}}',
+    '@keyframes mgSigil{0%{opacity:0;transform:scale(1.4) rotate(-30deg)}40%{opacity:1;transform:scale(1) rotate(0deg)}100%{opacity:0.85;transform:scale(1) rotate(25deg)}}',
+  ].join('');
+  document.head.appendChild(st);
+}
+const _MAGIC_SVG = (c1, c2) => '<svg viewBox="0 0 200 200" style="width:100%;height:100%;overflow:visible">'
+  + '<circle cx="100" cy="100" r="94" fill="none" stroke="' + c1 + '" stroke-width="4"/>'
+  + '<circle cx="100" cy="100" r="80" fill="none" stroke="' + c2 + '" stroke-width="2" stroke-dasharray="6 5"/>'
+  + '<polygon points="100,20 169,140 31,140" fill="none" stroke="' + c1 + '" stroke-width="3"/>'
+  + '<polygon points="100,180 31,60 169,60" fill="none" stroke="' + c1 + '" stroke-width="3"/>'
+  + '<circle cx="100" cy="100" r="34" fill="none" stroke="' + c2 + '" stroke-width="3"/>'
+  + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="96" y="2" width="8" height="12" fill="' + c2 + '" transform="rotate(' + a + ' 100 100)"/>').join('')
+  + '</svg>';
 export function attackStrikeFx(ov, x, y, size) {
-  _ensureHitStyle();
-  const S = size || 160;
-  const add = (css) => { const d = document.createElement('div'); d.style.cssText = css; ov.appendChild(d); return d; };
-  [-38, -22, -54].forEach((a, i) => setTimeout(() => {
-    add('position:absolute;left:' + (x + (i - 1) * 14) + 'px;top:' + (y + (i - 1) * 10) + 'px;width:' + S * 1.5 + 'px;height:7px;border-radius:4px;--a:' + a + 'deg;'
-      + 'background:linear-gradient(90deg,transparent,#ff3b2f 20%,#fff 50%,#ff3b2f 80%,transparent);box-shadow:0 0 14px #ff3b2f,0 0 28px #ff8a00;animation:hxSlash 0.32s ease-out forwards;z-index:9;');
-  }, i * 70));
+  _ensureHitStyle(); _ensureMagicStyle();
+  const S = (size || 120) * 1.5;
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  // ① 魔法陣が2重に回りながら広がる
+  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S + 'px;height:' + S + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle 0.62s ease-out forwards;z-index:9;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
+  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S * 0.62 + 'px;height:' + S * 0.62 + 'px;filter:drop-shadow(0 0 6px #6ff3ff);animation:mgCircle2 0.62s ease-out forwards;z-index:9;', _MAGIC_SVG('#9ff6ff', '#e3c8ff'));
+  // ② 光の粒が中心へ集まる
+  for (let k = 0; k < 14; k++) {
+    const ang = Math.random() * Math.PI * 2, dd = S * 0.6 + Math.random() * S * 0.5;
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff,0 0 14px #6ff3ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather 0.24s ease-in ' + (Math.random() * 0.06) + 's forwards;opacity:0;z-index:9;');
+  }
+  // ③ 魔力が炸裂（光の柱・閃光・衝撃波・魔力の欠片が飛び散る）
   setTimeout(() => {
-    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(255,120,60,0.55) 14%,rgba(0,0,0,0) 45%);animation:hxFlash 0.45s ease-out forwards;z-index:8;');
-    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #ffd0a0;box-shadow:0 0 18px #ff6a00;animation:hxRing 0.55s ease-out forwards;z-index:8;');
-  }, 180);
+    add('position:absolute;left:' + x + 'px;top:0;width:' + S * 0.5 + 'px;height:' + (y + S * 0.3) + 'px;transform-origin:center;background:linear-gradient(to bottom,rgba(176,108,255,0) 0%,rgba(200,150,255,0.85) 60%,#fff 100%);box-shadow:0 0 30px #b06cff;animation:mgPillar 0.45s ease-out forwards;z-index:8;');
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(190,130,255,0.6) 14%,rgba(80,200,255,0.25) 28%,rgba(0,0,0,0) 48%);animation:hxFlash 0.5s ease-out forwards;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #e3c8ff;box-shadow:0 0 18px #b06cff,inset 0 0 12px #6ff3ff;animation:hxRing 0.55s ease-out forwards;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid #8ff3ff;animation:hxRing 0.7s ease-out 0.08s forwards;opacity:0;z-index:8;');
+    for (let k = 0; k < 16; k++) {
+      const ang = Math.random() * Math.PI * 2, dd = 50 + Math.random() * 110;
+      add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:9px;height:9px;margin:-4px;transform-origin:center;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);background:' + (k % 2 ? '#e3c8ff' : '#8ff3ff') + ';--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgBurst 0.6s ease-out forwards;z-index:9;');
+    }
+  }, 200);
 }
 if (typeof window !== 'undefined') window._attackStrikeFx = attackStrikeFx;
 
@@ -3193,7 +3227,7 @@ function _zoneIcon(ov, x, y, icon, text, color) {
 }
 const _pulse = (b) => { b.style.transform = 'scale(1.25)'; setTimeout(() => { b.style.transform = ''; }, 180); };
 
-// ---- 消滅: 斬撃を受け、ひびが入り、砕け散ってトラッシュへ ----
+// ---- 消滅: 魔法攻撃を受け、呪印が刻まれ、魔力の光を帯びて砕け散りトラッシュへ ----
 export function fxImpactDestroy(items, callback) {
   let fin = false;
   const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
@@ -3205,27 +3239,33 @@ export function fxImpactDestroy(items, callback) {
   const CW = Math.min(110, (W - 40) / n - 10, W * 0.3), CH = CW * 1.4;
   const ov = _hitOverlay(66000);
   const remoteAll = list.every(it => it.remote);
-  _hitTitle(ov, Math.max(14, cy - CH / 2 - 70), '💥 ' + (n >= 2 ? n + '体を消滅！' : '消滅！'), '#ff6a00');
+  _hitTitle(ov, Math.max(14, cy - CH / 2 - 70), '🔮 ' + (n >= 2 ? n + '体を消滅！' : '消滅！'), '#b06cff');
   const by = H - Math.max(78, H * 0.13);
   const bin = _zoneIcon(ov, W / 2, by, '🗑', (remoteAll ? '相手の' : '') + 'トラッシュ', '#ff4d4d');
   bin.style.opacity = '0';
   const totalW = n * CW + (n - 1) * 12;
   const els = list.map((it, i) => {
     const x = W / 2 - totalW / 2 + i * (CW + 12) + CW / 2;
-    return { d: _hitCard(ov, it.card, x, cy, CW, CH, '#ffb08a', (it.remote ? '相手の' : '') + (it.card.name || '')), x, card: it.card };
+    return { d: _hitCard(ov, it.card, x, cy, CW, CH, '#c9a4ff', (it.remote ? '相手の' : '') + (it.card.name || '')), x, card: it.card };
   });
   // ① 斬撃を受ける（ヒットストップ・揺れ・ひび）
   els.forEach(({ d, x }, i) => setTimeout(() => {
     attackStrikeFx(ov, x, cy, CW);
     setTimeout(() => {
       d.style.animation = 'hxShake 0.35s linear';
-      d.style.filter = 'brightness(2.2) saturate(0.4)';
+      d.style.filter = 'brightness(2.4) saturate(0.3)';
+      d.style.boxShadow = '0 0 26px #b06cff,0 0 50px #7a3dff';
       setTimeout(() => {
-        d.style.filter = 'brightness(0.75) saturate(0.6)';
-        const crack = document.createElement('div');
-        crack.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
-        crack.innerHTML = '<svg viewBox="0 0 100 140" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M50 0 L44 30 L62 46 L38 72 L60 94 L42 140 M44 30 L16 40 M62 46 L90 56 M38 72 L10 86 M60 94 L88 112" stroke="#fff" stroke-width="2.4" fill="none" style="filter:drop-shadow(0 0 3px #ff3b2f)"/></svg>';
-        d.appendChild(crack);
+        // 魔力に侵される: 紫に染まり、カードの上に呪印が刻まれて脈打つ
+        d.style.transition = 'filter 0.4s';
+        d.style.filter = 'brightness(0.8) saturate(0.7) hue-rotate(-40deg)';
+        const sigil = document.createElement('div');
+        sigil.style.cssText = 'position:absolute;left:10%;top:18%;width:80%;height:57%;pointer-events:none;filter:drop-shadow(0 0 4px #b06cff) drop-shadow(0 0 10px #b06cff);animation:mgSigil 0.6s ease-out forwards;';
+        sigil.innerHTML = _MAGIC_SVG('#f0e0ff', '#8ff3ff');
+        d.appendChild(sigil);
+        const veil = document.createElement('div');
+        veil.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle,rgba(176,108,255,0.15),rgba(122,61,255,0.55));mix-blend-mode:screen;';
+        d.appendChild(veil);
       }, 160);
     }, 200);
   }, 250 + i * 160));
@@ -3245,7 +3285,7 @@ export function fxImpactDestroy(items, callback) {
         sh.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:' + (r.width / 3) + 'px;height:' + (r.height / 4) + 'px;'
           + (src ? 'background:url(' + src + ') ' + (-sx * r.width) + 'px ' + (-sy * r.height) + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#555;')
           + 'clip-path:polygon(' + (Math.random() * 30) + '% 0,100% ' + (Math.random() * 30) + '%,' + (70 + Math.random() * 30) + '% 100%,0 ' + (70 + Math.random() * 30) + '%);'
-          + 'transition:transform 0.35s ease-out,opacity 0.3s;';
+          + 'box-shadow:0 0 6px #b06cff;filter:drop-shadow(0 0 4px #b06cff);transition:transform 0.35s ease-out,opacity 0.3s;';
         ov.appendChild(sh);
         const ang = Math.random() * Math.PI * 2, dd = 30 + Math.random() * 60;
         requestAnimationFrame(() => { sh.style.transform = 'translate(' + Math.cos(ang) * dd + 'px,' + Math.sin(ang) * dd + 'px) rotate(' + (Math.random() * 180 - 90) + 'deg)'; });

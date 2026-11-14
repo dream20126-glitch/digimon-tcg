@@ -5569,21 +5569,18 @@ function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   setTimeout(done, 300);
 }
 
-// セキュリティに置く（mode 'in'）／セキュリティからトラッシュへ送る（mode 'out'）専用の丁寧な移動演出（両方の画面）。
-// ownerSide: そのカード（セキュリティ）の持ち主 'player'|'ai'。o: { bottom, faceUp, fromZone, secCount }
+// セキュリティに置く（mode 'in'）／セキュリティからトラッシュへ送る（mode 'out'）の移動演出（いつもの移動演出。両方の画面）。
+// ownerSide: そのカード（セキュリティ）の持ち主 'player'|'ai'。o: { bottom, faceUp, fromZone }
 function _fxSecMoveSync(ctx, card, mode, ownerSide, o, cb) {
   o = o || {};
-  const opts = Object.assign({}, o, { opp: ownerSide === 'ai' });
-  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    try {
-      window._onlineSendCommand({ type: 'fx_secMove', mode, cardName: card.name || '', cardNo: card.cardNo || '',
-        cardImg: card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '',
-        opp: ownerSide !== 'ai', bottom: !!o.bottom, faceUp: !!o.faceUp, fromZone: o.fromZone || '', secCount: o.secCount || 0 });
-    } catch (_) {}
-  }
-  if (typeof window !== 'undefined' && typeof window._fxSecurityMove === 'function') { window._fxSecurityMove(card, mode, opts, cb); return; }
-  const pre = ownerSide === 'ai' ? '相手の' : '';
-  _fxMoveSync(Object.assign({}, ctx, { side: 'ai' }), card, mode === 'in' ? pre + (o.fromZone || 'バトルエリア') : pre + 'セキュリティ', mode === 'in' ? pre + 'セキュリティ' : pre + 'トラッシュ', cb, { faceUp: mode === 'out' || !!o.faceUp });
+  // pre: この画面（プレイヤー）から見た表記 / rpre: 相手の画面から見た表記
+  const pre = ownerSide === 'ai' ? '相手の' : '', rpre = ownerSide === 'ai' ? '' : '相手の';
+  const zone = o.fromZone || 'バトルエリア';
+  const sec = 'セキュリティ' + (mode === 'in' ? 'の' + (o.bottom ? '下' : '上') : '');
+  const from = mode === 'in' ? zone : 'セキュリティ';
+  const to = mode === 'in' ? sec : 'トラッシュ';
+  _fxMoveSync(ctx, card, pre + from, pre + to, cb,
+    { faceUp: mode === 'out' || !!o.faceUp, remoteFrom: rpre + from, remoteTo: rpre + to });
 }
 
 // 効果エンジンの外（battle-combat.js のバースト進化等）から、両画面の移動演出を出す

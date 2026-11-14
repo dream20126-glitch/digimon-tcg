@@ -4736,6 +4736,49 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     }
   }
   const _showUI = () => {
+  // バトルのVS画面が出ている間（押し合い中の【スケープゴート】の身代わり選び等）は盤面が隠れているので、
+  // 候補のデジモンを一覧で出して選ぶ（以前は盤面で選ぶ画面になり、VS画面の裏で選べなかった）
+  {
+    const _vs = document.getElementById('security-check-overlay');
+    if (_vs && _vs.style.display !== 'none' && Array.isArray(validIndices) && validIndices.length > 0 && window._lastBattleState) {
+      const _b = window._lastBattleState;
+      const _cardAtL = (v) => targetSide === 'both' ? _boardCardOf(_b, v) : ((targetSide === 'ai' ? _b.ai : _b.player).battleArea || [])[v];
+      const _mineL = (v) => targetSide === 'both' ? (v >= 300 || (v >= 100 && v < 200)) : targetSide !== 'ai';
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:66500;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;animation:fadeIn 0.15s ease;';
+      const col = borderColor || '#ffcc00';
+      if (!extraLabel && (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _reactionRunDepth > 0 || _effectBodyDepth > 0)) { try { const _pl = _stepPurposeLabel(_curStepForLabel); if (_pl) extraLabel = '（' + _pl + '）'; } catch (_) {} }
+      ov.innerHTML = '<div style="color:' + col + ';font-size:15px;font-weight:bold;text-align:center;text-shadow:0 0 8px ' + col + ';">🎯 対象を選んでください' + (extraLabel ? '<br><span style="font-size:12px;color:#fff;">' + extraLabel + '</span>' : '') + '</div>';
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:94vw;';
+      ov.appendChild(grid);
+      let _closed = false;
+      const close = (v) => { if (_closed) return; _closed = true; if (ov.parentNode) ov.parentNode.removeChild(ov); callback(v); };
+      validIndices.forEach((v) => {
+        const c = _cardAtL(v);
+        if (!c) return;
+        const t = document.createElement('div');
+        const src = c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+        t.style.cssText = 'width:96px;cursor:pointer;text-align:center;border-radius:8px;padding:4px;border:2px solid ' + col + '88;background:#111;transition:transform 0.12s;';
+        t.innerHTML = (src ? '<img src="' + src + '" style="width:100%;border-radius:5px;display:block;">' : '<div style="height:130px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;">' + (c.name || '') + '</div>')
+          + '<div style="font-size:10px;color:#fff;margin-top:4px;">' + (c.name || '') + '</div>'
+          + '<div style="font-size:9px;color:' + (_mineL(v) ? '#7fd8ff' : '#ff8a8a') + ';">' + (_mineL(v) ? '自分' : '相手') + (c.dp ? '・DP ' + c.dp : '') + '</div>';
+        t.onmouseenter = () => { t.style.transform = 'scale(1.06)'; };
+        t.onmouseleave = () => { t.style.transform = ''; };
+        t.onclick = () => close(v);
+        grid.appendChild(t);
+      });
+      if (opts && opts.stopLabel) {
+        const stop = document.createElement('button');
+        stop.innerText = opts.stopLabel;
+        stop.style.cssText = 'background:#333;color:#fff;border:1px solid #888;padding:8px 20px;border-radius:6px;font-size:13px;cursor:pointer;';
+        stop.onclick = () => close(null);
+        ov.appendChild(stop);
+      }
+      document.body.appendChild(ov);
+      return;
+    }
+  }
   // targetSide==='both'（自分と相手の両方から選ぶ）: validIndices は 自分のスロットi=100+i／相手のスロットi=i で
   // 指定し、選んだ値も同じ形で返す（ドーベルモン BT26-069「Lv.4以下のデジモン1体を消滅させる」）
   const _isBoth = targetSide === 'both';

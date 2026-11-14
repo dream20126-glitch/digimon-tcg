@@ -21941,7 +21941,10 @@ function executeRecipeStep(step, ctx, store, callback) {
     // （_tryCancelDestroy/doDestroy）で直接チェックされる。
     case 'cant_destroy': {
       const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
-      const cause = step.cause;
+      // cause が「〜以外で」（not_effect / not_battle）のときは、いつ発動するかの条件（【スケープゴート】「自分の効果以外で
+      // 消滅するとき」）であって、防ぐ消滅の種類ではない。この消滅をそのまま防ぐ（以前は何も付かず、身代わりを
+      // 消滅させたのにダークドラモンACE LM-043 も消滅していた）
+      const cause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
       const flags = [];
       if (!cause || cause === 'battle') flags.push('prevent_battle_destroy');
       if (!cause || cause === 'effect') flags.push('prevent_destroy');

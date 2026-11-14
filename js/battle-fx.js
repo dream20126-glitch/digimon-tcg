@@ -1661,29 +1661,41 @@ export function getFxRunners() {
 
 
 // =====================================================
-//  ジョグレス進化（融合）演出 — 2体が左右から飛び込み、回転しながら衝突して融合 → 光の柱から進化後のカード
+//  ジョグレス進化（融合）演出 — オプションの使用より特別に見えるよう、段階を重ねた大演出
+//  ① 映画風の黒帯＋渦巻くエネルギー（集中線）の中、2体が左右から飛び込む
+//  ② 2体が螺旋（DNA）を描きながら近づき、間に稲妻が走る
+//  ③ 衝突: 閃光・衝撃波・強い揺れ・光線の放射・大量の火花
+//  ④ 魔法陣と光の柱から進化後のカードが現れ、ホログラムの光が走る。金色のタイトル
 // =====================================================
 // left / right: 進化元の2体（左＝上に重なる方） / result: 進化後のカード / cost: 進化コスト（null なら表示しない）
 export function fxJogressFusion(left, right, result, cost, callback) {
-  const done = () => { try { callback && callback(); } catch (_) {} };
+  let _cbDone = false;
+  const done = () => { if (_cbDone) return; _cbDone = true; try { callback && callback(); } catch (_) {} };
   if (typeof document === 'undefined' || !document.body) { done(); return; }
-  if (!document.getElementById('fx-jogress-fusion-style')) {
+  if (!document.getElementById('fx-jogress-fusion-style2')) {
     const st = document.createElement('style');
-    st.id = 'fx-jogress-fusion-style';
+    st.id = 'fx-jogress-fusion-style2';
     st.textContent = [
-      '@keyframes jfShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-8px,4px)}40%{transform:translate(7px,-5px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,5px)}}',
-      '@keyframes jfRing{0%{transform:translate(-50%,-50%) scale(0.1);opacity:1}100%{transform:translate(-50%,-50%) scale(5);opacity:0}}',
-      '@keyframes jfFlash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}',
-      '@keyframes jfOrb{0%{transform:translate(-50%,-50%) scale(0.2);opacity:0}30%{opacity:1}70%{transform:translate(-50%,-50%) scale(1.25)}100%{transform:translate(-50%,-50%) scale(0.9);opacity:0}}',
-      '@keyframes jfPillar{0%{transform:translateX(-50%) scaleY(0);opacity:0}25%{opacity:0.95}100%{transform:translateX(-50%) scaleY(1);opacity:0}}',
-      '@keyframes jfRise{0%{transform:translate(-50%,-30%) scale(0.4);opacity:0;filter:brightness(3)}60%{transform:translate(-50%,-55%) scale(1.12);opacity:1;filter:brightness(1.6)}100%{transform:translate(-50%,-50%) scale(1);opacity:1;filter:brightness(1)}}',
-      '@keyframes jfTitle{0%{letter-spacing:22px;opacity:0;transform:translateX(-50%) scale(1.4)}60%{opacity:1}100%{letter-spacing:6px;opacity:1;transform:translateX(-50%) scale(1)}}',
-      '@keyframes jfGlow{0%,100%{box-shadow:0 0 30px #ffdd00,0 0 60px #ff8800}50%{box-shadow:0 0 50px #ffffff,0 0 90px #ffdd00}}',
+      '@keyframes jfShake{0%,100%{transform:translate(0,0)}10%{transform:translate(-14px,8px)}20%{transform:translate(12px,-10px)}30%{transform:translate(-10px,-6px)}40%{transform:translate(9px,9px)}55%{transform:translate(-6px,4px)}70%{transform:translate(5px,-4px)}85%{transform:translate(-3px,2px)}}',
+      '@keyframes jfRing{0%{transform:translate(-50%,-50%) scale(0.1);opacity:1}100%{transform:translate(-50%,-50%) scale(7);opacity:0}}',
+      '@keyframes jfFlash{0%{opacity:0}10%{opacity:1}100%{opacity:0}}',
+      '@keyframes jfOrb{0%{transform:translate(-50%,-50%) scale(0.2);opacity:0}25%{opacity:1}70%{transform:translate(-50%,-50%) scale(1.5)}100%{transform:translate(-50%,-50%) scale(1.1);opacity:0}}',
+      '@keyframes jfPillar{0%{transform:translateX(-50%) scaleX(0.1) scaleY(0);opacity:0}20%{opacity:1;transform:translateX(-50%) scaleX(1) scaleY(1)}100%{transform:translateX(-50%) scaleX(0.3) scaleY(1);opacity:0}}',
+      '@keyframes jfRise{0%{transform:translate(-50%,-30%) scale(0.3) rotateY(540deg);opacity:0;filter:brightness(4)}55%{transform:translate(-50%,-56%) scale(1.15) rotateY(0deg);opacity:1;filter:brightness(1.8)}100%{transform:translate(-50%,-50%) scale(1) rotateY(0deg);opacity:1;filter:brightness(1)}}',
+      '@keyframes jfTitle{0%{letter-spacing:30px;opacity:0;transform:translateX(-50%) scale(1.8)}55%{opacity:1}75%{transform:translateX(-50%) scale(0.95)}100%{letter-spacing:6px;opacity:1;transform:translateX(-50%) scale(1)}}',
+      '@keyframes jfGlow{0%,100%{box-shadow:0 0 30px #ffdd00,0 0 70px #ff8800,0 0 110px #ff4400}50%{box-shadow:0 0 50px #ffffff,0 0 100px #ffdd00,0 0 150px #ff8800}}',
+      '@keyframes jfRays{0%{transform:translate(-50%,-50%) rotate(0deg) scale(0.3);opacity:0}15%{opacity:0.9}100%{transform:translate(-50%,-50%) rotate(90deg) scale(1.3);opacity:0}}',
+      '@keyframes jfRaysSlow{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}',
+      '@keyframes jfCircle{0%{transform:translate(-50%,-50%) rotateX(68deg) rotateZ(0deg) scale(0.2);opacity:0}25%{opacity:1}100%{transform:translate(-50%,-50%) rotateX(68deg) rotateZ(240deg) scale(1);opacity:0.85}}',
+      '@keyframes jfSheen{0%{transform:translateX(-160%) skewX(-20deg)}100%{transform:translateX(260%) skewX(-20deg)}}',
+      '@keyframes jfBarIn{0%{transform:scaleY(0)}100%{transform:scaleY(1)}}',
+      '@keyframes jfSub{0%{opacity:0;transform:translateX(-50%) translateY(10px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}',
+      '@keyframes jfAura{0%,100%{box-shadow:0 0 22px var(--c),0 0 48px var(--c)}50%{box-shadow:0 0 34px #fff,0 0 80px var(--c)}}',
     ].join('');
     document.head.appendChild(st);
   }
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:56000;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at center,rgba(40,20,0,0.92) 0%,rgba(0,0,0,0.95) 70%);opacity:0;transition:opacity 0.3s;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:56000;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at center,rgba(50,22,0,0.94) 0%,rgba(0,0,0,0.97) 70%);opacity:0;transition:opacity 0.35s;perspective:900px;';
   const stage = document.createElement('div');
   stage.style.cssText = 'position:absolute;inset:0;';
   overlay.appendChild(stage);
@@ -1691,9 +1703,33 @@ export function fxJogressFusion(left, right, result, cost, callback) {
   requestAnimationFrame(() => { overlay.style.opacity = '1'; });
   const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H / 2;
   const CW = Math.min(110, W * 0.26), CH = CW * 1.4;
+  const R = Math.max(W, H);
+
+  // 映画風の黒帯（上下）
+  const bar = (top) => {
+    const b = document.createElement('div');
+    b.style.cssText = 'position:absolute;left:0;right:0;' + (top ? 'top:0' : 'bottom:0') + ';height:' + Math.round(H * 0.09) + 'px;background:#000;transform-origin:' + (top ? 'top' : 'bottom') + ';animation:jfBarIn 0.4s ease-out forwards;z-index:5;';
+    overlay.appendChild(b);
+  };
+  bar(true); bar(false);
+
+  // キャンバス: 渦巻く集中線・稲妻・螺旋の光・火花・舞い上がる光の粒
+  const cv = document.createElement('canvas');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+  stage.appendChild(cv);
+  const g = cv.getContext('2d');
+  if (g) g.scale(dpr, dpr);
+  const parts = []; // { x,y,vx,vy,life,max,size,color,grav,drag }
+  const addPart = (p) => { if (parts.length < 900) parts.push(p); };
+  let phase = 'enter'; // enter → spin → burst → reveal
+  let aPos = null, bPos = null; // 2体の今の中心（稲妻用）
+  let alive = true;
+
   const face = (card, color) => {
     const d = document.createElement('div');
-    d.style.cssText = 'position:absolute;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid ' + color + ';box-shadow:0 0 18px ' + color + ',0 0 36px ' + color + '66;background:#111;';
+    d.style.cssText = 'position:absolute;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid ' + color + ';--c:' + color + ';animation:jfAura 0.6s ease-in-out infinite;background:#111;z-index:2;';
     const src = card ? (card.imgSrc || cardImg(card)) : '';
     d.innerHTML = (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:11px;">' + ((card && card.name) || '?') + '</div>')
       + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);padding:2px;font-size:9px;text-align:center;color:#fff;">' + ((card && card.name) || '') + '</div>';
@@ -1701,93 +1737,171 @@ export function fxJogressFusion(left, right, result, cost, callback) {
   };
   const a = face(left, '#00e5ff'), b = face(right, '#ff8a00');
   stage.appendChild(a); stage.appendChild(b);
-  // 光の尾
-  const trail = (x, y, color) => {
-    const t = document.createElement('div');
-    t.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:' + color + ';box-shadow:0 0 14px ' + color + ';opacity:0.8;transition:all 0.5s ease-out;';
-    stage.appendChild(t);
-    requestAnimationFrame(() => { t.style.opacity = '0'; t.style.transform = 'scale(0.2)'; });
-    setTimeout(() => t.remove(), 550);
-  };
   const place = (el, x, y, rot, sc, op) => {
     el.style.left = (x - CW / 2) + 'px'; el.style.top = (y - CH / 2) + 'px';
     el.style.transform = 'rotate(' + rot + 'deg) scale(' + sc + ')'; el.style.opacity = op;
   };
-  // ① 左右から飛び込み（0〜0.7s）→ ② 中心を回りながら近づく（0.7〜2.2s）
-  const t0 = performance.now();
-  const ENTER = 700, SPIN = 1500;
-  let lastTrail = 0;
-  const step = (now) => {
-    const t = now - t0;
-    if (t < ENTER) {
-      const e = 1 - Math.pow(1 - t / ENTER, 3);
-      place(a, -CW + (cx - W * 0.22 + CW) * e, cy, -20 * (1 - e), 1, e);
-      place(b, W + CW - (W + CW - (cx + W * 0.22)) * e, cy, 20 * (1 - e), 1, e);
-    } else if (t < ENTER + SPIN) {
-      const u = (t - ENTER) / SPIN, e = u * u;
-      const r = W * 0.22 * (1 - e), ang = Math.PI * 4 * e;
-      place(a, cx - Math.cos(ang) * r, cy - Math.sin(ang) * r * 0.45, ang * 57.3 * 0.5, 1 - 0.5 * e, 1);
-      place(b, cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * 0.45, -ang * 57.3 * 0.5, 1 - 0.5 * e, 1);
-      if (now - lastTrail > 35) {
-        lastTrail = now;
-        trail(cx - Math.cos(ang) * r, cy - Math.sin(ang) * r * 0.45, '#00e5ff');
-        trail(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * 0.45, '#ff8a00');
-      }
-    } else { collide(); return; }
-    requestAnimationFrame(step);
+
+  // 稲妻（2点の間をギザギザに）
+  const bolt = (x1, y1, x2, y2, color, width) => {
+    const segs = 10;
+    g.beginPath(); g.moveTo(x1, y1);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs, off = (Math.random() - 0.5) * Math.min(60, len * 0.25);
+      g.lineTo(x1 + dx * t + nx * off, y1 + dy * t + ny * off);
+    }
+    g.lineTo(x2, y2);
+    g.strokeStyle = color; g.lineWidth = width; g.shadowColor = color; g.shadowBlur = 18; g.stroke();
+    g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(1, width * 0.4); g.stroke();
   };
-  requestAnimationFrame(step);
-  // ③ 衝突: 閃光・衝撃波・揺れ・火花（2.2s〜）
-  let collided = false;
+
+  const t0 = performance.now();
+  const ENTER = 800, SPIN = 1900;
+  let lastFrame = t0;
+  const loop = (now) => {
+    if (!alive) return;
+    const t = now - t0, dt = Math.min(50, now - lastFrame) / 16.67; lastFrame = now;
+    if (!g) { requestAnimationFrame(loop); return; }
+    g.clearRect(0, 0, W, H);
+    g.globalCompositeOperation = 'lighter';
+    // 渦巻く集中線（中心へ吸い込まれる）。衝突までだんだん速く・多く
+    if (phase === 'enter' || phase === 'spin') {
+      const k = Math.min(1, t / (ENTER + SPIN));
+      const n = 3 + Math.floor(k * 9);
+      for (let i = 0; i < n; i++) {
+        const ang = Math.random() * Math.PI * 2, r0 = R * (0.55 + Math.random() * 0.3), r1 = r0 * (0.55 + Math.random() * 0.2);
+        const sw = 0.25 + k * 0.5;
+        addPart({ type: 'line', ang, r: r0, r1, spin: sw * (Math.random() < 0.5 ? 1 : 1), life: 0, max: 22, color: Math.random() < 0.5 ? '#ffd24a' : (Math.random() < 0.5 ? '#00e5ff' : '#ff8a00') });
+      }
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.life += dt;
+      if (p.life >= p.max) { parts.splice(i, 1); continue; }
+      const f = 1 - p.life / p.max;
+      if (p.type === 'line') {
+        p.r *= 1 - 0.06 * dt; p.r1 *= 1 - 0.06 * dt; p.ang += 0.02 * p.spin * dt;
+        g.strokeStyle = p.color; g.globalAlpha = f * 0.7; g.lineWidth = 1.6; g.shadowBlur = 0;
+        g.beginPath(); g.moveTo(cx + Math.cos(p.ang) * p.r, cy + Math.sin(p.ang) * p.r); g.lineTo(cx + Math.cos(p.ang + 0.05) * p.r1, cy + Math.sin(p.ang + 0.05) * p.r1); g.stroke();
+      } else {
+        p.vx *= p.drag || 0.97; p.vy = p.vy * (p.drag || 0.97) + (p.grav || 0) * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        g.globalAlpha = Math.max(0, f);
+        g.fillStyle = p.color; g.shadowColor = p.color; g.shadowBlur = p.size * 3;
+        g.beginPath(); g.arc(p.x, p.y, Math.max(0.5, p.size * (0.4 + 0.6 * f)), 0, Math.PI * 2); g.fill();
+      }
+    }
+    g.globalAlpha = 1;
+    // 螺旋中: 2体の間に稲妻
+    if (phase === 'spin' && aPos && bPos && Math.random() < 0.55) {
+      bolt(aPos[0], aPos[1], bPos[0], bPos[1], Math.random() < 0.5 ? '#7ff6ff' : '#ffc070', 2 + Math.random() * 2.5);
+    }
+    // 光が現れた後: 舞い上がる光の粒
+    if (phase === 'reveal' && Math.random() < 0.9) {
+      for (let i = 0; i < 3; i++) addPart({ x: cx + (Math.random() - 0.5) * W * 0.8, y: H + 10, vx: (Math.random() - 0.5) * 0.6, vy: -(2 + Math.random() * 3.5), life: 0, max: 70 + Math.random() * 50, size: 1.5 + Math.random() * 2.5, color: Math.random() < 0.6 ? '#ffe27a' : '#ffffff', drag: 0.995 });
+    }
+    g.globalCompositeOperation = 'source-over'; g.shadowBlur = 0;
+
+    // カードの動き: ① 左右から飛び込み → ② 螺旋（DNA）を描きながら中心へ
+    if (phase === 'enter' || phase === 'spin') {
+      if (t < ENTER) {
+        const e = 1 - Math.pow(1 - t / ENTER, 3);
+        const ax = -CW + (cx - W * 0.24 + CW) * e, bx = W + CW - (W + CW - (cx + W * 0.24)) * e;
+        place(a, ax, cy, -25 * (1 - e), 1, e); place(b, bx, cy, 25 * (1 - e), 1, e);
+        aPos = [ax, cy]; bPos = [bx, cy];
+      } else if (t < ENTER + SPIN) {
+        phase = 'spin';
+        const u = (t - ENTER) / SPIN, e = u * u;
+        const r = W * 0.24 * (1 - e), ang = Math.PI * 6 * e;
+        const ax = cx - Math.cos(ang) * r, ay = cy - Math.sin(ang) * r * 0.45;
+        const bx = cx + Math.cos(ang) * r, by = cy + Math.sin(ang) * r * 0.45;
+        place(a, ax, ay, ang * 57.3 * 0.5, 1 - 0.55 * e, 1);
+        place(b, bx, by, -ang * 57.3 * 0.5, 1 - 0.55 * e, 1);
+        aPos = [ax, ay]; bPos = [bx, by];
+        // 螺旋の光の尾
+        addPart({ x: ax, y: ay, vx: 0, vy: 0, life: 0, max: 26, size: 4, color: '#00e5ff', drag: 0.9 });
+        addPart({ x: bx, y: by, vx: 0, vy: 0, life: 0, max: 26, size: 4, color: '#ff8a00', drag: 0.9 });
+      } else { phase = 'burst'; collide(); }
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+
+  // ③ 衝突
   const collide = () => {
-    if (collided) return; collided = true;
     a.remove(); b.remove();
     const flash = document.createElement('div');
-    flash.style.cssText = 'position:absolute;inset:0;background:#fff;animation:jfFlash 0.6s ease-out forwards;';
+    flash.style.cssText = 'position:absolute;inset:0;background:#fff;animation:jfFlash 0.8s ease-out forwards;z-index:4;';
     stage.appendChild(flash);
-    stage.style.animation = 'jfShake 0.45s linear';
-    ['#ffffff', '#ffdd00', '#ff8a00'].forEach((c, i) => {
+    stage.style.animation = 'jfShake 0.7s linear';
+    ['#ffffff', '#ffdd00', '#00e5ff', '#ff8a00'].forEach((c, i) => {
       const ring = document.createElement('div');
-      ring.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 20px ' + c + ';animation:jfRing 0.9s ease-out ' + (i * 0.12) + 's forwards;opacity:0;';
+      ring.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:5px solid ' + c + ';box-shadow:0 0 26px ' + c + ',inset 0 0 18px ' + c + ';animation:jfRing 1.1s ease-out ' + (i * 0.1) + 's forwards;opacity:0;';
       stage.appendChild(ring);
     });
-    const colors = ['#ffdd00', '#ffffff', '#00e5ff', '#ff8a00', '#ff4fd8'];
-    for (let i = 0; i < 46; i++) {
-      const sp = document.createElement('div');
-      const ang = Math.random() * Math.PI * 2, dist = 80 + Math.random() * Math.min(W, H) * 0.42, sz = 3 + Math.random() * 9;
-      const c = colors[i % colors.length];
-      sp.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + (sz / 2) + 'px;border-radius:50%;background:' + c + ';box-shadow:0 0 ' + (sz * 2) + 'px ' + c + ';transition:transform ' + (0.7 + Math.random() * 0.6) + 's cubic-bezier(.1,.8,.3,1),opacity 1.1s ease-out;';
-      stage.appendChild(sp);
-      requestAnimationFrame(() => { sp.style.transform = 'translate(' + (Math.cos(ang) * dist) + 'px,' + (Math.sin(ang) * dist) + 'px)'; sp.style.opacity = '0'; });
+    // 放射する光線
+    const rays = document.createElement('div');
+    rays.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + (R * 1.6) + 'px;height:' + (R * 1.6) + 'px;border-radius:50%;background:repeating-conic-gradient(rgba(255,240,170,0.85) 0deg 4deg,rgba(255,240,170,0) 4deg 15deg);-webkit-mask:radial-gradient(circle,#000 0%,#000 25%,transparent 70%);mask:radial-gradient(circle,#000 0%,#000 25%,transparent 70%);animation:jfRays 1.4s ease-out forwards;';
+    stage.appendChild(rays);
+    // 火花（キャンバス）
+    const colors = ['#ffdd00', '#ffffff', '#00e5ff', '#ff8a00', '#ff4fd8', '#9dff6a'];
+    for (let i = 0; i < 220; i++) {
+      const ang = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 14;
+      addPart({ x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 40 + Math.random() * 40, size: 1.5 + Math.random() * 4, color: colors[i % colors.length], drag: 0.94, grav: 0.08 });
     }
     // 融合の光の球
     const orb = document.createElement('div');
-    orb.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#ffe680 35%,#ff9a00 65%,rgba(255,120,0,0) 72%);animation:jfOrb 1.1s ease-in-out forwards;';
+    orb.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#fff3b0 30%,#ffb000 60%,rgba(255,120,0,0) 72%);animation:jfOrb 1.2s ease-in-out forwards;z-index:3;';
     stage.appendChild(orb);
-    setTimeout(reveal, 900);
+    setTimeout(reveal, 1000);
   };
-  // ④ 光の柱 → 進化後のカード、タイトル
+
+  // ④ 魔法陣と光の柱 → 進化後のカード・タイトル
   const reveal = () => {
+    phase = 'reveal';
+    // 足元の魔法陣（傾けて回す）
+    const circ = document.createElement('div');
+    const CR = CW * 3.2;
+    circ.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + CH * 0.62) + 'px;width:' + CR + 'px;height:' + CR + 'px;border-radius:50%;border:3px solid #ffd24a;box-shadow:0 0 24px #ffb000,inset 0 0 24px #ffb000;animation:jfCircle 2.2s ease-out forwards;'
+      + 'background:repeating-conic-gradient(rgba(255,210,74,0.55) 0deg 2deg,transparent 2deg 30deg),radial-gradient(circle,transparent 0 52%,rgba(255,210,74,0.9) 53% 54.5%,transparent 55.5% 68%,rgba(255,210,74,0.8) 69% 70%,transparent 71%);';
+    stage.appendChild(circ);
+    // 後ろでゆっくり回る光線
+    const rays2 = document.createElement('div');
+    rays2.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + (R * 1.4) + 'px;height:' + (R * 1.4) + 'px;border-radius:50%;opacity:0.45;background:repeating-conic-gradient(rgba(255,220,120,0.6) 0deg 6deg,rgba(255,220,120,0) 6deg 20deg);-webkit-mask:radial-gradient(circle,#000 0%,transparent 60%);mask:radial-gradient(circle,#000 0%,transparent 60%);animation:jfRaysSlow 9s linear infinite;';
+    stage.appendChild(rays2);
     const pillar = document.createElement('div');
-    pillar.style.cssText = 'position:absolute;left:' + cx + 'px;top:0;bottom:0;width:' + (CW * 1.6) + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(255,220,0,0) 0%,rgba(255,240,170,0.9) 45%,rgba(255,255,255,0.95) 55%,rgba(255,220,0,0) 100%);animation:jfPillar 1.2s ease-out forwards;';
+    pillar.style.cssText = 'position:absolute;left:' + cx + 'px;top:0;bottom:0;width:' + (CW * 2) + 'px;transform-origin:center bottom;background:linear-gradient(to right,rgba(255,220,0,0) 0%,rgba(255,240,170,0.9) 35%,rgba(255,255,255,1) 50%,rgba(255,240,170,0.9) 65%,rgba(255,220,0,0) 100%);animation:jfPillar 1.4s ease-out forwards;z-index:2;';
     stage.appendChild(pillar);
     const res = face(result, '#ffdd00');
-    res.style.width = (CW * 1.35) + 'px'; res.style.height = (CH * 1.35) + 'px';
+    res.style.width = (CW * 1.45) + 'px'; res.style.height = (CH * 1.45) + 'px';
     res.style.left = cx + 'px'; res.style.top = cy + 'px';
-    res.style.animation = 'jfRise 0.9s cubic-bezier(.2,.9,.3,1.2) forwards, jfGlow 1.2s ease-in-out 0.9s infinite';
+    res.style.animation = 'jfRise 1s cubic-bezier(.2,.9,.3,1.2) forwards, jfGlow 1.2s ease-in-out 1s infinite';
+    res.style.zIndex = '3';
+    // ホログラムの光（斜めに走る）
+    const sheen = document.createElement('div');
+    sheen.style.cssText = 'position:absolute;top:-10%;bottom:-10%;width:45%;left:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.75),rgba(150,230,255,0.5),rgba(255,160,250,0.45),transparent);mix-blend-mode:screen;animation:jfSheen 0.9s ease-in-out 1s 2;';
+    res.appendChild(sheen);
     stage.appendChild(res);
     const title = document.createElement('div');
-    title.style.cssText = 'position:absolute;left:50%;top:' + Math.max(16, cy - CH * 1.35 / 2 - 64) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:' + Math.min(30, W * 0.065) + 'px;font-weight:900;color:#fff4b0;text-shadow:0 0 12px #ffdd00,0 0 28px #ff8a00,0 0 50px #ff4400;animation:jfTitle 0.9s ease-out forwards;';
+    title.style.cssText = 'position:absolute;left:50%;top:' + Math.max(H * 0.1, cy - CH * 1.45 / 2 - 70) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:' + Math.min(36, W * 0.075) + 'px;font-weight:900;font-style:italic;'
+      + 'background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffb300 60%,#ff7a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,0.6);'
+      + 'filter:drop-shadow(0 0 10px #ffb000) drop-shadow(0 0 26px #ff5a00);animation:jfTitle 1s ease-out forwards;z-index:6;';
     title.innerText = 'JOGRESS EVOLUTION';
     stage.appendChild(title);
+    const jp = document.createElement('div');
+    jp.style.cssText = 'position:absolute;left:50%;top:' + (Math.max(H * 0.1, cy - CH * 1.45 / 2 - 70) + Math.min(36, W * 0.075) + 8) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:900;letter-spacing:8px;color:#fff;text-shadow:0 0 8px #ff8a00,0 0 16px #ff4400;opacity:0;animation:jfSub 0.5s ease-out 0.6s forwards;z-index:6;';
+    jp.innerText = 'ジョグレス進化';
+    stage.appendChild(jp);
     const sub = document.createElement('div');
-    sub.style.cssText = 'position:absolute;left:50%;top:' + (cy + CH * 1.35 / 2 + 18) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:bold;color:#ffe9a0;text-shadow:0 0 8px #ff8a00;opacity:0;transition:opacity 0.4s 0.5s;';
+    sub.style.cssText = 'position:absolute;left:50%;top:' + Math.min(H * 0.86, cy + CH * 1.45 / 2 + 22) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:bold;color:#ffe9a0;text-shadow:0 0 8px #ff8a00;opacity:0;animation:jfSub 0.5s ease-out 0.9s forwards;z-index:6;';
     sub.innerText = '「' + ((left && left.name) || '?') + '」＋「' + ((right && right.name) || '?') + '」→「' + ((result && result.name) || '?') + '」' + (cost != null ? '（コスト' + cost + '）' : '');
     stage.appendChild(sub);
-    requestAnimationFrame(() => { sub.style.opacity = '1'; });
-    setTimeout(() => { overlay.style.opacity = '0'; }, 2300);
-    setTimeout(() => { overlay.remove(); done(); }, 2650);
+    setTimeout(() => { overlay.style.opacity = '0'; }, 3000);
+    setTimeout(() => { alive = false; overlay.remove(); done(); }, 3400);
   };
+  // 万一止まっても進行が止まらないように
+  setTimeout(() => { if (!_cbDone) { alive = false; try { overlay.remove(); } catch (_) {} done(); } }, 12000);
 }
 
 

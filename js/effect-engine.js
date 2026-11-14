@@ -15459,7 +15459,13 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   // 離れるときには使わない（他のカードが離れるときは _tryCancelLeaveByOtherCards が扱う）
   if (triggerKey === 'when_leave_battle' && Array.isArray(ownSteps)) ownSteps = _selfEventSteps(ownSteps, triggerKey);
   if (Array.isArray(ownSteps) && ownSteps.length > 0) {
-    reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownSteps });
+    // キーワード由来の効果（【不屈】等）は、カード自身の【消滅時】とは別の効果（同時誘発）なので分けて積む。
+    // 2つ以上になれば発動順を選べる（以前は1つにまとめて【消滅時】から順に発揮していた）
+    const _plain = ownSteps.filter(st => !(st && st._kwFlag));
+    const _byKw = new Map();
+    ownSteps.forEach(st => { if (st && st._kwFlag) { if (!_byKw.has(st._kwFlag)) _byKw.set(st._kwFlag, []); _byKw.get(st._kwFlag).push(st); } });
+    if (_plain.length > 0) reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: _plain });
+    _byKw.forEach((steps) => reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: steps }));
   }
   // 1.5) grant_effect で一時付与された効果（_grantedRecipes）由来のtriggerKeyも拾う。
   // 例: 【天昇】を grant_keyword で他カードに付与した場合の「消滅したとき」

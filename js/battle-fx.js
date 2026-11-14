@@ -2031,12 +2031,16 @@ export function fxDigixrossFusion(mats, result, cost, callback) {
 
 
 // =====================================================
-//  バトルのぶつかり合い演出（VS画面の中で再生）
-//  ① 2回、突進してぶつかり火花を散らしてはね返る ② 3回目はぶつかったまま押し合い、火花が出続ける
-//  ③ 決着の爆発: 負けた方は回転しながら吹き飛ばされ、画面の隅のトラッシュに吸い込まれる（相打ちは両方）
-//  ④ 勝った側の画面には大きく「WIN」、負けた側の画面には「LOSE」
-//  atkEl / defEl: VS画面の左右のカード枠。winner: 'atk' | 'def' | 'tie'。myIsAtk: この画面の持ち主がアタックした側か
-//  ※ 吹き飛ばしたカードは registerClashLoser に登録し、この後の消滅演出・セキュリティデジモンの LOSE 演出を省く
+//  バトルのぶつかり合い演出（VS画面の中で再生）。2段階で動かす:
+//  fxBattleClashBegin … ① 2回ぶつかってはね返る ② 3回目はぶつかったまま押し合う（火花が出続ける）。
+//    押し合いに入ったら onHold() を呼ぶ（呼び出し元はここで消滅回避の判定・確認のポップアップを行う）。押し合いは finish まで続く
+//  ctrl.finish(outcomes, cb) … 決着。outcomes = { atk: kind, def: kind }。kind:
+//    'win'（勝って残る）/ 'stay'（負けていない・何もしない）/ 'trash'（吹き飛ばされてトラッシュ）/ 'evade'（【回避】よける）/
+//    'barrier'（【防壁】セキュリティが盾になって砕ける）/ 'armor_break'・'fragment'（進化元が代わりに弾き飛ぶ）/
+//    'separate'（【分離】リンクカードが代わりに弾き飛ぶ）/ 'shield'（効果で消滅しない：光のバリア）/
+//    'scapegoat'（【スケープゴート】身代わりが吹き飛ぶ）/ 'indomitable'（【不屈】トラッシュへ飛んで戻ってくる）/
+//    'to_hand'・'to_deck'・'to_security'（その場所へ飛んでいく）/ 'recoil'（【道連れ】勝った側にも衝撃が返って吹き飛ぶ）
+//  勝った側の画面に「WIN」、負けた側の画面に「LOSE」（相打ちは両方 LOSE）
 // =====================================================
 export function registerClashLoser(card) {
   if (typeof window === 'undefined' || !card) return;
@@ -2044,7 +2048,7 @@ export function registerClashLoser(card) {
   list.push({ name: card.name || '', at: Date.now() });
   window._clashLosers = list.filter(x => Date.now() - x.at < 10000);
 }
-// 直前のぶつかり合い演出で吹き飛ばしたカードか（1回だけ消費する）
+// 直前のぶつかり合い演出でトラッシュへ送ったカードか（1回だけ消費する）
 export function consumeClashLoser(card) {
   if (typeof window === 'undefined' || !card || !Array.isArray(window._clashLosers)) return false;
   const now = Date.now();
@@ -2054,12 +2058,13 @@ export function consumeClashLoser(card) {
   window._clashLosers.splice(i, 1);
   return true;
 }
-export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myIsAtk) {
-  const done = () => { try { callback && callback(); } catch (_) {} };
-  if (typeof document === 'undefined' || !stageEl || !atkEl || !defEl) { done(); return; }
-  if (!document.getElementById('fx-clash-style2')) {
+const _CLASH_KW_LABEL = { evade: '【回避】', barrier: '【防壁】', armor_break: '【アーマー解除】', fragment: '【フラグメント】', separate: '【分離】', shield: '消滅しない！', scapegoat: '【スケープゴート】', indomitable: '【不屈】', recoil: '【道連れ】', to_hand: '手札へ', to_deck: 'デッキへ', to_security: 'セキュリティへ' };
+export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk, onHold) {
+  const noop = { finish: (o, cb) => { cb && cb(); }, close: () => {} };
+  if (typeof document === 'undefined' || !stageEl || !atkEl || !defEl) { setTimeout(() => onHold && onHold(), 0); return noop; }
+  if (!document.getElementById('fx-clash-style3')) {
     const st = document.createElement('style');
-    st.id = 'fx-clash-style2';
+    st.id = 'fx-clash-style3';
     st.textContent = [
       '@keyframes fcShake{0%,100%{transform:translate(0,0)}15%{transform:translate(-12px,6px)}30%{transform:translate(10px,-8px)}45%{transform:translate(-8px,-4px)}60%{transform:translate(6px,6px)}80%{transform:translate(-3px,2px)}}',
       '@keyframes fcShakeS{0%,100%{transform:translate(0,0)}25%{transform:translate(-5px,3px)}50%{transform:translate(5px,-3px)}75%{transform:translate(-3px,-2px)}}',
@@ -2072,6 +2077,10 @@ export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myI
       '@keyframes fcRays{0%{transform:translate(-50%,-50%) rotate(0deg) scale(0.4);opacity:0}20%{opacity:0.9}100%{transform:translate(-50%,-50%) rotate(70deg) scale(1.15);opacity:0.5}}',
       '@keyframes fcPiece{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}',
       '@keyframes fcGlow{0%,100%{opacity:0.55;transform:translate(-50%,-50%) scale(0.9)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.25)}}',
+      '@keyframes fcLabel{0%{transform:translate(-50%,-50%) scale(2);opacity:0}40%{transform:translate(-50%,-50%) scale(0.95);opacity:1}100%{transform:translate(-50%,-60%) scale(1);opacity:1}}',
+      '@keyframes fcDome{0%{transform:translate(-50%,-50%) scale(0.3);opacity:0}40%{transform:translate(-50%,-50%) scale(1.08);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:0.9}}',
+      '@keyframes fcDomeHit{0%,100%{filter:brightness(1)}30%{filter:brightness(2.6)}}',
+      '@keyframes fcRevive{0%{transform:translate(-50%,0) scaleY(0);opacity:0}30%{opacity:1}100%{transform:translate(-50%,0) scaleY(1);opacity:0}}',
     ].join('');
     document.head.appendChild(st);
   }
@@ -2081,8 +2090,6 @@ export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myI
   const push = gap / 2 + Math.min(ra.width, rd.width) * 0.16;
   const ix = (ra.right + rd.left) / 2, iy = (ra.top + ra.bottom) / 2 - 20;
   if (vsEl) { vsEl.style.transition = 'opacity 0.15s, transform 0.15s'; vsEl.style.opacity = '0'; vsEl.style.transform = 'scale(2.5)'; }
-
-  // 演出用のレイヤー（VS画面の上）と火花のキャンバス
   const fx = document.createElement('div');
   fx.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;';
   document.body.appendChild(fx);
@@ -2093,13 +2100,15 @@ export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myI
   const g = cv.getContext('2d');
   const ps = [];
   const cols = ['#fff6c8', '#ffd84a', '#ff9a00', '#ff5a1f', '#ffffff', '#7ff6ff'];
-  const sparks = (n, power) => {
+  const sparksAt = (x, y, n, power, palette) => {
+    const pal = palette || cols;
     for (let i = 0; i < n; i++) {
       const ang = (Math.random() < 0.75 ? (Math.random() < 0.5 ? -Math.PI / 2 : Math.PI / 2) + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2);
       const sp = (2 + Math.random() * 11) * power;
-      ps.push({ x: ix + (Math.random() - 0.5) * 8, y: iy + (Math.random() - 0.5) * 30, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 20 + Math.random() * 28, len: 1.5 + Math.random() * 3.5, c: cols[(Math.random() * cols.length) | 0] });
+      if (ps.length < 1200) ps.push({ x: x + (Math.random() - 0.5) * 8, y: y + (Math.random() - 0.5) * 30, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 20 + Math.random() * 28, len: 1.5 + Math.random() * 3.5, c: pal[(Math.random() * pal.length) | 0] });
     }
   };
+  const sparks = (n, power) => sparksAt(ix, iy, n, power);
   let alive = true, last = performance.now(), holdSpark = false;
   const tick = (now) => {
     if (!alive) return;
@@ -2123,55 +2132,40 @@ export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myI
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
-  const flashAt = (strength) => {
-    const f = document.createElement('div');
-    f.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + ix + 'px ' + iy + 'px,rgba(255,255,255,' + strength + ') 0%,rgba(255,240,180,' + (strength * 0.8) + ') 16%,rgba(255,255,255,0) 55%);animation:fcFlash 0.45s ease-out forwards;';
-    fx.appendChild(f); setTimeout(() => f.remove(), 500);
+  const el = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; fx.appendChild(d); return d; };
+  const flashAt = (x, y, strength, tint) => {
+    const f = el('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,' + strength + ') 0%,' + (tint || 'rgba(255,240,180,' + (strength * 0.8) + ')') + ' 16%,rgba(255,255,255,0) 55%);animation:fcFlash 0.45s ease-out forwards;');
+    setTimeout(() => f.remove(), 500);
   };
-  const rings = (colors, size) => colors.forEach((c, i) => {
-    const r = document.createElement('div');
-    r.style.cssText = 'position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 18px ' + c + ';animation:fcRing 0.7s ease-out ' + (i * 0.08) + 's forwards;opacity:0;';
-    fx.appendChild(r); setTimeout(() => r.remove(), 1000);
+  const ringsAt = (x, y, colors, size) => colors.forEach((c, i) => {
+    const r = el('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 18px ' + c + ';animation:fcRing 0.7s ease-out ' + (i * 0.08) + 's forwards;opacity:0;');
+    setTimeout(() => r.remove(), 1000);
   });
   const shake = (name, ms) => { stageEl.style.animation = name + ' ' + ms + 'ms linear'; setTimeout(() => { stageEl.style.animation = ''; }, ms + 20); };
-  const setT = (el, tr, t) => { el.style.transition = 'transform ' + t; el.style.transform = tr; };
+  const setT = (e, tr, t) => { e.style.transition = 'transform ' + t; e.style.transform = tr; };
   const AT = (x, rot, sc) => 'translateX(' + x + 'px) rotate(' + rot + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
+  const label = (x, y, text, color) => el('position:absolute;left:' + x + 'px;top:' + y + 'px;white-space:nowrap;font-size:' + Math.min(30, W * 0.07) + 'px;font-weight:900;color:#fff;text-shadow:0 0 10px ' + color + ',0 0 22px ' + color + ',0 0 3px #000;animation:fcLabel 0.5s ease-out forwards;z-index:3;', text);
 
-  // ①② 2回ぶつかってはね返る
-  const clashOnce = (at, power, next) => {
+  const clashOnce = (at, power) => {
+    setTimeout(() => { setT(atkEl, AT(-16, -5), '0.16s ease-out'); setT(defEl, AT(16, 5), '0.16s ease-out'); }, at);
+    setTimeout(() => { setT(atkEl, AT(push, 7), '0.17s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -7), '0.17s cubic-bezier(.55,0,.9,.35)'); }, at + 170);
     setTimeout(() => {
-      setT(atkEl, AT(-16, -5), '0.16s ease-out'); setT(defEl, AT(16, 5), '0.16s ease-out');
-    }, at);
-    setTimeout(() => {
-      setT(atkEl, AT(push, 7), '0.17s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -7), '0.17s cubic-bezier(.55,0,.9,.35)');
-    }, at + 170);
-    setTimeout(() => {
-      flashAt(0.6 + power * 0.25); sparks(55 + power * 35, 0.8 + power * 0.3); rings(['#ffffff', '#ffd84a'], 50 + power * 20); shake('fcShakeS', 260);
+      flashAt(ix, iy, 0.6 + power * 0.25); sparks(55 + power * 35, 0.8 + power * 0.3); ringsAt(ix, iy, ['#ffffff', '#ffd84a'], 50 + power * 20); shake('fcShakeS', 260);
       setT(atkEl, AT(-10, -2), '0.28s cubic-bezier(.2,.9,.3,1.3)'); setT(defEl, AT(10, 2), '0.28s cubic-bezier(.2,.9,.3,1.3)');
-      if (next) next();
     }, at + 340);
   };
   clashOnce(0, 0);
   clashOnce(620, 1);
-  // ③ 3回目: ぶつかったまま押し合う（震えながら火花が出続け、中心が光る）
-  const T3 = 1300, HOLD = 1100;
+  const T3 = 1300, MIN_HOLD = 1100;
+  setTimeout(() => { setT(atkEl, AT(-22, -7), '0.2s ease-out'); setT(defEl, AT(22, 7), '0.2s ease-out'); }, T3);
+  setTimeout(() => { setT(atkEl, AT(push, 5), '0.18s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -5), '0.18s cubic-bezier(.55,0,.9,.35)'); }, T3 + 210);
+  let glow = null, jitterTimer = null, holdStart = 0, pendingFinish = null, finished = false;
   setTimeout(() => {
-    setT(atkEl, AT(-22, -7), '0.2s ease-out'); setT(defEl, AT(22, 7), '0.2s ease-out');
-  }, T3);
-  setTimeout(() => {
-    setT(atkEl, AT(push, 5), '0.18s cubic-bezier(.55,0,.9,.35)'); setT(defEl, AT(-push, -5), '0.18s cubic-bezier(.55,0,.9,.35)');
-  }, T3 + 210);
-  let glow = null, jitterTimer = null;
-  setTimeout(() => {
-    flashAt(0.9); sparks(90, 1.3); rings(['#ffffff', '#ffd84a', '#ff6a00'], 70); shake('fcShake', 380);
-    holdSpark = true;
-    glow = document.createElement('div');
-    glow.style.cssText = 'position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:120px;height:180px;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,0.95) 0%,rgba(255,216,74,0.7) 35%,rgba(255,106,0,0) 70%);animation:fcGlow 0.22s ease-in-out infinite;';
-    fx.appendChild(glow);
-    // 押し合いの震え（少しずつ勝つ側が押し込む）
-    const t0 = performance.now();
+    flashAt(ix, iy, 0.9); sparks(90, 1.3); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00'], 70); shake('fcShake', 380);
+    holdSpark = true; holdStart = performance.now();
+    glow = el('position:absolute;left:' + ix + 'px;top:' + iy + 'px;width:120px;height:180px;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,0.95) 0%,rgba(255,216,74,0.7) 35%,rgba(255,106,0,0) 70%);animation:fcGlow 0.22s ease-in-out infinite;');
     jitterTimer = setInterval(() => {
-      const u = Math.min(1, (performance.now() - t0) / HOLD);
+      const u = Math.min(1, (performance.now() - holdStart) / MIN_HOLD);
       const lean = winner === 'atk' ? 1 : winner === 'def' ? -1 : 0;
       const shift = lean * 14 * u;
       const j = () => (Math.random() - 0.5) * 6;
@@ -2179,91 +2173,219 @@ export function fxBattleClash(stageEl, atkEl, defEl, vsEl, winner, callback, myI
       atkEl.style.transform = AT(push + shift + j(), 5 + j() * 0.5);
       defEl.style.transform = AT(-push + shift + j(), -5 + j() * 0.5);
     }, 50);
+    try { onHold && onHold(); } catch (e) { console.error('[clash onHold]', e); }
+    if (pendingFinish) { const pf = pendingFinish; pendingFinish = null; runFinish(pf.o, pf.cb); }
   }, T3 + 390);
-  // ④ 決着
-  const TK = T3 + 390 + HOLD;
-  setTimeout(() => {
-    clearInterval(jitterTimer); holdSpark = false;
-    if (glow) glow.remove();
-    flashAt(1); sparks(160, 1.6); rings(['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
-    const losers = winner === 'atk' ? [[defEl, 1]] : winner === 'def' ? [[atkEl, -1]] : [[atkEl, -1], [defEl, 1]];
-    const winEl = winner === 'atk' ? atkEl : winner === 'def' ? defEl : null;
-    if (winEl) {
-      setT(winEl, AT((winEl === atkEl ? 1 : -1) * push * 0.6, 0, 1.15), '0.35s cubic-bezier(.2,.9,.3,1.4)');
-      const im = winEl.querySelector('[id$="card-img"]');
-      if (im) { im.style.transition = 'box-shadow 0.3s, border-color 0.3s'; im.style.borderColor = '#ffd84a'; im.style.boxShadow = '0 0 40px #ffd84a,0 0 90px #ff9a00'; }
+
+  // ---- 決着 ----
+  const centerOf = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  const binAt = (dir, icon, text, color) => {
+    const bx = dir < 0 ? Math.max(48, W * 0.12) : Math.min(W - 48, W * 0.88), by = H - Math.max(70, H * 0.12);
+    const b = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:74px;height:74px;border-radius:50%;background:radial-gradient(circle,' + color + '55 0%,#0a0a0a 70%);border:3px solid ' + color + ';box-shadow:0 0 22px ' + color + ',inset 0 0 16px ' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:26px;animation:fcBin 0.3s ease-out forwards;',
+      icon + '<div style="font-size:9px;font-weight:bold;margin-top:-2px;">' + text + '</div>');
+    return { b, bx, by };
+  };
+  // 吹き飛ばして、隅のアイコン（トラッシュ等）に吸い込ませる
+  const blowTo = (area, dir, dest, after) => {
+    const [cx0, cy0] = centerOf(area);
+    const info = dest === 'to_hand' ? ['🖐', '手札', '#4ad8ff'] : dest === 'to_deck' ? ['🂠', 'デッキ', '#a8ff4a'] : dest === 'to_security' ? ['🛡', 'セキュリティ', '#ffd84a'] : ['🗑', 'トラッシュ', '#ff4d4d'];
+    const { b, bx, by } = binAt(dir, info[0], info[1], info[2]);
+    area.style.transition = 'transform 0.38s cubic-bezier(.15,.8,.35,1), opacity 0.38s';
+    area.style.transform = 'translate(' + (dir * W * 0.22) + 'px,' + (-H * 0.16) + 'px) rotate(' + (dir * 400) + 'deg) scale(0.8)';
+    for (let i = 0; i < 14; i++) {
+      const sz = 10 + Math.random() * 18;
+      const pc = el('position:absolute;left:' + cx0 + 'px;top:' + cy0 + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + sz / 2 + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,170,90,0.8),rgba(90,40,20,0));--dx:' + (dir * (60 + Math.random() * W * 0.25)) + 'px;--dy:' + (-30 - Math.random() * H * 0.15) + 'px;--r:0deg;animation:fcPiece ' + (0.5 + Math.random() * 0.4) + 's ease-out forwards;');
+      setTimeout(() => pc.remove(), 1000);
     }
-    // 負けた方: 回転しながら吹き飛ばされ、トラッシュに吸い込まれる
-    losers.forEach(([el, dir]) => {
-      const r = el.getBoundingClientRect();
-      const bx = dir < 0 ? Math.max(48, W * 0.12) : Math.min(W - 48, W * 0.88), by = H - Math.max(70, H * 0.12);
-      const bin = document.createElement('div');
-      bin.style.cssText = 'position:absolute;left:' + bx + 'px;top:' + by + 'px;width:74px;height:74px;border-radius:50%;background:radial-gradient(circle,#3a1010 0%,#120404 70%);border:3px solid #ff4d4d;box-shadow:0 0 22px #ff3b3b,inset 0 0 16px #ff3b3b;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ffd0d0;font-size:26px;animation:fcBin 0.3s ease-out forwards;';
-      bin.innerHTML = '🗑<div style="font-size:9px;font-weight:bold;margin-top:-2px;">トラッシュ</div>';
-      fx.appendChild(bin);
-      const cx0 = r.left + r.width / 2, cy0 = r.top + r.height / 2;
-      // まず外へ大きく吹き飛ぶ（上へはね上がりながら回転）→ トラッシュへ落ちて吸い込まれる
-      el.style.transition = 'transform 0.38s cubic-bezier(.15,.8,.35,1), opacity 0.38s';
-      el.style.transform = 'translate(' + (dir * W * 0.22) + 'px,' + (-H * 0.16) + 'px) rotate(' + (dir * 400) + 'deg) scale(0.8)';
-      // 煙の尾
-      for (let i = 0; i < 14; i++) {
-        const pc = document.createElement('div');
-        const sz = 10 + Math.random() * 18;
-        pc.style.cssText = 'position:absolute;left:' + cx0 + 'px;top:' + cy0 + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + sz / 2 + 'px;border-radius:50%;background:radial-gradient(circle,rgba(255,170,90,0.8),rgba(90,40,20,0));--dx:' + (dir * (60 + Math.random() * W * 0.25)) + 'px;--dy:' + (-30 - Math.random() * H * 0.15) + 'px;--r:0deg;animation:fcPiece ' + (0.5 + Math.random() * 0.4) + 's ease-out forwards;';
-        fx.appendChild(pc); setTimeout(() => pc.remove(), 1000);
+    setTimeout(() => {
+      area.style.transition = 'transform 0.42s cubic-bezier(.6,0,.9,.6), opacity 0.42s';
+      area.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) rotate(' + (dir * 900) + 'deg) scale(0.12)';
+      area.style.opacity = '0.2';
+    }, 400);
+    setTimeout(() => {
+      area.style.opacity = '0';
+      b.style.animation = 'fcBinHit 0.4s ease-out';
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2;
+        const pc = el('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:5px;height:5px;border-radius:50%;background:' + info[2] + ';box-shadow:0 0 8px ' + info[2] + ';--dx:' + Math.cos(ang) * 50 + 'px;--dy:' + Math.sin(ang) * 50 + 'px;--r:0deg;animation:fcPiece 0.5s ease-out forwards;');
+        setTimeout(() => pc.remove(), 600);
       }
-      setTimeout(() => {
-        el.style.transition = 'transform 0.42s cubic-bezier(.6,0,.9,.6), opacity 0.42s';
-        el.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) rotate(' + (dir * 900) + 'deg) scale(0.12)';
-        el.style.opacity = '0.2';
-      }, 400);
-      setTimeout(() => {
-        el.style.opacity = '0';
-        bin.style.animation = 'fcBinHit 0.4s ease-out';
-        for (let i = 0; i < 10; i++) {
-          const pc = document.createElement('div');
-          const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2;
-          pc.style.cssText = 'position:absolute;left:' + bx + 'px;top:' + by + 'px;width:5px;height:5px;border-radius:50%;background:#ff7a5a;box-shadow:0 0 8px #ff3b3b;--dx:' + Math.cos(ang) * 50 + 'px;--dy:' + Math.sin(ang) * 50 + 'px;--r:0deg;animation:fcPiece 0.5s ease-out forwards;';
-          fx.appendChild(pc); setTimeout(() => pc.remove(), 600);
+      after && after({ b, bx, by, cx0, cy0 });
+    }, 820);
+  };
+  // 小さなカード（裏向き or 画像）を飛ばす（身代わり・進化元・リンク・セキュリティ）
+  const miniCard = (x, y, img, border) => el('position:absolute;left:' + (x - 30) + 'px;top:' + (y - 42) + 'px;width:60px;height:84px;border-radius:5px;border:2px solid ' + border + ';box-shadow:0 0 14px ' + border + ';background:' + (img ? 'url(' + img + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:2;transition:transform 0.5s cubic-bezier(.15,.8,.35,1),opacity 0.5s;',
+    img ? '' : '<div style="position:absolute;inset:6px;border:1px solid ' + border + '88;border-radius:3px;"></div>');
+  const imgOf = (area) => { const i = area.querySelector('img'); return i ? i.src : ''; };
+
+  const playOne = (side, kind, area, dir) => {
+    const [cx, cy] = centerOf(area);
+    const hitX = cx - dir * 30; // 衝撃が来る側
+    const lbl = (t, c) => label(cx, cy - 110, t, c);
+    switch (kind) {
+      case 'trash': blowTo(area, dir, 'trash'); return 1300;
+      case 'to_hand': case 'to_deck': case 'to_security': lbl(_CLASH_KW_LABEL[kind], '#4ad8ff'); blowTo(area, dir, kind); return 1300;
+      case 'indomitable': {
+        lbl(_CLASH_KW_LABEL.indomitable, '#ff9a00');
+        blowTo(area, dir, 'trash', ({ b, bx, by, cx0, cy0 }) => {
+          setTimeout(() => {
+            // トラッシュから光の柱と一緒に戻ってくる
+            const pillar = el('position:absolute;left:' + cx0 + 'px;top:0;height:' + H + 'px;width:140px;transform-origin:center bottom;background:linear-gradient(to right,rgba(255,200,80,0) 0%,rgba(255,240,170,0.9) 45%,#fff 50%,rgba(255,240,170,0.9) 55%,rgba(255,200,80,0) 100%);animation:fcRevive 0.9s ease-out forwards;');
+            setTimeout(() => pillar.remove(), 1000);
+            b.style.animation = 'fcBinHit 0.4s ease-out';
+            area.style.transition = 'none';
+            area.style.transform = 'translate(' + (bx - cx0) + 'px,' + (by - cy0) + 'px) scale(0.1)';
+            area.style.opacity = '0';
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              area.style.transition = 'transform 0.6s cubic-bezier(.2,.9,.3,1.3), opacity 0.4s';
+              area.style.transform = 'translate(0,0) scale(1.05)';
+              area.style.opacity = '1';
+              const im = area.querySelector('[id$="card-img"]');
+              if (im) { im.style.filter = ''; im.style.boxShadow = '0 0 40px #ffb000,0 0 80px #ff6a00'; }
+            }));
+            sparksAt(cx0, cy0, 80, 1, ['#ffd84a', '#ffffff', '#ff9a00']);
+            label(cx0, cy0 - 110, '復活！', '#ff9a00');
+          }, 250);
+        });
+        return 2500;
+      }
+      case 'evade': {
+        lbl(_CLASH_KW_LABEL.evade, '#00fbff');
+        // 残像を残して横に避ける
+        for (let i = 1; i <= 3; i++) {
+          const ghost = area.cloneNode(true);
+          const r = area.getBoundingClientRect();
+          ghost.style.cssText += ';position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;margin:0;opacity:' + (0.5 - i * 0.12) + ';transition:transform 0.3s ease-out,opacity 0.5s;pointer-events:none;';
+          fx.appendChild(ghost);
+          requestAnimationFrame(() => { ghost.style.transform = 'translate(' + (-dir * 22 * i) + 'px,' + (-30 * i) + 'px)'; ghost.style.opacity = '0'; });
+          setTimeout(() => ghost.remove(), 700);
         }
-      }, 820);
-    });
-  }, TK);
-  // ⑤ この画面の持ち主の勝ち負けを大きく
-  const myResult = winner === 'tie' ? 'lose' : ((winner === 'atk') === !!myIsAtk ? 'win' : 'lose');
-  setTimeout(() => {
-    const big = document.createElement('div');
-    const fs = Math.min(110, W * 0.24);
-    if (myResult === 'win') {
-      const rays = document.createElement('div');
-      rays.style.cssText = 'position:absolute;left:50%;top:42%;width:' + R * 1.5 + 'px;height:' + R * 1.5 + 'px;border-radius:50%;background:repeating-conic-gradient(rgba(255,226,122,0.7) 0deg 5deg,rgba(255,226,122,0) 5deg 16deg);-webkit-mask:radial-gradient(circle,#000 0%,transparent 55%);mask:radial-gradient(circle,#000 0%,transparent 55%);animation:fcRays 1.4s ease-out forwards;';
-      fx.appendChild(rays);
-      const cc = ['#ffd84a', '#ffffff', '#00ff88', '#7ff6ff', '#ff8adf'];
-      for (let i = 0; i < 50; i++) {
-        const p = document.createElement('div');
-        const ang = Math.random() * Math.PI * 2, d = 120 + Math.random() * R * 0.4;
-        p.style.cssText = 'position:absolute;left:50%;top:42%;width:' + (5 + Math.random() * 6) + 'px;height:' + (8 + Math.random() * 8) + 'px;background:' + cc[i % cc.length] + ';border-radius:2px;--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 90) + 'px;--r:' + (Math.random() * 720 - 360) + 'deg;animation:fcPiece ' + (1 + Math.random() * 0.6) + 's cubic-bezier(.1,.7,.3,1) forwards;';
-        fx.appendChild(p);
+        area.style.transition = 'transform 0.25s cubic-bezier(.2,.9,.3,1)';
+        area.style.transform = 'translate(' + (dir * 70) + 'px,-60px) rotate(' + (dir * 12) + 'deg)';
+        sparksAt(hitX, cy, 30, 0.8, ['#7ff6ff', '#ffffff']);
+        setTimeout(() => { area.style.transition = 'transform 0.4s ease-in-out'; area.style.transform = 'translate(0,0)'; }, 700);
+        return 1300;
       }
-      big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffc300 60%,#ff8a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,0.5);filter:drop-shadow(0 0 14px #ffb000) drop-shadow(0 0 34px #ff6a00);animation:fcBig 0.55s cubic-bezier(.2,.9,.3,1) forwards;';
-      big.innerText = 'WIN';
-    } else {
-      const vig = document.createElement('div');
-      vig.style.cssText = 'position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(120,0,0,0.15) 0%,rgba(80,0,0,0.75) 100%);animation:fcFlash 1.6s ease-out forwards;';
-      fx.appendChild(vig);
-      for (let i = 0; i < 16; i++) {
-        const sh = document.createElement('div');
-        const ang = Math.random() * Math.PI * 2, d = 80 + Math.random() * 200, sz = 8 + Math.random() * 16;
-        sh.style.cssText = 'position:absolute;left:50%;top:42%;width:' + sz + 'px;height:' + sz + 'px;background:linear-gradient(135deg,rgba(255,120,120,0.9),rgba(120,0,0,0.6));clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 140) + 'px;--r:' + (Math.random() * 540 - 270) + 'deg;animation:fcPiece 1.1s cubic-bezier(.3,.1,.7,1) 0.2s forwards;';
-        fx.appendChild(sh);
+      case 'barrier': {
+        lbl(_CLASH_KW_LABEL.barrier, '#ffd84a');
+        // セキュリティのカード（裏向き）が前に出て盾になり、砕ける
+        const sc = miniCard(hitX, cy, '', '#ffd84a');
+        sc.style.transform = 'translateY(80px) scale(0.4)'; sc.style.opacity = '0';
+        requestAnimationFrame(() => { sc.style.transform = 'translateY(0) scale(1.4)'; sc.style.opacity = '1'; });
+        setTimeout(() => {
+          flashAt(hitX, cy, 0.8); sparksAt(hitX, cy, 70, 1.1, ['#ffd84a', '#ffffff', '#ff9a00']);
+          sc.remove();
+          for (let i = 0; i < 12; i++) {
+            const ang = Math.random() * Math.PI * 2, d = 50 + Math.random() * 120;
+            const sh = el('position:absolute;left:' + hitX + 'px;top:' + cy + 'px;width:14px;height:20px;background:linear-gradient(135deg,#2a3c66,#0b1020);border:1px solid #ffd84a;clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 60) + 'px;--r:' + (Math.random() * 540) + 'deg;animation:fcPiece 0.8s ease-out forwards;');
+            setTimeout(() => sh.remove(), 900);
+          }
+        }, 450);
+        return 1300;
       }
-      big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;color:#ff4040;-webkit-text-stroke:2px rgba(60,0,0,0.8);text-shadow:0 0 18px #ff2020,0 0 40px #aa0000;animation:fcBigLose 0.7s ease-out forwards;';
-      big.innerText = 'LOSE';
+      case 'armor_break': case 'fragment': case 'separate': case 'scapegoat': {
+        const isScape = kind === 'scapegoat';
+        lbl(_CLASH_KW_LABEL[kind], isScape ? '#ff8adf' : '#a8ff4a');
+        // 代わりのカード（進化元・リンクカード・身代わりのデジモン）が前に割り込んで弾き飛ばされる
+        const mc = miniCard(cx, cy + 20, isScape ? '' : '', isScape ? '#ff8adf' : '#a8ff4a');
+        if (isScape) { mc.style.width = '80px'; mc.style.height = '112px'; mc.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#ffd0f0;">身代わり</div>'; }
+        mc.style.transform = 'translate(' + (dir * 10) + 'px,40px) scale(0.6)'; mc.style.opacity = '0';
+        requestAnimationFrame(() => { mc.style.transform = 'translate(' + (-dir * 40) + 'px,0) scale(1.1)'; mc.style.opacity = '1'; });
+        setTimeout(() => {
+          flashAt(hitX, cy, 0.6); sparksAt(hitX, cy, 50, 1);
+          mc.style.transition = 'transform 0.7s cubic-bezier(.15,.8,.35,1), opacity 0.7s';
+          mc.style.transform = 'translate(' + (dir * W * 0.4) + 'px,' + (H * 0.3) + 'px) rotate(' + (dir * 720) + 'deg) scale(0.3)';
+          mc.style.opacity = '0';
+          const { b } = binAt(dir, '🗑', 'トラッシュ', '#ff4d4d');
+          setTimeout(() => { b.style.animation = 'fcBinHit 0.4s ease-out'; }, 650);
+        }, 450);
+        return 1500;
+      }
+      case 'shield': {
+        lbl(_CLASH_KW_LABEL.shield, '#4ad8ff');
+        // 光のバリアが一撃を受け止める
+        const r = area.getBoundingClientRect();
+        const dome = el('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + (r.width * 1.7) + 'px;height:' + (r.height * 1.45) + 'px;border-radius:50%;border:3px solid #9ff2ff;box-shadow:0 0 30px #4ad8ff,inset 0 0 40px rgba(74,216,255,0.6);background:radial-gradient(ellipse,rgba(160,240,255,0.08) 40%,rgba(74,216,255,0.35) 100%),repeating-linear-gradient(60deg,rgba(255,255,255,0.12) 0 2px,transparent 2px 14px);animation:fcDome 0.35s ease-out forwards;z-index:2;');
+        setTimeout(() => { dome.style.animation = 'fcDomeHit 0.35s ease-out'; flashAt(hitX, cy, 0.7, 'rgba(120,230,255,0.6)'); sparksAt(hitX, cy, 60, 1, ['#9ff2ff', '#ffffff', '#4ad8ff']); ringsAt(hitX, cy, ['#9ff2ff'], 60); }, 350);
+        setTimeout(() => { dome.style.transition = 'opacity 0.4s'; dome.style.opacity = '0'; }, 1100);
+        return 1400;
+      }
+      case 'recoil': {
+        // 【道連れ】: 負けた側のトラッシュから衝撃が返り、勝った側も吹き飛ばされる
+        setTimeout(() => {
+          lbl(_CLASH_KW_LABEL.recoil, '#ff4d4d');
+          const im = area.querySelector('[id$="card-img"]');
+          if (im) { im.style.boxShadow = '0 0 40px #ff2020'; im.style.borderColor = '#ff4d4d'; }
+          flashAt(cx, cy, 0.7, 'rgba(255,60,60,0.6)'); ringsAt(cx, cy, ['#ff4d4d', '#ffffff'], 60); shake('fcShake', 380);
+          setTimeout(() => blowTo(area, dir, 'trash'), 350);
+        }, 1300);
+        return 2800;
+      }
+      default: return 0;
     }
-    fx.appendChild(big);
-  }, TK + 950);
-  setTimeout(() => { alive = false; fx.style.transition = 'opacity 0.25s'; fx.style.opacity = '0'; }, TK + 2300);
-  setTimeout(() => { fx.remove(); done(); }, TK + 2550);
+  };
+
+  const runFinish = (outcomes, cb) => {
+    if (finished) { cb && cb(); return; }
+    finished = true;
+    const doFinish = () => {
+      clearInterval(jitterTimer); holdSpark = false;
+      if (glow) glow.remove();
+      flashAt(ix, iy, 1); sparks(160, 1.6); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
+      const o = outcomes || {};
+      let dur = 0;
+      [['atk', atkEl, -1], ['def', defEl, 1]].forEach(([side, area, dir]) => {
+        const kind = o[side] || 'stay';
+        if (kind === 'win' || kind === 'stay' || kind === 'recoil') {
+          // 勝った側（または負けていない側）は光って前へ
+          setT(area, AT((side === 'atk' ? 1 : -1) * push * (kind === 'stay' ? 0.2 : 0.6), 0, kind === 'stay' ? 1 : 1.15), '0.35s cubic-bezier(.2,.9,.3,1.4)');
+          const im = area.querySelector('[id$="card-img"]');
+          if (im && kind !== 'stay') { im.style.transition = 'box-shadow 0.3s, border-color 0.3s'; im.style.borderColor = '#ffd84a'; im.style.boxShadow = '0 0 40px #ffd84a,0 0 90px #ff9a00'; }
+          if (kind === 'recoil') dur = Math.max(dur, playOne(side, 'recoil', area, dir));
+          return;
+        }
+        // 負けた側: 一旦もとの位置へはね返されてから、それぞれの演出
+        setT(area, AT(dir * 18, dir * 6), '0.18s ease-out');
+        dur = Math.max(dur, playOne(side, kind, area, dir));
+      });
+      // この画面の持ち主のバトルの勝ち負け
+      const myResult = winner === 'tie' ? 'lose' : ((winner === 'atk') === !!myIsAtk ? 'win' : 'lose');
+      setTimeout(() => {
+        const big = document.createElement('div');
+        const fs = Math.min(110, W * 0.24);
+        if (myResult === 'win') {
+          el('position:absolute;left:50%;top:42%;width:' + R * 1.5 + 'px;height:' + R * 1.5 + 'px;border-radius:50%;background:repeating-conic-gradient(rgba(255,226,122,0.7) 0deg 5deg,rgba(255,226,122,0) 5deg 16deg);-webkit-mask:radial-gradient(circle,#000 0%,transparent 55%);mask:radial-gradient(circle,#000 0%,transparent 55%);animation:fcRays 1.4s ease-out forwards;');
+          const cc = ['#ffd84a', '#ffffff', '#00ff88', '#7ff6ff', '#ff8adf'];
+          for (let i = 0; i < 50; i++) {
+            const ang = Math.random() * Math.PI * 2, d = 120 + Math.random() * R * 0.4;
+            el('position:absolute;left:50%;top:42%;width:' + (5 + Math.random() * 6) + 'px;height:' + (8 + Math.random() * 8) + 'px;background:' + cc[i % cc.length] + ';border-radius:2px;--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 90) + 'px;--r:' + (Math.random() * 720 - 360) + 'deg;animation:fcPiece ' + (1 + Math.random() * 0.6) + 's cubic-bezier(.1,.7,.3,1) forwards;');
+          }
+          big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;background:linear-gradient(180deg,#ffffff 0%,#fff2a8 35%,#ffc300 60%,#ff8a00 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,0.5);filter:drop-shadow(0 0 14px #ffb000) drop-shadow(0 0 34px #ff6a00);animation:fcBig 0.55s cubic-bezier(.2,.9,.3,1) forwards;z-index:4;';
+          big.innerText = 'WIN';
+        } else {
+          el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(120,0,0,0.15) 0%,rgba(80,0,0,0.75) 100%);animation:fcFlash 1.6s ease-out forwards;');
+          for (let i = 0; i < 16; i++) {
+            const ang = Math.random() * Math.PI * 2, d = 80 + Math.random() * 200, sz = 8 + Math.random() * 16;
+            el('position:absolute;left:50%;top:42%;width:' + sz + 'px;height:' + sz + 'px;background:linear-gradient(135deg,rgba(255,120,120,0.9),rgba(120,0,0,0.6));clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * d + 'px;--dy:' + (Math.sin(ang) * d + 140) + 'px;--r:' + (Math.random() * 540 - 270) + 'deg;animation:fcPiece 1.1s cubic-bezier(.3,.1,.7,1) 0.2s forwards;');
+          }
+          big.style.cssText = 'position:absolute;left:50%;top:42%;white-space:nowrap;font-size:' + fs + 'px;font-weight:900;font-style:italic;letter-spacing:4px;color:#ff4040;-webkit-text-stroke:2px rgba(60,0,0,0.8);text-shadow:0 0 18px #ff2020,0 0 40px #aa0000;animation:fcBigLose 0.7s ease-out forwards;z-index:4;';
+          big.innerText = 'LOSE';
+        }
+        fx.appendChild(big);
+      }, Math.min(950, dur));
+      const total = Math.max(dur, 950) + 1300;
+      setTimeout(() => { alive = false; fx.style.transition = 'opacity 0.25s'; fx.style.opacity = '0'; }, total);
+      setTimeout(() => { fx.remove(); cb && cb(); }, total + 250);
+    };
+    // 押し合いは最低 MIN_HOLD は見せる
+    const waited = performance.now() - holdStart;
+    if (waited < MIN_HOLD) setTimeout(doFinish, MIN_HOLD - waited); else doFinish();
+  };
+  return {
+    finish: (outcomes, cb) => { if (!holdStart) { pendingFinish = { o: outcomes, cb }; return; } runFinish(outcomes, cb); },
+    // 演出の途中で強制的に終える（アタックが終わった等）
+    close: () => { finished = true; alive = false; clearInterval(jitterTimer); try { fx.remove(); } catch (_) {} },
+  };
 }
 
 // VS画面のカード枠を元に戻す（次の表示のため）

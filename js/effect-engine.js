@@ -18987,8 +18987,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs) { ctx.bs._lastPickedCard = cardToSummon; ctx.bs._lastActionCount = 1; }
         if (_selfFromZone) {
           cardToSummon.summonedThisTurn = true; cardToSummon.suspended = false;
-          if (!Array.isArray(cardToSummon.buffs)) cardToSummon.buffs = [];
-          if (!Array.isArray(cardToSummon.stack)) cardToSummon.stack = [];
+          // トラッシュ等から登場し直したカードは新しいデジモン。場にいたときの進化元・リンク・バフ・DP修整は持ち越さない
+          // （【不屈】で消滅→トラッシュから登場したとき、トラッシュへ送った進化元を持ったままになっていた）
+          cardToSummon.stack = []; cardToSummon.linkedCards = []; cardToSummon.buffs = [];
+          cardToSummon._permEffects = {}; cardToSummon.dpModifier = 0;
+          if (cardToSummon.baseDp != null) cardToSummon.dp = cardToSummon.baseDp;
           _syncZoneSummon(ctx);
         }
         ctx.renderAll();

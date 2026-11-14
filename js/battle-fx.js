@@ -2318,9 +2318,13 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         const backUrl = (typeof window !== 'undefined' && window._cardBackUrl) || '';
         const guards = imgs.map((im, i) => {
           const gx = rr.left + rr.width / 2 - dir * (34 + i * 10), gy = rr.top + rr.height / 2 + i * 8;
-          const src = im || backUrl;
+          // 'name:〇〇' は画像の無いカード（テスト画面のダミーカード等）: 名前を書いた表向きのカードにする
+          const nameOnly = typeof im === 'string' && im.indexOf('name:') === 0 ? im.slice(5) : null;
+          const src = nameOnly != null ? '' : (im || backUrl);
+          const inner = nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:12px;font-weight:bold;color:#fff;background:linear-gradient(160deg,#3a3a48,#16161e);">' + nameOnly + '</div>'
+            : (!im && kind === 'scapegoat') ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '';
           const gEl = el('position:absolute;left:' + (gx - GW / 2) + 'px;top:' + (gy - GH / 2) + 'px;width:' + GW + 'px;height:' + GH + 'px;border-radius:10px;overflow:hidden;border:2px solid ' + bc + ';box-shadow:0 0 22px ' + bc + ',0 0 44px ' + bc + '66;background:' + (src ? 'url(' + src + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:3;will-change:transform,opacity;opacity:0;transform:translate(' + (dir * 40) + 'px,60px) scale(0.5);transition:transform 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.25s;',
-            (!im && kind === 'scapegoat') ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '');
+            inner);
           setTimeout(() => { gEl.style.opacity = '1'; gEl.style.transform = 'translate(0,0) scale(1.04)'; }, 40 + i * 120);
           return gEl;
         });

@@ -336,7 +336,7 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   const _linkN0 = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
   const _stackN0 = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
   const _snap = _clashSnapshot(card, ownerSidePlayer);
-  const _subImgsNow = () => _clashSubCards(_snap, card, ownerSidePlayer).map(c => cardImg(c)).filter(Boolean);
+  const _subImgsNow = () => _clashSubCards(_snap, card, ownerSidePlayer).map(c => cardImg(c) || ('name:' + (c.name || ''))).filter(Boolean);
   const _cb0 = callback0;
   callback0 = (r) => {
     if (r && r.canceled && _clashPending) {
@@ -498,7 +498,7 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
       try {
         if (_clashSideOf(card)) {
           const _purged = card._armorPurgedTo;
-          const _imgs = _purged ? [cardImg(card)].filter(Boolean) : _clashSubCards(_snapW, card, _owner).map(c => cardImg(c)).filter(Boolean);
+          const _imgs = _purged ? [cardImg(card) || ('name:' + (card.name || ''))] : _clashSubCards(_snapW, card, _owner).map(c => cardImg(c) || ('name:' + (c.name || ''))).filter(Boolean);
           _clashNoteAndSend(card, _clashKindByDiff(_snapW, card), _imgs, _purged ? cardImg(_purged) : '');
         }
       } catch (e) { console.error('[clash note wbd]', e); }

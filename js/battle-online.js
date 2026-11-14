@@ -1352,7 +1352,7 @@ function onRemoteCommand(cmd) {
         const t = bs.player.security.shift();
         if (t) bs.player.trash.push(t);
         // 破棄したセキュリティの画像（VS画面の「庇うカード」に表向きで出す。こちらの画面と相手の画面の両方）
-        _trashedImg = t ? (cardImg(t) || '') : '';
+        _trashedImg = t ? (cardImg(t) || ('name:' + (t.name || ''))) : '';
         try { if (typeof window._clashNote === 'function') window._clashNote(card, 'barrier', _trashedImg ? [_trashedImg] : []); } catch (_) {}
         addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！（残り' + bs.player.security.length + '枚）');
         renderAll();

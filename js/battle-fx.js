@@ -2253,9 +2253,11 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     img ? '' : '<div style="position:absolute;inset:6px;border:1px solid ' + border + '88;border-radius:3px;"></div>');
   const imgOf = (area) => { const i = area.querySelector('img'); return i ? i.src : ''; };
 
-  let curSubs = {};
+  let curSubs = {}, curSwap = {};
   const playOne = (side, kind, area, dir) => {
     const subs = curSubs[side] || [];
+    // 【アーマー解除】: VS画面のカードを、下から出てくるカード（残るデジモン）の画像に差し替える（庇うカード＝破棄した一番上のカード）
+    if (curSwap[side]) { const _ci = area.querySelector('[id$="card-img"] img'); if (_ci) _ci.src = curSwap[side]; }
     const [cx, cy] = centerOf(area);
     const hitX = cx - dir * 30; // 衝撃が来る側
     const lbl = (t, c) => label(cx, cy - 110, t, c);
@@ -2359,6 +2361,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   const runFinish = (outcomes, cb) => {
     if (finished) { cb && cb(); return; }
     curSubs = (outcomes && outcomes._subs) || {};
+    curSwap = (outcomes && outcomes._swap) || {};
     finished = true;
     const doFinish = () => {
       clearInterval(jitterTimer); holdSpark = false;

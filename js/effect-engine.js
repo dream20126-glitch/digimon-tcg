@@ -3978,11 +3978,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     const _wdBefore = new Set(Array.isArray(destroyed.buffs) ? destroyed.buffs : []);
     const _wdWasActive = !destroyed.suspended;
     triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
-      const prevented = !!(destroyed.buffs && destroyed.buffs.some((b) =>
+      const _wdCur = destroyed._armorPurgedTo || destroyed;
+      const prevented = !!(_wdCur.buffs && _wdCur.buffs.some((b) =>
         b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
       ));
-      if (Array.isArray(destroyed.buffs)) {
-        destroyed.buffs = destroyed.buffs.filter(b => _wdBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+      if (Array.isArray(_wdCur.buffs)) {
+        _wdCur.buffs = _wdCur.buffs.filter(b => _wdBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
       }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
@@ -18457,6 +18458,50 @@ function executeRecipeStep(step, ctx, store, callback) {
       return;
     }
   }
+  // 「このデジモンに重ねられているカードを上から1枚破棄」（【アーマー解除】のコスト: evo_discard_top + from:'stacked_cards' + このデジモン）。
+  // 上から1枚＝このカード自身（公式ルール 16-19。マグナガルルモン P-153 と同じ数え方）。下のカードが同じデジモンとして残る。
+  // 以前は進化元の一番上（2枚目）を破棄していた（バトルの【アーマー解除】は一番下の進化元を破棄していた）
+  if (step.action === 'evo_discard_top' && step.from === 'stacked_cards' && (!step.target || /^self/.test(String(step.target))) && ctx.card && ctx.bs) {
+    const _apSrc = ctx.card;
+    const _apIsCost = _COST_STEP_SET.has(step);
+    const _apP = (ctx.bs.player.battleArea || []).includes(_apSrc) ? ctx.bs.player : (ctx.bs.ai.battleArea || []).includes(_apSrc) ? ctx.bs.ai : null;
+    if (!_apP || !Array.isArray(_apSrc.stack) || _apSrc.stack.length === 0) { callback && callback(_apIsCost ? false : undefined); return; }
+    const _apIdx = _apP.battleArea.indexOf(_apSrc);
+    const _apNext = _apSrc.stack[0];
+    // 同じ1体のデジモン: レスト・登場したターン・受けている効果（バフ）・リンクはそのまま
+    _apNext.stack = _apSrc.stack.slice(1);
+    _apNext.suspended = !!_apSrc.suspended;
+    _apNext.summonedThisTurn = !!_apSrc.summonedThisTurn;
+    _apNext.buffs = Array.isArray(_apSrc.buffs) ? _apSrc.buffs.slice() : [];
+    _apNext.linkedCards = Array.isArray(_apSrc.linkedCards) ? _apSrc.linkedCards : [];
+    _apNext._permEffects = {};
+    _apNext._usedEffects = Array.isArray(_apSrc._usedEffects) ? _apSrc._usedEffects.slice() : [];
+    if (_apNext.baseDp == null) _apNext.baseDp = parseInt(_apNext.dp) || 0;
+    _apSrc.stack = []; _apSrc.linkedCards = []; _apSrc.buffs = []; _apSrc.suspended = false;
+    _apP.battleArea[_apIdx] = _apNext;
+    _apP.trash.push(_apSrc);
+    _apSrc._armorPurgedTo = _apNext; // 消滅回避の判定（「消滅しない」が付いたのは下のカード）と演出用
+    ctx.card = _apNext;
+    try { recalcDp(_apNext); } catch (_) {}
+    if (ctx.bs) ctx.bs._lastActionCount = 1;
+    ctx.addLog && ctx.addLog('🛡 「' + _apSrc.name + '」を破棄（「' + _apNext.name + '」が残る）');
+    const _apMine = _apP === ctx.bs.player;
+    if (_apMine && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+      try {
+        window._onlineSendCommand({ type: 'fx_detach_stack', targetIdx: _apIdx, onSide: 'opp', removeCount: 1, fromBottom: false, destZone: 'trash' });
+        if (window._markEvoModified) window._markEvoModified('player', _apIdx);
+        if (window._onlineSendStateSync) window._onlineSendStateSync();
+      } catch (_) {}
+    }
+    ctx.renderAll && ctx.renderAll();
+    try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
+    // バトルのVS画面の途中なら決着の演出で見せる。それ以外（効果での消滅）は移動演出
+    if (typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending()) { callback && callback(); return; }
+    _fxMoveSync(ctx, _apSrc, (_apMine ? '' : '相手の') + 'バトルエリア', (_apMine ? '' : '相手の') + 'トラッシュ', () => { callback && callback(); },
+      { faceUp: true, remoteFrom: (_apMine ? '相手の' : '') + 'バトルエリア', remoteTo: (_apMine ? '相手の' : '') + 'トラッシュ' });
+    return;
+  }
+
   switch (step.action) {
 
     // === ディレイ（バトルエリアのこのカードを破棄すると効果2以降を発動） ===

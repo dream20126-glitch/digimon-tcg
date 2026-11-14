@@ -265,7 +265,7 @@ function _showCancelFlash(card, reason, cb, remote) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[cancelFlash]', e); } };
   const kw = _CANCEL_FLASH_LABEL[reason];
   if (!kw || typeof document === 'undefined') { done(); return; }
-  if (!remote && _onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_cancelFlash', cardName: (card && card.name) || '', cardImg: (card && cardImg(card)) || '', reason }); } catch (_) {} }
+  if (!remote && _onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_cancelFlash', cardName: (card && card.name) || '', cardImg: (card && cardImg(card)) || '', reason, subImgs: (card && card._clashSubImgs) || [] }); } catch (_) {} }
   // VS画面のぶつかり合いの途中なら、回避の仕方は決着の演出で見せる
   if (_clashNote(card, _CLASH_REASON_KIND[reason] || 'shield')) { done(); return; }
   // 【回避】: カードが残像を残して横によけ、レスト（横向き）になる
@@ -339,6 +339,8 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   // VS画面の決着の演出用: 回避の前の進化元・リンクカードの枚数（どう回避したかを見分ける）
   const _linkN0 = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
   const _stackN0 = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
+  const _snap = _clashSnapshot(card, ownerSidePlayer);
+  const _subImgsNow = () => _clashSubCards(_snap, card, ownerSidePlayer).map(c => cardImg(c)).filter(Boolean);
   const _cb0 = callback0;
   callback0 = (r) => {
     if (r && r.canceled && _clashPending) {
@@ -348,13 +350,18 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
         const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
         kind = _clashKindByZone(card) || (ln < _linkN0 ? 'separate' : sn < _stackN0 ? 'fragment' : 'shield');
       }
-      _clashNote(card, kind);
+      _clashNote(card, kind, _subImgsNow());
     }
     _cb0(r);
   };
   // キーワードで回避したら「【防壁】で回避！」等を大きく出してから続ける
   const callback = (r) => {
-    if (r && r.canceled && _CANCEL_FLASH_LABEL[r.reason]) { _showCancelFlash(card, r.reason, () => callback0(r)); return; }
+    if (r && r.canceled && _CANCEL_FLASH_LABEL[r.reason]) {
+      // 代わりにトラッシュへ送られたカードを、VS画面の決着の演出（相手の画面にも）で見せる
+      try { card._clashSubImgs = _subImgsNow(); } catch (_) {}
+      _showCancelFlash(card, r.reason, () => { delete card._clashSubImgs; callback0(r); });
+      return;
+    }
     callback0(r);
   };
   // ≪防壁≫は任意（公式ルール 25-3「自分のセキュリティを上から1枚破棄することで」は任意処理条件）。
@@ -5718,10 +5725,34 @@ function _clashSideOf(card) {
   if (n === p.def.name) return 'def';
   return null;
 }
-function _clashNote(card, kind) {
+function _clashNote(card, kind, subImgs) {
   const side = _clashSideOf(card);
-  if (side && kind) _clashPending.notes[side] = kind;
+  if (side && kind) {
+    _clashPending.notes[side] = kind;
+    // 代わりにトラッシュへ送られたカードの画像（演出に出す）
+    const imgs = subImgs || (card && card._clashSubImgs) || null;
+    if (Array.isArray(imgs) && imgs.length) { if (!_clashPending.subs) _clashPending.subs = {}; _clashPending.subs[side] = imgs; }
+  }
   return !!side;
+}
+// 消滅回避の前後の差から、代わりにトラッシュへ送られたカード（進化元・リンクカード・身代わりのデジモン・破棄したセキュリティ）を探す
+function _clashSnapshot(card, owner) {
+  return {
+    stack: (card && Array.isArray(card.stack)) ? card.stack.slice() : [],
+    link: (card && Array.isArray(card.linkedCards)) ? card.linkedCards.slice() : [],
+    field: (owner && Array.isArray(owner.battleArea)) ? owner.battleArea.slice() : [],
+    secTop: (owner && Array.isArray(owner.security)) ? owner.security[0] : null,
+  };
+}
+function _clashSubCards(snap, card, owner) {
+  if (!snap) return [];
+  const out = [];
+  const now = (arr) => Array.isArray(arr) ? arr : [];
+  snap.stack.forEach(c => { if (c && !now(card && card.stack).includes(c)) out.push(c); });
+  snap.link.forEach(c => { if (c && !now(card && card.linkedCards).includes(c)) out.push(c); });
+  snap.field.forEach(c => { if (c && c !== card && !now(owner && owner.battleArea).includes(c)) out.push(c); });
+  if (snap.secTop && !now(owner && owner.security).includes(snap.secTop)) out.push(snap.secTop);
+  return out;
 }
 const _CLASH_REASON_KIND = { barrier: 'barrier', armor_break: 'armor_break', evade: 'evade', scapegoat: 'scapegoat', prevent_destroy: 'shield', protection: 'shield', indomitable: 'indomitable', fragment: 'fragment', separate: 'separate' };
 // 消滅せずに別の場所へ行ったとき、カードの今の場所から演出の種類を決める（自分の端末のカードのとき）
@@ -5770,6 +5801,7 @@ function _clashFinish(textHint, cb) {
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });
+  if (p.subs) out._subs = p.subs;
   const end = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
   if (!p.ctrl) { end(); return; }
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }

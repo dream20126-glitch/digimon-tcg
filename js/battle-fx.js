@@ -2253,7 +2253,9 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     img ? '' : '<div style="position:absolute;inset:6px;border:1px solid ' + border + '88;border-radius:3px;"></div>');
   const imgOf = (area) => { const i = area.querySelector('img'); return i ? i.src : ''; };
 
+  let curSubs = {};
   const playOne = (side, kind, area, dir) => {
+    const subs = curSubs[side] || [];
     const [cx, cy] = centerOf(area);
     const hitX = cx - dir * 30; // 衝撃が来る側
     const lbl = (t, c) => label(cx, cy - 110, t, c);
@@ -2303,8 +2305,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       }
       case 'barrier': {
         lbl(_CLASH_KW_LABEL.barrier, '#ffd84a');
-        // セキュリティのカード（裏向き）が前に出て盾になり、砕ける
-        const sc = miniCard(hitX, cy, '', '#ffd84a');
+        // セキュリティのカードが前に出て盾になり、砕ける（破棄されたカードが分かればその画像）
+        const sc = miniCard(hitX, cy, (subs && subs[0]) || '', '#ffd84a');
         sc.style.transform = 'translateY(80px) scale(0.4)'; sc.style.opacity = '0';
         requestAnimationFrame(() => { sc.style.transform = 'translateY(0) scale(1.4)'; sc.style.opacity = '1'; });
         setTimeout(() => {
@@ -2320,21 +2322,29 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       }
       case 'armor_break': case 'fragment': case 'separate': case 'scapegoat': {
         const isScape = kind === 'scapegoat';
-        lbl(_CLASH_KW_LABEL[kind], isScape ? '#ff8adf' : '#a8ff4a');
-        // 代わりのカード（進化元・リンクカード・身代わりのデジモン）が前に割り込んで弾き飛ばされる
-        const mc = miniCard(cx, cy + 20, isScape ? '' : '', isScape ? '#ff8adf' : '#a8ff4a');
-        if (isScape) { mc.style.width = '80px'; mc.style.height = '112px'; mc.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#ffd0f0;">身代わり</div>'; }
-        mc.style.transform = 'translate(' + (dir * 10) + 'px,40px) scale(0.6)'; mc.style.opacity = '0';
-        requestAnimationFrame(() => { mc.style.transform = 'translate(' + (-dir * 40) + 'px,0) scale(1.1)'; mc.style.opacity = '1'; });
+        const bc = isScape ? '#ff8adf' : '#a8ff4a';
+        lbl(_CLASH_KW_LABEL[kind], bc);
+        // 代わりのカード（進化元・リンクカード・身代わりのデジモン）が前に割り込んで弾き飛ばされる。
+        // そのカードの画像を出す（分からなければ裏向きのカード）。複数枚なら少しずつずらして
+        const imgs = (subs && subs.length) ? subs.slice(0, 4) : [''];
+        const cards = imgs.map((im, i) => {
+          const mc = miniCard(cx + (i - (imgs.length - 1) / 2) * 22, cy + 20 + i * 6, im, bc);
+          if (isScape) { mc.style.width = '80px'; mc.style.height = '112px'; if (!im) mc.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#ffd0f0;">身代わり</div>'; }
+          mc.style.transform = 'translate(' + (dir * 10) + 'px,40px) scale(0.6)'; mc.style.opacity = '0';
+          setTimeout(() => { mc.style.transform = 'translate(' + (-dir * 40) + 'px,0) scale(1.15)'; mc.style.opacity = '1'; }, 30 + i * 90);
+          return mc;
+        });
         setTimeout(() => {
-          flashAt(hitX, cy, 0.6); sparksAt(hitX, cy, 50, 1);
-          mc.style.transition = 'transform 0.7s cubic-bezier(.15,.8,.35,1), opacity 0.7s';
-          mc.style.transform = 'translate(' + (dir * W * 0.4) + 'px,' + (H * 0.3) + 'px) rotate(' + (dir * 720) + 'deg) scale(0.3)';
-          mc.style.opacity = '0';
+          flashAt(hitX, cy, 0.6); sparksAt(hitX, cy, 40, 1);
+          cards.forEach((mc, i) => {
+            mc.style.transition = 'transform 0.7s cubic-bezier(.15,.8,.35,1) ' + (i * 0.08) + 's, opacity 0.7s ' + (i * 0.08) + 's';
+            mc.style.transform = 'translate(' + (dir * W * 0.4) + 'px,' + (H * 0.3) + 'px) rotate(' + (dir * 720) + 'deg) scale(0.3)';
+            mc.style.opacity = '0';
+          });
           const { b } = binAt(dir, '🗑', 'トラッシュ', '#ff4d4d');
-          setTimeout(() => { b.style.animation = 'fcBinHit 0.4s ease-out'; }, 650);
-        }, 450);
-        return 1500;
+          setTimeout(() => { b.style.animation = 'fcBinHit 0.4s ease-out'; }, 650 + cards.length * 80);
+        }, 450 + imgs.length * 90);
+        return 1500 + imgs.length * 90;
       }
       case 'shield': {
         lbl(_CLASH_KW_LABEL.shield, '#4ad8ff');
@@ -2362,6 +2372,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
 
   const runFinish = (outcomes, cb) => {
     if (finished) { cb && cb(); return; }
+    curSubs = (outcomes && outcomes._subs) || {};
     finished = true;
     const doFinish = () => {
       clearInterval(jitterTimer); holdSpark = false;

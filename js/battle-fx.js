@@ -2992,3 +2992,151 @@ export function fxIndomitableRevive(card, remote, callback) {
   setTimeout(done, 6000);
 }
 if (typeof window !== 'undefined') window._fxIndomitableRevive = fxIndomitableRevive;
+
+
+// =====================================================
+//  効果で消滅させる演出（全カード共通）: 青い稲妻が消滅するカードに落ち、カードが砕けてトラッシュへ行く。
+//  複数体（「〜全てを消滅させる」等）はまとめて並べ、全員に稲妻が落ちる。
+//  items: [{ card, remote }]（remote: 相手のカードか＝「相手のトラッシュ」）
+// =====================================================
+function _boltSvg(W, H, tx, ty) {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.style.cssText = 'position:absolute;left:0;top:0;animation:fdBolt 0.6s ease-out forwards;pointer-events:none;';
+  const mk = (w, color) => {
+    const p = document.createElementNS(svgNS, 'polyline');
+    let x = tx + (Math.random() - 0.5) * 60, y = -10; const pts = [x + ',' + y];
+    const steps = 9;
+    for (let i = 1; i <= steps; i++) { y = -10 + (ty + 10) * i / steps; x = (i === steps ? tx : tx + (Math.random() - 0.5) * 70 * (1 - i / steps)); pts.push(x + ',' + y); }
+    p.setAttribute('points', pts.join(' ')); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color); p.setAttribute('stroke-width', w); p.setAttribute('stroke-linejoin', 'round');
+    return p;
+  };
+  svg.appendChild(mk(12, 'rgba(80,170,255,0.45)'));
+  svg.appendChild(mk(5, '#7fd8ff'));
+  svg.appendChild(mk(2, '#ffffff'));
+  return svg;
+}
+function _ensureBoltStyle() {
+  if (document.getElementById('fx-bolt-style')) return;
+  const st = document.createElement('style');
+  st.id = 'fx-bolt-style';
+  st.textContent = [
+    '@keyframes fdFlash{0%{opacity:0}10%{opacity:0.9}100%{opacity:0}}',
+    '@keyframes fdBolt{0%{opacity:0}8%{opacity:1}20%{opacity:0.3}30%{opacity:1}55%{opacity:1}100%{opacity:0}}',
+    '@keyframes fdRing{0%{transform:translate(-50%,-50%) scale(0.2);opacity:1}100%{transform:translate(-50%,-50%) scale(3);opacity:0}}',
+    '@keyframes fdShard{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}',
+    '@keyframes fbLbl{0%{transform:translateX(-50%) scale(1.6);opacity:0}50%{transform:translateX(-50%) scale(0.96);opacity:1}100%{transform:translateX(-50%) scale(1);opacity:1}}',
+    '@keyframes fbDome{0%{transform:translate(-50%,-50%) scale(0.3);opacity:0}40%{transform:translate(-50%,-50%) scale(1.08);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:0.95}}',
+  ].join('');
+  document.head.appendChild(st);
+}
+export function fxBoltDestroy(items, callback) {
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  const list = (items || []).filter(it => it && it.card).slice(0, 8);
+  if (typeof document === 'undefined' || !document.body || list.length === 0) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureBoltStyle();
+  const W = window.innerWidth, H = window.innerHeight, cy = H * 0.45;
+  const n = list.length;
+  const CW = Math.min(110, (W - 40) / Math.max(1, n) - 10, W * 0.3), CH = CW * 1.4;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:66000;background:rgba(0,4,20,0.8);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  const remoteAll = list.every(it => it.remote), ownAll = list.every(it => !it.remote);
+  add('position:absolute;left:50%;top:' + Math.max(14, cy - CH / 2 - 70) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:clamp(1.3rem,6vw,2rem);font-weight:900;color:#cfeeff;text-shadow:0 0 14px #4aa8ff,0 0 3px #000;animation:fbLbl 0.4s ease-out forwards;',
+    '⚡ ' + (n >= 2 ? n + '体を消滅！' : '消滅！'));
+  // トラッシュ（下の中央）
+  const by = H - Math.max(78, H * 0.13);
+  const bin = add('position:absolute;left:50%;top:' + by + 'px;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;background:radial-gradient(circle,#ff4d4d55 0%,#0a0a0a 72%);border:3px solid #ff4d4d;box-shadow:0 0 22px #ff4d4d;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:28px;opacity:0;transition:opacity 0.3s, transform 0.2s;',
+    '🗑<div style="font-size:9px;font-weight:bold;">' + (remoteAll ? '相手の' : ownAll ? '' : '') + 'トラッシュ</div>');
+  const totalW = n * CW + (n - 1) * 12;
+  const els = list.map((it, i) => {
+    const x = W / 2 - totalW / 2 + i * (CW + 12) + CW / 2;
+    const src = it.card.imgSrc || cardImg(it.card) || '';
+    const d = add('position:absolute;left:' + (x - CW / 2) + 'px;top:' + (cy - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid #7fd8ff;box-shadow:0 0 16px #4aa8ff;background:#111;will-change:transform,opacity,filter;transition:transform 0.3s, opacity 0.3s, filter 0.2s;',
+      (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:11px;">' + (it.card.name || '') + '</div>')
+      + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);font-size:9px;color:' + (it.remote ? '#ff9a9a' : '#9fe0ff') + ';text-align:center;padding:1px;">' + (it.remote ? '相手の' : '') + (it.card.name || '') + '</div>');
+    return { d, x };
+  });
+  // ① 稲妻が落ちる（少しずつずらして）
+  els.forEach(({ d, x }, i) => setTimeout(() => {
+    ov.appendChild(_boltSvg(W, H, x, cy));
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + cy + 'px,rgba(200,235,255,0.9) 0%,rgba(80,170,255,0.45) 16%,rgba(0,0,0,0) 50%);animation:fdFlash 0.5s ease-out forwards;');
+    add('position:absolute;left:' + x + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:3px solid #7fd8ff;box-shadow:0 0 16px #4aa8ff;animation:fdRing 0.6s ease-out forwards;');
+    d.style.filter = 'brightness(2.4) saturate(0.3)';
+    d.style.transform = 'translate(' + ((Math.random() - 0.5) * 10) + 'px,4px)';
+    setTimeout(() => { d.style.filter = 'grayscale(0.8) brightness(0.6)'; }, 220);
+  }, 300 + i * 140));
+  // ② 砕けてトラッシュへ
+  const t2 = 300 + n * 140 + 450;
+  setTimeout(() => {
+    bin.style.opacity = '1';
+    els.forEach(({ d, x }, i) => setTimeout(() => {
+      for (let k = 0; k < 8; k++) {
+        const ang = Math.random() * Math.PI * 2, dd = 30 + Math.random() * 70;
+        add('position:absolute;left:' + x + 'px;top:' + cy + 'px;width:12px;height:16px;background:linear-gradient(135deg,#9fe0ff,#2a3c66);clip-path:polygon(50% 0,100% 70%,20% 100%);--dx:' + Math.cos(ang) * dd + 'px;--dy:' + (Math.sin(ang) * dd + 50) + 'px;--r:' + (Math.random() * 540) + 'deg;animation:fdShard 0.7s ease-out forwards;');
+      }
+      d.style.transition = 'transform 0.6s cubic-bezier(.6,0,.9,.6), opacity 0.6s';
+      d.style.transform = 'translate(' + (W / 2 - x) + 'px,' + (by - cy) + 'px) rotate(' + ((i % 2 ? 1 : -1) * 540) + 'deg) scale(0.12)';
+      d.style.opacity = '0.2';
+      setTimeout(() => { d.style.opacity = '0'; bin.style.transform = 'scale(1.25)'; setTimeout(() => { bin.style.transform = ''; }, 180); }, 600);
+    }, i * 120));
+  }, t2);
+  const tEnd = t2 + n * 120 + 900;
+  setTimeout(() => { ov.style.opacity = '0'; }, tEnd);
+  setTimeout(() => { ov.remove(); done(); }, tEnd + 250);
+  setTimeout(done, tEnd + 4000);
+}
+if (typeof window !== 'undefined') window._fxBoltDestroy = fxBoltDestroy;
+
+// 効果を受けない・「消滅しない」: 青い稲妻がバリアにはじかれる
+export function fxBoltShield(card, opts, callback) {
+  opts = opts || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body || !card) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureBoltStyle();
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.55;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:70500;background:rgba(0,4,20,0.78);pointer-events:none;overflow:hidden;opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => { ov.style.opacity = '1'; });
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  const src = card.imgSrc || cardImg(card) || '';
+  add('position:absolute;left:' + (cx - CW / 2) + 'px;top:' + (cy - CH / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid #7fd8ff;box-shadow:0 0 18px #4aa8ff;background:#111;',
+    src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:12px;">' + (card.name || '') + '</div>');
+  // カード全体を包むバリア（六角形の模様）
+  const bW = CW * 1.55, bH = CH * 1.32;
+  const hex = "url(\"data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="48" viewBox="0 0 28 48"><path d="M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M14 32 L14 48" fill="none" stroke="rgba(200,245,255,0.55)" stroke-width="1.4"/></svg>') + "\")";
+  const dome = add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + bW + 'px;height:' + bH + 'px;border-radius:50% / 46%;background:' + hex + ',radial-gradient(ellipse at 50% 45%,rgba(160,240,255,0.06) 0%,rgba(120,225,255,0.18) 55%,rgba(74,216,255,0.55) 100%);border:3px solid rgba(190,245,255,0.95);box-shadow:0 0 26px #4ad8ff,0 0 60px rgba(74,216,255,0.6),inset 0 0 36px rgba(120,230,255,0.75);opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:filter 0.12s;');
+  setTimeout(() => { dome.style.animation = 'fbDome 0.35s ease-out forwards'; }, 150);
+  // 稲妻がバリアの上に落ちて、はじかれる
+  const topY = cy - bH / 2;
+  setTimeout(() => {
+    ov.appendChild(_boltSvg(W, H, cx, topY));
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + cx + 'px ' + topY + 'px,rgba(200,235,255,0.9) 0%,rgba(80,170,255,0.45) 14%,rgba(0,0,0,0) 45%);animation:fdFlash 0.5s ease-out forwards;');
+    add('position:absolute;left:' + cx + 'px;top:' + topY + 'px;width:80px;height:80px;border-radius:50%;border:3px solid #ffffff;box-shadow:0 0 16px #7fd8ff;animation:fdRing 0.6s ease-out forwards;');
+    dome.style.filter = 'brightness(2.2)';
+    setTimeout(() => { dome.style.filter = ''; }, 160);
+    // はじかれた火花（左右へ）
+    for (let k = 0; k < 14; k++) {
+      const ang = -Math.PI / 2 + (k % 2 ? 1 : -1) * (0.6 + Math.random() * 0.9), dd = 60 + Math.random() * 90;
+      add('position:absolute;left:' + cx + 'px;top:' + topY + 'px;width:5px;height:5px;border-radius:50%;background:#bfeaff;box-shadow:0 0 8px #4aa8ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;--r:0deg;animation:fdShard 0.6s ease-out forwards;');
+    }
+  }, 550);
+  setTimeout(() => {
+    add('position:absolute;left:50%;top:' + Math.max(16, cy - bH / 2 - 92) + 'px;transform:translateX(-50%);text-align:center;white-space:nowrap;animation:fbLbl 0.4s ease-out forwards;',
+      '<div style="font-size:clamp(1.6rem,7vw,2.6rem);font-weight:900;color:#7fd8ff;text-shadow:0 0 16px #4aa8ff,0 0 3px #fff;">' + (opts.label || '消滅しない！') + '</div>'
+      + '<div style="font-size:clamp(0.85rem,3.4vw,1.1rem);color:#fff;text-shadow:0 0 6px #000;margin-top:4px;">' + (opts.remote ? '相手の' : '') + '「' + (card.name || '') + '」は' + (opts.sub || '消滅しない') + '</div>');
+  }, 800);
+  setTimeout(() => { ov.style.opacity = '0'; }, 2200);
+  setTimeout(() => { ov.remove(); done(); }, 2450);
+  setTimeout(done, 5000);
+}
+if (typeof window !== 'undefined') window._fxBoltShield = fxBoltShield;

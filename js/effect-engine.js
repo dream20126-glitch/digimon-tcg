@@ -3930,8 +3930,29 @@ export function isCardInAnyZone(card, p) {
 // 消滅させてから、実際に場を離れたときだけ消滅演出を出す（fxFn(card, cb)）。done(離れたか)。
 // 以前は演出を先に出してから消滅させていたため、「離れるとき」（クロノモン：ホーリーモード BT26-016 の
 // セキュリティをデッキに戻して離れない等）や消滅されない効果で離れなかったときにも消滅演出が出ていた
+// 効果で消滅させたカードの演出（青い稲妻 → トラッシュ。全カード共通）。両方の画面に出す。items: [{ card, remote }]
+function _fxBoltDestroySync(ctx, items, cb) {
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[boltDestroy]', e); } };
+  if (typeof window === 'undefined' || typeof window._fxBoltDestroy !== 'function' || !items || !items.length) { done(); return; }
+  if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try {
+      const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
+      window._onlineSendCommand({ type: 'fx_boltDestroy', items: items.map(it => ({ name: it.card.name || '', imgSrc: img(it.card), remote: !it.remote })) });
+    } catch (_) {}
+  }
+  window._fxBoltDestroy(items, done);
+}
 function _destroyWithFx(owner, idx, ctx, fxFn, done, causeType) {
   const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
+  // 効果での消滅（バトル以外）は、どのカードでも「青い稲妻が落ちてトラッシュへ」の演出にする
+  if (causeType !== 'battle' && typeof window !== 'undefined' && typeof window._fxBoltDestroy === 'function') {
+    const _remote = !!(ctx && ctx.bs && owner === ctx.bs.ai);
+    fxFn = (c, cb) => {
+      // 1つの効果でまとめて消滅させている間は一覧に積み、最後にまとめて稲妻を落とす
+      if (window._destroyFxBatch && c) { c._boltFx = { remote: _remote }; window._destroyFxBatch.gone.push(c); cb && cb(); return; }
+      _fxBoltDestroySync(ctx, [{ card: c, remote: _remote }], cb);
+    };
+  }
   doDestroy(owner, idx, ctx, (removed) => {
     const gone = !!card && removed === true;
     if (gone && typeof fxFn === 'function') {
@@ -3952,9 +3973,10 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
       const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
       const subs = Array.isArray(sub) ? sub : (sub ? [sub] : []);
       window._onlineSendCommand({ type: 'fx_effectDodge', cardName: card.name || '', cardImg: img(card), label: (opts && opts.label) || '', sub: (opts && opts.sub) || '',
-        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', peel: !!(opts && opts.peel), ownerIsSender: ownerSide === 'player' });
+        subs: subs.slice(0, 3).map(c => ({ name: c.name || '', imgSrc: img(c) })), subColor: (opts && opts.subColor) || '', peel: !!(opts && opts.peel), shield: !!(opts && opts.shield), ownerIsSender: ownerSide === 'player' });
     } catch (_) {}
   }
+  if (opts && opts.shield && typeof window._fxBoltShield === 'function') { window._fxBoltShield(card, Object.assign({}, opts, { remote: ownerSide === 'ai' }), done); return; }
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
 }
 
@@ -4010,9 +4032,11 @@ function _ddPlayDodge(plan, cur, cb) {
   const gone = purged ? [card] : scape.length ? scape : plan.stack0.filter(c => c && c !== cur && !(Array.isArray(cur.stack) && cur.stack.includes(c)));
   let isFrag = false;
   try { isFrag = !purged && !scape.length && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, plan.side); } catch (_) {}
-  const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : scape.length ? '【スケープゴート】' : isFrag ? '【フラグメント】' : '回避！';
+  const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : scape.length ? '【スケープゴート】' : isFrag ? '【フラグメント】' : '消滅しない！';
   const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : scape.length ? '身代わりで消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
-  _ddDodgeFx(plan.ctx, cur, plan.side, { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged }, cb);
+  // 代わりのカードもレストも無い「消滅しない」（充填プラグインQ・離れない効果等）は、バリアが稲妻をはじく
+  const shield = !byEvade && !purged && !gone.length;
+  _ddDodgeFx(plan.ctx, cur, plan.side, { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged, shield }, cb);
 }
 
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
@@ -4028,7 +4052,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // 効果による消滅: その効果を受けないデジモンは消滅しない
   if (causeType === 'effect' && _isImmuneToEffect(destroyed, ctx)) {
     ctx.addLog && ctx.addLog('🛡 「' + destroyed.name + '」は効果を受けない');
-    callback && callback();
+    // バリアが稲妻をはじく演出（全カード共通）
+    _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '効果を受けない！', sub: '効果を受けないので消滅しない', shield: true }, () => { callback && callback(); });
     return;
   }
   // cant_destroy（消滅できない付与）: keyword_prevent_destroyは原因を問わず常にブロック。
@@ -4037,7 +4062,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
   )) {
     ctx.addLog('🛡 「' + destroyed.name + '」は消滅しない！');
-    if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '回避！', sub: '消滅しない' }, () => { callback && callback(); }); return; }
+    if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '消滅しない！', sub: '消滅しない', shield: true }, () => { callback && callback(); }); return; }
     callback && callback();
     return;
   }
@@ -4173,7 +4198,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     if (canceled) {
       // 離れなかったカード（進化して別のカードになった等は、その位置の今のカード）
       const _lvNow = targetSide.battleArea[slotIdx] || destroyed;
-      if (causeType !== 'battle') { _ddDodgeFx(ctx, _lvNow, destroyedSideName, { label: '回避！', sub: '消滅しない' }, () => { callback && callback(); }); return; }
+      if (causeType !== 'battle') { _ddDodgeFx(ctx, _lvNow, destroyedSideName, { label: '消滅しない！', sub: '消滅しない', shield: true }, () => { callback && callback(); }); return; }
       callback && callback(); return;
     }
     _ddRemoved = true;
@@ -17031,6 +17056,12 @@ function _showGoneDestroyFx(gone, fin) {
   const keep = window._destroyFxBatch;
   window._destroyFxBatch = null;
   const end = () => { window._destroyFxBatch = keep; fin && fin(); };
+  // 効果で消滅させたカード（_destroyWithFx が印を付けた）は、まとめて稲妻を落とす
+  if (gone.length > 0 && gone.every(c => c && c._boltFx)) {
+    const items = gone.map(c => { const it = { card: c, remote: !!c._boltFx.remote }; delete c._boltFx; return it; });
+    _fxBoltDestroySync(_curEffectCtx || { side: 'player' }, items, end);
+    return;
+  }
   if (gone.length >= 2) { window._showDestroyBatch(gone, end); return; }
   if (gone.length === 1) {
     const one = (window._fxAnimFns && window._fxAnimFns.showDestroyEffect) || window.showDestroyEffect;

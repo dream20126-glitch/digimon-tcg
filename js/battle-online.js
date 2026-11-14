@@ -1390,12 +1390,21 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+    case 'fx_boltDestroy': {
+      // 相手の効果での消滅（青い稲妻 → トラッシュ）
+      if (typeof window._fxBoltDestroy === 'function' && Array.isArray(cmd.items)) {
+        const items = cmd.items.map(it => ({ card: { name: it.name || '', imgSrc: it.imgSrc || '', _remoteFx: true }, remote: !!it.remote }));
+        enqueueFx((done) => window._fxBoltDestroy(items, done));
+      }
+      break;
+    }
     case 'fx_effectDodge': {
       // 相手の端末で、効果による消滅を回避した演出（青い稲妻）
       if (typeof window._fxEffectDodge === 'function') {
         const c = { name: cmd.cardName || '', imgSrc: cmd.cardImg || '' };
         const subs = Array.isArray(cmd.subs) ? cmd.subs : [];
-        enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', peel: !!cmd.peel, remote: !!cmd.ownerIsSender }, done));
+        if (cmd.shield && typeof window._fxBoltShield === 'function') enqueueFx((done) => window._fxBoltShield(c, { label: cmd.label || '', sub: cmd.sub || '', remote: !!cmd.ownerIsSender }, done));
+        else enqueueFx((done) => window._fxEffectDodge(c, { label: cmd.label || '', sub: cmd.sub || '', substitute: subs.length ? subs : null, subColor: cmd.subColor || '', peel: !!cmd.peel, remote: !!cmd.ownerIsSender }, done));
       }
       break;
     }

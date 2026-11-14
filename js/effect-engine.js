@@ -5056,6 +5056,12 @@ function _handInPlacePick(candidates, opts) {
   const _bd = document.getElementById('_combat-backdrop');
   const _bdWas = !!(_bd && _bd.style.display !== 'none');
   if (_bdWas) _bd.style.display = 'none';
+  // 相手の効果で手札を選ぶとき（相手の効果「〜」：手札から1枚破棄 等）、相手の画面から届いた「相手が効果を確認中…」の
+  // 全面の表示が手札の上に重なってタップできなかった（ファルコモン P-142 の進化元【消滅時】）。選んでいる間だけ隠す
+  const _waitOvs = Array.from(document.body.children).filter(el => el && el.style && el.style.display !== 'none'
+    && (el.id === '_remote-effect-announce' || el.id === '_reaction-delegate-wait-overlay'
+      || (el.style.position === 'fixed' && (parseInt(el.style.zIndex, 10) || 0) < 62000 && /相手が効果を(確認|処理)中/.test(el.textContent || ''))));
+  _waitOvs.forEach(el => { el.dataset.hpPrevDisplay = el.style.display || ''; el.style.display = 'none'; });
   const topOv = document.createElement('div');
   const botOv = document.createElement('div');
   [topOv, botOv].forEach(o => { o.style.cssText = 'position:fixed;left:0;right:0;background:rgba(0,0,0,0.72);z-index:62000;'; document.body.appendChild(o); });
@@ -5241,6 +5247,7 @@ function _handInPlacePick(candidates, opts) {
     _clearMarks();
     cardEls().forEach(el => el.classList.remove('hp-cand', 'hp-dim', 'hp-on'));
     if (_bdWas && _bd) _bd.style.display = 'block';
+    _waitOvs.forEach(el => { if (el.parentNode) el.style.display = el.dataset.hpPrevDisplay || ''; });
     if (_online) {
       window._skipFxEffectClose = false;
       const g = window._remotePopupGen || 0;
@@ -18087,7 +18094,15 @@ function executeRecipeStep(step, ctx, store, callback) {
 
   // 'same_target' / 'picked' = 直前選択カード (bs._lastPickedCard) を対象に再利用
   // 「DPを+2000し、そのデジモンはSアタック+1を得る」のような同一対象連続適用で使用
-  if (step.target === 'same_target' || step.target === 'picked') {
+  // 「〜することで、そのデジモンでアタックできる」（アタックするデジモン＝コストで選んだデジモン。ファルコモン P-142
+  // 「このデジモンを『レイヴモン』を含む自分のデジモンの進化元の下に置くことで、そのデジモンで相手のデジモンにアタックできる」）:
+  // アタックの「そのデジモン」はコストを支払った後に決める（以前はコストの前に直前の効果でレストさせた相手のデジモンを指し、
+  // アタックするデジモンが見つからず何も起きなかった）
+  // 「〜を置くことで、置いたカードの【進化時】効果を発揮する」（negate の deny 無し＝発揮。パル P-147）の「そのカード」も
+  // コストで置いたカードなので、ここでは解決しない（negate 側でコストのカード→直前のカードの順に見る）
+  const _deferSameForCost = (step.action === 'attack' && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)
+    || (step.action === 'negate' && !step.deny);
+  if ((step.target === 'same_target' || step.target === 'picked') && !_deferSameForCost) {
     const picked = ctx.bs && ctx.bs._lastPickedCard;
     if (!picked) {
       // フォールバック: 直前ステップがコスト不払い等で対象選択自体に到達しなかった場合
@@ -21945,8 +21960,17 @@ function executeRecipeStep(step, ctx, store, callback) {
           next(_fd && _fd !== exclude ? _fd : null);
           return;
         }
+        // コストの置き先の条件（ファルコモン P-142「名称に『レイヴモン』を含む自分のデジモン1体の進化元の下に置くことで」の
+        // condition）。以前はこの経路（このデジモン自身を置く等）では見ておらず、どのデジモンの下にも置けた
+        const _rdConds = (_COST_STEP_SET.has(step) && step.condition)
+          ? [...parseRecipeCondition(step.condition), ...(step.when ? parseRecipeCondition(step.when) : [])] : [];
         const valid = [];
-        player.battleArea.forEach((c, i) => { if (c && c !== exclude) valid.push(i); });
+        player.battleArea.forEach((c, i) => {
+          if (!c || c === exclude) return;
+          if (c.type && c.type !== 'デジモン' && c.type !== 'デュアル') return;
+          if (_rdConds.length > 0 && !checkConditions(_rdConds, c, ctx.bs, ctx.side)) return;
+          valid.push(i);
+        });
         if (valid.length === 0) { next(null); return; }
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
         if (valid.length === 1 || effectiveSide === 'ai') { next(player.battleArea[valid[0]]); return; }
@@ -21975,7 +21999,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _scArea = _scCard ? player.battleArea : null;
         if (!_scCard || !_scArea || _scArea.indexOf(_scCard) === -1) { ctx.addLog('💨 このデジモンが場にいません'); callback(); break; }
         resolveDigimonThen((digi) => {
-          if (!digi) { ctx.addLog('💨 置き先のデジモンがいません'); callback(); return; }
+          if (!digi) { ctx.addLog('💨 置き先のデジモンがいません'); callback(_COST_STEP_SET.has(step) ? false : undefined); return; }
           placeUnderAndFinish(digi, _scCard, () => {
             const k = _scArea.indexOf(_scCard);
             if (k !== -1) _scArea[k] = null;
@@ -24015,13 +24039,19 @@ function executeRecipeStep(step, ctx, store, callback) {
         let _neCard = null;
         if (_neT === '' || _neT === 'self' || _neT === 'self_card') _neCard = ctx.card;
         else if (_neT === 'target_trigger_source') _neCard = ctx.block && ctx.block._eventSourceCard;
-        else if (_neT === 'same_target' || _neT === 'picked') _neCard = (ctx.bs && ctx.bs._lastPickedCard) || (ctx.block && ctx.block._eventSourceCard);
+        else if (_neT === 'same_target' || _neT === 'picked') {
+          // コストで処理したカード（パル P-147「手札から〜を進化元の下に置くことで、置いたカードの【進化時】効果」）を優先
+          const _neCost = step._costsResolved && Array.isArray(ctx._costCards) ? ctx._costCards.find(Boolean) : null;
+          _neCard = _neCost || (ctx.bs && ctx.bs._lastPickedCard) || (ctx.block && ctx.block._eventSourceCard);
+        }
         const _neLabel = ({ on_evolve: '【進化時】', on_play: '【登場時】', on_attack: '【アタック時】', main: '【メイン】' })[_neTrig] || _neTrig;
         if (!_neCard) { ctx.addLog && ctx.addLog('⚠ 効果を発揮するカードがいません'); callback(); break; }
         const _neAll = (getRecipeForCard(_neCard, _neTrig) || []).filter(s => s && s !== step && !(s.action === 'negate' && !s.deny));
         if (_neAll.length === 0) { ctx.addLog && ctx.addLog('💨 「' + _neCard.name + '」に' + _neLabel + '効果がありません'); callback(); break; }
         const _neMax = Math.max(1, parseInt(step.value, 10) || 1);
-        const _neCtx = Object.assign({}, ctx, { card: _neCard, block: null, _sourceCard: _neCard });
+        // 場にいないカード（進化元に置いたカード等）の効果は「このデジモンの効果として」発揮する（効果の主体はこのデジモン）
+        const _neOnField = ['player', 'ai'].some(sd => ((ctx.bs[sd] || {}).battleArea || []).includes(_neCard));
+        const _neCtx = Object.assign({}, ctx, { card: _neOnField ? _neCard : ctx.card, block: null, _sourceCard: _neCard });
         const _neRun = (list) => {
           if (!list || list.length === 0) { callback(); return; }
           ctx.addLog && ctx.addLog('✦ 「' + _neCard.name + '」の' + _neLabel + '効果を発揮');

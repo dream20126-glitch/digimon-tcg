@@ -3645,20 +3645,44 @@ export function fxBoardHit(kind, side, idx, value) {
     const P = (px, py) => (px + 20).toFixed(1) + ' ' + (py + 20).toFixed(1);
     // 斜め2本＋横3本（カードの外から外まで）。鎖の輪っぽく、太い破線＋細い破線を重ねる
     const lines = [[[-12, -12], [w + 12, h + 12]], [[w + 12, -12], [-12, h + 12]], [[-14, h * 0.22], [w + 14, h * 0.3]], [[-14, h * 0.55], [w + 14, h * 0.48]], [[-14, h * 0.82], [w + 14, h * 0.76]]];
-    lines.forEach(([[x1, y1], [x2, y2]], i) => {
+    // 鎖を輪っかで描く: 正面を向いた輪（楕円の輪）と横を向いた輪（細長い棒）を交互につなぐ。端から順に伸びていく
+    const L = Math.max(9, Math.min(15, w * 0.16)); // 輪1つの長さ
+    let maxT = 0;
+    lines.forEach(([[x1, y1], [x2, y2]], li) => {
       const len = Math.hypot(x2 - x1, y2 - y1);
-      [['#5a5a66', 9, '13 5'], ['#d8d8e6', 5, '13 5'], ['#ffffff', 1.5, '13 5']].forEach(([col, sw, dash]) => {
-        const pth = document.createElementNS(svgNS, 'path');
-        pth.setAttribute('d', 'M ' + P(x1, y1) + ' L ' + P(x2, y2));
-        pth.setAttribute('stroke', col); pth.setAttribute('stroke-width', sw); pth.setAttribute('fill', 'none'); pth.setAttribute('stroke-linecap', 'round');
-        // 伸びる動き（clip のかわりに dasharray を全長にして offset を動かす）→ 伸び切ったら鎖の破線
-        pth.style.cssText = 'stroke-dasharray:' + len + ';--len:' + len + ';stroke-dashoffset:' + len + ';animation:bhChain 0.28s ease-out ' + (i * 0.14) + 's forwards;';
-        setTimeout(() => { pth.style.animation = ''; pth.style.strokeDashoffset = '0'; pth.setAttribute('stroke-dasharray', dash); }, 300 + i * 140);
-        svg.appendChild(pth);
-      });
+      const ang = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+      const n = Math.max(2, Math.floor(len / (L * 0.78)));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+        const g = document.createElementNS(svgNS, 'g');
+        g.setAttribute('transform', 'translate(' + P(px, py).replace(' ', ',') + ') rotate(' + ang.toFixed(1) + ')');
+        if (k % 2 === 0) {
+          // 正面の輪（外側の暗い縁・金属の輪・ハイライト）
+          [['#3a3a44', 5.2], ['#c9c9d6', 3], ['#ffffff', 0.9]].forEach(([col, sw]) => {
+            const e = document.createElementNS(svgNS, 'ellipse');
+            e.setAttribute('cx', 0); e.setAttribute('cy', 0); e.setAttribute('rx', L * 0.58); e.setAttribute('ry', L * 0.34);
+            e.setAttribute('fill', 'none'); e.setAttribute('stroke', col); e.setAttribute('stroke-width', sw);
+            g.appendChild(e);
+          });
+        } else {
+          // 横向きの輪（細長い板）
+          [['#3a3a44', L * 0.42, L * 1.25], ['#b8b8c6', L * 0.24, L * 1.12], ['#ffffff', L * 0.06, L * 0.9]].forEach(([col, hh, ww]) => {
+            const rc = document.createElementNS(svgNS, 'rect');
+            rc.setAttribute('x', -ww / 2); rc.setAttribute('y', -hh / 2); rc.setAttribute('width', ww); rc.setAttribute('height', hh);
+            rc.setAttribute('rx', hh / 2); rc.setAttribute('fill', col);
+            g.appendChild(rc);
+          });
+        }
+        const delay = li * 120 + k * 22;
+        maxT = Math.max(maxT, delay);
+        g.style.cssText = 'opacity:0;transition:opacity 0.08s;';
+        setTimeout(() => { g.style.opacity = '1'; }, delay);
+        svg.appendChild(g);
+      }
     });
     layer.appendChild(svg);
-    const tLock = 300 + lines.length * 140;
+    const tLock = maxT + 250;
     // カードが暗く沈み、錠がかかる
     const dim = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + w + 'px;height:' + h + 'px;border-radius:5px;background:rgba(40,0,0,0);transition:background 0.4s;');
     setTimeout(() => { dim.style.background = 'rgba(40,0,10,0.45)'; }, 200);

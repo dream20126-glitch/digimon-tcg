@@ -692,6 +692,8 @@ function showMichizureAnnounce(callback) {
   if (_onlineMode && _sendCommand && !window._suppressFxSend) {
     try { _sendCommand({ type: 'fx_michizure' }); } catch (_) {}
   }
+  // VS画面の決着で【道連れ】（黒いもやが引きずり込む演出）を見せた直後なら重ねない
+  if (window._clashRecoilAt && Date.now() - window._clashRecoilAt < 8000) { callback && callback(); return; }
   const overlay = document.createElement('div');
   overlay.id = '_michizure-announce';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
@@ -5727,7 +5729,8 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     if (_clashPending) _clashForceClose();
     window._fxMoveHold = (window._fxMoveHold || 0) + 1;
     let _held = true;
-    const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null,
+    const _onFieldNow = (c) => !!c && ['player', 'ai'].some(sd => (bs[sd].battleArea || []).some(x => x && (x === c || (x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo)))));
+    const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       close: () => { overlay.style.display = 'none'; _removeCountLabel(); if (_held) { _held = false; window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1); } } };
     setTimeout(() => {
       try {
@@ -5853,9 +5856,9 @@ function _clashFinish(textHint, cb) {
     const ls = p.winner === 'atk' ? 'def' : 'atk';
     // 勝った側が場のデジモンのときだけ（セキュリティのデジモンとのバトルでは【道連れ】は発揮しない。セキュリティのデジモンは
     // 通常どおり勝ち）。相手の画面では作り直したカードなので名前でも探す
-    const _wc = p[p.winner];
-    const _onField = (c) => !!c && ['player', 'ai'].some(sd => (bs[sd].battleArea || []).some(x => x && (x === c || (x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo)))));
-    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && hasMichizure(p[ls]) && _onField(_wc)) out[p.winner] = 'recoil';
+    // （場にいたかはVSの開始時に記録。決着の時点では【道連れ】で既に場から外れていることがある）
+    const _winOnField = p.winner === 'def' ? p.defOnField : p.atkOnField;
+    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && hasMichizure(p[ls]) && _winOnField) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); }
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });

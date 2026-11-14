@@ -1907,6 +1907,8 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_michizure': {
+      // VS画面の決着で【道連れ】を見せた直後なら重ねない
+      if (window._clashRecoilAt && Date.now() - window._clashRecoilAt < 8000) break;
       // 相手の道連れ発動 → 自分側でも演出を再生
       const movly = document.createElement('div');
       movly.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';

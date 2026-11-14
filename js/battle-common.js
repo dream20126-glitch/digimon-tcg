@@ -442,12 +442,16 @@ export function setupCommonWindowExports() {
     try { fxCardMoveMulti(cards, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
   };
   window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {
-    if (window._fxMoveBatchSkip > 0 && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)) {
+    const _skSet = window._fxMoveBatchSkipCards instanceof Set ? window._fxMoveBatchSkipCards : null;
+    if (window._fxMoveBatchSkip > 0 && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)
+        && (!_skSet || _skSet.has(card))) {
       window._fxMoveBatchSkip--;
+      if (_skSet) _skSet.delete(card);
       setTimeout(() => { callback && callback(); }, 0);
       return;
     }
-    window._fxMoveBatchSkip = 0;
+    // 一覧に出していないカードの移動は省略しない（一覧の分の省略はそのまま残す）
+    if (!(_skSet && _skSet.size > 0 && window._fxMoveBatchSkip > 0)) { window._fxMoveBatchSkip = 0; window._fxMoveBatchSkipCards = null; }
     window._fxAnimActive = (window._fxAnimActive || 0) + 1;
     let ended = false;
     const end = () => { if (ended) return; ended = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 0) - 1); callback && callback(); };

@@ -2412,13 +2412,21 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const bounceNeed = (defaultTarget && defaultTarget.count) || 1;
       const bounceUpTo = !!(defaultTarget && defaultTarget.upTo);
       // 複数体を1体ずつ順に処理（when_leave_battle等の解決完了を待ってから次へ）
+      // 戻すカード全部を一覧で見せて（3枚以上）から、1枚ずつ「バトルエリア → 手札」の移動演出（相手の画面にも）を出す
+      // （マグナガルルモン P-153 で、相手の画面に最後のオオクワモンしか出ていなかった）
       const _bounceSequential = (idxs, doneCb) => {
+        const cards = idxs.map(i => opponent.battleArea[i]);
         let bi = 0;
         const next = () => {
           if (bi >= idxs.length) { doneCb(); return; }
-          doBounce(opponent, idxs[bi++], ctx, next);
+          const i = idxs[bi], c = cards[bi]; bi++;
+          if (!c || opponent.battleArea[i] !== c) { next(); return; }
+          doBounce(opponent, i, ctx, () => {
+            if (!(opponent.hand || []).includes(c)) { next(); return; }
+            _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の手札', next, { remoteFrom: '自分のバトルエリア', remoteTo: '自分の手札' });
+          });
         };
-        next();
+        _moveBatchIntro(ctx, cards, '相手のバトルエリア', '相手の手札', next, { remoteFrom: 'バトルエリア', remoteTo: '手札' });
       };
       if (bounceNeed > 1 || bounceUpTo) {
         // filter.distinct_by（「Lv.3とLv.4とLv.5の相手のデジモン1体ずつ」＝同じLvは2体選べない。マグナガルルモン P-153）
@@ -2434,7 +2442,6 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         pickUpToNTargets(rowId, bounceTargets, bounceNeed, bounceColor, (idxs) => {
-          idxs.forEach(idx => sendEffectResult(opponent.battleArea[idx], 'bounce', ctx));
           _bounceSequential(idxs, callback);
         }, { forced: !bounceUpTo, exclude: _bExclude });
         break;
@@ -5502,6 +5509,11 @@ function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
     const go = () => {
       window._fxMoveBatchSkip = (window._fxMoveBatchSkip || 0) + list.length;
       window._fxMoveBatchSkipAt = Date.now();
+      // 省略するのは一覧に出したカードだけ（枚数だけで数えると、一覧のカードの一部が動かなかったときに残った分で、
+      // 無関係な次の移動演出まで省略していた。マスティモン P-187 の相手のセキュリティ破棄の演出が出ていなかった）
+      const _sk = (window._fxMoveBatchSkipCards instanceof Set) ? window._fxMoveBatchSkipCards : new Set();
+      list.forEach(c => _sk.add(c));
+      window._fxMoveBatchSkipCards = _sk;
       start();
     };
     if (_batchId && typeof window._waitMoveBatchAck === 'function') window._waitMoveBatchAck(_batchId, go);
@@ -5509,8 +5521,9 @@ function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
   }, !!opts.faceDown);
 }
 // 一覧の演出のあと、1枚ずつの移動演出を省略中か（相手への fx_remoteCardMove も送らない）
-function _moveBatchSkipping() {
+function _moveBatchSkipping(card) {
   if (typeof window === 'undefined' || !(window._fxMoveBatchSkip > 0)) return false;
+  if (card && window._fxMoveBatchSkipCards instanceof Set && !window._fxMoveBatchSkipCards.has(card)) return false;
   // 呼び出し元が途中で打ち切って省略枚数が残ったままにならないよう、時間が経っていたら解除する
   if (window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000) { window._fxMoveBatchSkip = 0; return false; }
   return true;
@@ -5521,7 +5534,7 @@ if (typeof window !== 'undefined') window._fxMoveSyncSide = (side, card, fromLab
 function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   opts = opts || {};
   const done = () => { try { cb && cb(); } catch (e) { console.error('[_fxMoveSync]', e); } };
-  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && !_moveBatchSkipping() && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && !_moveBatchSkipping(card) && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     const raw = opts.remoteFrom != null || opts.remoteTo != null;
     const hide = !!(opts.faceDown || opts.remoteFaceDown);
     try {
@@ -22492,10 +22505,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 進化元から置く（充填プラグインQ P-146 進化元効果「このデジモンの進化元から『充填プラグインQ』1枚をセキュリティの
       // 下に置くことで消滅しない」= from:'evo_source' + from_filter）。以前はこの経路が無く、何も置かずにコストを
       // 支払った扱いになっていた。どのカードの進化元かは _evoSourceHoldersOf（既定はこのデジモン）
-      // from:'stacked_cards'（「このデジモンに重ねられているカードを上から1枚セキュリティの上に置くことで」マグナガルルモン P-153）
-      // も同じ経路。上から順に決まるので選ばせない（以前はこの形の経路が無く、何も置かずに本体だけ実行していた）
-      const _peStacked = step.from === 'stacked_cards';
-      if (!step.card && (_peStacked || step.from === 'evo_source' || (Array.isArray(step.from) && step.from.includes('evo_source')))) {
+      const _peStacked = false;
+      if (!step.card && (step.from === 'evo_source' || (Array.isArray(step.from) && step.from.includes('evo_source')))) {
         const _peIsCost = _COST_STEP_SET.has(step);
         const _peM = /:(\d+)$/.exec(String(step.target || ''));
         const _peWant = Math.max(1, parseInt(step.count || step.value || (_peM ? _peM[1] : 1), 10) || 1);
@@ -22559,7 +22570,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 指定時は ctx.card（消滅したカード自身）を対象にする。それ以外は従来通り store 経由。
       // ":N" 接尾辞（例: "self_card:1"）が付いていても self 扱いにする
       const _posTgtBase = String(step.target || '').split(':')[0];
-      const isSelf = _posTgtBase === 'self' || _posTgtBase === 'self_card';
+      // 「このデジモンに重ねられているカードを上から1枚セキュリティの上に置く」（マグナガルルモン P-153 の target:'own_security'
+      // ＋from:'stacked_cards'）も、このデジモン（一番上のカード自身）から数える下の経路。以前は経路が無く、何も置かずに本体を実行していた
+      const isSelf = _posTgtBase === 'self' || _posTgtBase === 'self_card'
+        || (step.from === 'stacked_cards' && !step.card && (_posTgtBase === 'own_security' || !_posTgtBase));
 
       // from:"stacked_cards"（重ねられているカード）: 退化と同じ「本体+進化元の連番から
       // 先頭N枚を切り出し、残りの先頭を新キャリアに昇格」方式だが、破棄先が固定トラッシュ
@@ -22590,6 +22604,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         const idx = player.battleArea.indexOf(src);
         if (idx !== -1) player.battleArea[idx] = newCarrier;
+        // 残ったカードは同じ1体のデジモン。続く「このデジモンを〜」（P-153 のアクティブ）はそのデジモンに対して行う
+        if (newCarrier && newCarrier !== src && idx !== -1) ctx.card = newCarrier;
         const toBottom = step.position === 'bottom';
         removed.forEach((c) => { if (toBottom) player.security.push(c); else player.security.unshift(c); });
         if (removed.length > 0) _noteSecurityIncrease(ctx, player);

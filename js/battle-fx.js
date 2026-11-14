@@ -3567,7 +3567,7 @@ export function fxBoardHit(kind, side, idx, value) {
   layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46500;overflow:visible;';
   document.body.appendChild(layer);
   // 演出が途中で失敗しても、重ねた層（カードの写し）が盤面に残って本物のカードの表示を隠さないよう、必ず消す
-  setTimeout(() => { try { layer.remove(); } catch (_) {} try { slot.style.visibility = ''; } catch (_) {} }, 6000);
+  setTimeout(() => { try { layer.remove(); } catch (_) {} try { slot.style.visibility = ''; } catch (_) {} }, 9000);
   try { _fxBoardHitBody(); } catch (e) { console.error('[fxBoardHit]', kind, e); try { layer.remove(); } catch (_) {} try { slot.style.visibility = ''; } catch (_) {} }
   function _fxBoardHitBody() {
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
@@ -3690,65 +3690,85 @@ export function fxBoardHit(kind, side, idx, value) {
     const STEP_MS = Math.max(6, Math.min(12, 520 / nPer));
     const a1 = Math.atan2(h, w);
     const diags = [a1, -a1];                // 左上→右下 / 左下→右上
-    // 鎖の先端（光る留め具）が対角線の向きにカードの表→端→裏→端→表…とぐるぐる回り、通ったあとに鎖が残る。
-    // 裏を回っている間は、先端も鎖も暗く小さく（奥にある）、カードの写しに透けて薄く見える。
-    // 鎖に引かれてカードが左右にねじれる（奥行きの傾き）
+    // 1本の鎖（長さは決まっている）がカードの外からまっすぐ伸びた状態で現れ、先端に引っぱられて
+    // カードの表→端→裏→端→表…と巻き付いていく。鎖の輪は1つ1つが道に沿って動き続け、裏を回る間は
+    // 暗く小さく、カードに薄く透けて見える。鎖に引かれてカードが左右にねじれる
     const ghost = mkSvg(3);  // 裏の鎖が透けて見える層（薄く）
     ghost.style.opacity = '0.32';
-    cc.style.transformStyle = 'preserve-3d';
     layer.style.perspective = '500px';
     const head = add('position:absolute;left:0;top:0;width:' + (L * 1.3) + 'px;height:' + (L * 1.3) + 'px;margin:' + (-L * 0.65) + 'px 0 0 ' + (-L * 0.65) + 'px;border-radius:50%;'
       + 'background:radial-gradient(circle at 35% 35%,#ffffff,#d0d0dc 45%,#5a5a66 100%);box-shadow:0 0 10px #ffd84a,0 0 20px rgba(255,200,80,0.7);opacity:0;z-index:4;');
-    const plan = [];
-    diags.forEach((al, di) => {
-      const dx = Math.cos(al), dy = Math.sin(al);   // 鎖の向き
-      const nx = -dy, ny = dx;                       // 巻くごとにずれる向き
+    const spacing = L * 0.8;
+    // 鎖1本ぶんの道（外の直線 → 巻き付く道）を作る
+    const makeChain = (al, di) => {
+      const dx = Math.cos(al), dy = Math.sin(al), nx = -dy, ny = dx;
+      const path = [];
       for (let k = 0; k <= nPer; k++) {
-        const th = -Math.PI / 2 + k * dTh;           // 外側の端から表へ
+        const th = -Math.PI / 2 + k * dTh;
         const u = Ru * Math.sin(th);
         const off = -spread / 2 + spread * (k / Math.max(1, nPer));
-        const px = w / 2 + dx * u + nx * off, py = h / 2 + dy * u + ny * off;
-        const depth = Math.cos(th);                  // 1: 手前 / -1: 奥
-        const frontSide = depth > 0;
-        const ang = al * 180 / Math.PI + (Math.abs(depth) < 0.25 ? 90 * Math.sign(Math.sin(th)) * 0.35 : 0);
-        const g = link(frontSide ? front : back, k + di, px, py, ang, !frontSide);
-        const gg = frontSide ? null : link(ghost, k + di, px, py, ang, true);
-        // 奥にある輪は少し小さく（遠近）
-        const sc = 0.8 + 0.2 * (depth + 1) / 2;
-        g.setAttribute('transform', g.getAttribute('transform') + ' scale(' + sc.toFixed(2) + ')');
-        if (gg) gg.setAttribute('transform', gg.getAttribute('transform') + ' scale(' + sc.toFixed(2) + ')');
-        plan.push({ g, gg, px, py, depth, th, di });
+        path.push({ x: w / 2 + dx * u + nx * off, y: h / 2 + dy * u + ny * off, depth: Math.cos(th), th });
       }
-      plan.push(null); // 1本目と2本目の間の間
-    });
-    const STEP = Math.max(9, Math.min(16, 900 / (nPer + 1)));
-    const t0 = Date.now() + 150;
-    let shown = 0;
-    const tick = setInterval(() => {
-      const n = Math.min(plan.length, Math.floor((Date.now() - t0) / STEP));
-      while (shown < n) {
-        const pl = plan[shown++];
-        if (!pl) continue;
-        pl.g.style.opacity = '1';
-        if (pl.gg) pl.gg.style.opacity = '1';
+      const M = path.length;
+      // 道の始まり（角の外）から、対角線の外向きにまっすぐ伸びる部分（はじめは鎖が全部ここにある）
+      const tail = [];
+      for (let t = M; t >= 1; t--) tail.push({ x: path[0].x - dx * spacing * t, y: path[0].y - dy * spacing * t, depth: 0.3, th: -Math.PI / 2 });
+      const all = tail.concat(path);
+      const links = [];
+      for (let q = 0; q < M; q++) {
+        const g = link(front, q + di, 0, 0, 0, false);
+        const gd = link(back, q + di, 0, 0, 0, true);
+        const gg = link(ghost, q + di, 0, 0, 0, true);
+        links.push({ g, gd, gg });
       }
-      const cur = plan[Math.max(0, n - 1)];
-      if (cur) {
-        // 先端: 奥にあるときは暗く小さく、手前は明るく大きく
-        const sc = 0.6 + 0.5 * (cur.depth + 1) / 2;
-        head.style.opacity = cur.depth > 0 ? '1' : '0.45';
-        head.style.zIndex = cur.depth > 0 ? '4' : '1';
-        head.style.transform = 'translate(' + (ox + cur.px) + 'px,' + (oy + cur.py) + 'px) scale(' + sc.toFixed(2) + ')';
-        // 鎖に引かれてカードがねじれる（先端が回る向きに少し傾く）
-        cc.style.transform = (susp ? 'rotate(90deg) ' : '') + 'rotateY(' + (Math.sin(cur.th) * 14 * (cur.di ? -1 : 1)).toFixed(1) + 'deg)';
+      return { all, links, M, tailLen: tail.length, di };
+    };
+    const place = (el, p, ang, sc) => { el.setAttribute('transform', 'translate(' + (p.x + 30).toFixed(1) + ',' + (p.y + 30).toFixed(1) + ') rotate(' + ang.toFixed(1) + ') scale(' + sc.toFixed(2) + ')'); };
+    const drawChain = (ch, f) => {
+      for (let q = 0; q < ch.M; q++) {
+        const idx = ch.tailLen - 1 + f - q;
+        const L0 = ch.links[q];
+        if (idx < 0) { L0.g.style.opacity = L0.gd.style.opacity = L0.gg.style.opacity = '0'; continue; }
+        const p = ch.all[idx], pn = ch.all[Math.min(ch.all.length - 1, idx + 1)], pp = ch.all[Math.max(0, idx - 1)];
+        const ang = Math.atan2(pn.y - pp.y, pn.x - pp.x) * 180 / Math.PI;
+        const sc = 0.8 + 0.2 * (p.depth + 1) / 2;
+        const isFront = p.depth > 0;
+        place(isFront ? L0.g : L0.gd, p, ang, sc);
+        L0.g.style.opacity = isFront ? '1' : '0';
+        L0.gd.style.opacity = isFront ? '0' : '1';
+        if (!isFront) place(L0.gg, p, ang, sc);
+        L0.gg.style.opacity = isFront ? '0' : '1';
       }
-      if (n >= plan.length) {
-        clearInterval(tick);
-        head.style.transition = 'opacity 0.2s'; head.style.opacity = '0';
-        cc.style.transition = 'transform 0.2s'; cc.style.transform = susp ? 'rotate(90deg)' : '';
+      const hp = ch.all[ch.tailLen - 1 + f];
+      if (hp) {
+        head.style.opacity = hp.depth > 0 ? '1' : '0.45';
+        head.style.zIndex = hp.depth > 0 ? '4' : '1';
+        head.style.transform = 'translate(' + (ox + hp.x) + 'px,' + (oy + hp.y) + 'px) scale(' + (0.6 + 0.5 * (hp.depth + 1) / 2).toFixed(2) + ')';
+        cc.style.transform = (susp ? 'rotate(90deg) ' : '') + 'rotateY(' + (Math.sin(hp.th) * 14 * (ch.di ? -1 : 1)).toFixed(1) + 'deg)';
       }
-    }, 16);
-    const tWrap = 150 + plan.length * STEP + 60;
+    };
+    const chains = diags.map((al, di) => makeChain(al, di));
+    const FR = 11; // 1つ進む時間(ms)
+    const durOne = chains[0].M * FR;
+    let ci = 0;
+    const startChain = () => {
+      const ch = chains[ci];
+      // 外から鎖が飛んでくる（まっすぐの状態でフッと現れる）
+      drawChain(ch, 0);
+      const t0 = Date.now();
+      const tk = setInterval(() => {
+        const f = Math.min(ch.M, Math.floor((Date.now() - t0) / FR));
+        drawChain(ch, f);
+        if (f >= ch.M) {
+          clearInterval(tk);
+          ci++;
+          if (ci < chains.length) setTimeout(startChain, 150);
+          else { head.style.transition = 'opacity 0.2s'; head.style.opacity = '0'; cc.style.transition = 'transform 0.2s'; cc.style.transform = susp ? 'rotate(90deg)' : ''; }
+        }
+      }, 16);
+    };
+    setTimeout(startChain, 150);
+    const tWrap = 150 + chains.length * (durOne + 150) + 60;
     // 巻き付くあいだカードがきしむ
     setTimeout(() => { cc.style.animation = 'bhShake 0.25s linear'; }, tWrap * 0.5);
     // 巻き終わり: ギュッと締まる → カードが暗く沈み、錠がかかる

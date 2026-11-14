@@ -3169,29 +3169,36 @@ const _MAGIC_SVG = (c1, c2) => '<svg viewBox="0 0 200 200" style="width:100%;hei
   + '<circle cx="100" cy="100" r="34" fill="none" stroke="' + c2 + '" stroke-width="3"/>'
   + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="96" y="2" width="8" height="12" fill="' + c2 + '" transform="rotate(' + a + ' 100 100)"/>').join('')
   + '</svg>';
-export function attackStrikeFx(ov, x, y, size) {
+export function attackStrikeFx(ov, x, y, size, slow) {
   _ensureHitStyle(); _ensureMagicStyle();
   const S = (size || 120) * 1.5;
+  // slow: 効果での消滅用のゆっくり版（魔法陣が広がる→光が集まる→炸裂、をそれぞれ見える速さで）
+  const D = slow ? 2.2 : 0.62;      // 魔法陣の表示時間(s)
+  const GD = slow ? 0.9 : 0.24;     // 光が集まる時間(s)
+  const GS = slow ? 0.55 : 0;       // 光が集まり始める時刻(s)
+  const T = slow ? 1550 : 200;      // 炸裂する時刻(ms)
+  const B = slow ? 1.7 : 1;         // 炸裂の演出の長さの倍率
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
   // ① 魔法陣が2重に回りながら広がる
-  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S + 'px;height:' + S + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle 0.62s ease-out forwards;z-index:9;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
-  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S * 0.62 + 'px;height:' + S * 0.62 + 'px;filter:drop-shadow(0 0 6px #6ff3ff);animation:mgCircle2 0.62s ease-out forwards;z-index:9;', _MAGIC_SVG('#9ff6ff', '#e3c8ff'));
+  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S + 'px;height:' + S + 'px;filter:drop-shadow(0 0 8px #b06cff) drop-shadow(0 0 18px #7a3dff);animation:mgCircle ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#e3c8ff', '#8ff3ff'));
+  add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + S * 0.62 + 'px;height:' + S * 0.62 + 'px;filter:drop-shadow(0 0 6px #6ff3ff);animation:mgCircle2 ' + D + 's ease-out forwards;z-index:9;', _MAGIC_SVG('#9ff6ff', '#e3c8ff'));
   // ② 光の粒が中心へ集まる
   for (let k = 0; k < 14; k++) {
     const ang = Math.random() * Math.PI * 2, dd = S * 0.6 + Math.random() * S * 0.5;
-    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff,0 0 14px #6ff3ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather 0.24s ease-in ' + (Math.random() * 0.06) + 's forwards;opacity:0;z-index:9;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px #b06cff,0 0 14px #6ff3ff;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgGather ' + GD + 's ease-in ' + (GS + Math.random() * (slow ? 0.25 : 0.06)) + 's forwards;opacity:0;z-index:9;');
   }
   // ③ 魔力が炸裂（光の柱・閃光・衝撃波・魔力の欠片が飛び散る）
   setTimeout(() => {
-    add('position:absolute;left:' + x + 'px;top:0;width:' + S * 0.5 + 'px;height:' + (y + S * 0.3) + 'px;transform-origin:center;background:linear-gradient(to bottom,rgba(176,108,255,0) 0%,rgba(200,150,255,0.85) 60%,#fff 100%);box-shadow:0 0 30px #b06cff;animation:mgPillar 0.45s ease-out forwards;z-index:8;');
-    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(190,130,255,0.6) 14%,rgba(80,200,255,0.25) 28%,rgba(0,0,0,0) 48%);animation:hxFlash 0.5s ease-out forwards;z-index:8;');
-    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #e3c8ff;box-shadow:0 0 18px #b06cff,inset 0 0 12px #6ff3ff;animation:hxRing 0.55s ease-out forwards;z-index:8;');
-    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid #8ff3ff;animation:hxRing 0.7s ease-out 0.08s forwards;opacity:0;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:0;width:' + S * 0.5 + 'px;height:' + (y + S * 0.3) + 'px;transform-origin:center;background:linear-gradient(to bottom,rgba(176,108,255,0) 0%,rgba(200,150,255,0.85) 60%,#fff 100%);box-shadow:0 0 30px #b06cff;animation:mgPillar ' + 0.45 * B + 's ease-out forwards;z-index:8;');
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(255,255,255,0.95) 0%,rgba(190,130,255,0.6) 14%,rgba(80,200,255,0.25) 28%,rgba(0,0,0,0) 48%);animation:hxFlash ' + 0.5 * B + 's ease-out forwards;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:90px;height:90px;border-radius:50%;border:4px solid #e3c8ff;box-shadow:0 0 18px #b06cff,inset 0 0 12px #6ff3ff;animation:hxRing ' + 0.55 * B + 's ease-out forwards;z-index:8;');
+    add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid #8ff3ff;animation:hxRing ' + 0.7 * B + 's ease-out ' + 0.08 * B + 's forwards;opacity:0;z-index:8;');
     for (let k = 0; k < 16; k++) {
       const ang = Math.random() * Math.PI * 2, dd = 50 + Math.random() * 110;
-      add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:9px;height:9px;margin:-4px;transform-origin:center;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);background:' + (k % 2 ? '#e3c8ff' : '#8ff3ff') + ';--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgBurst 0.6s ease-out forwards;z-index:9;');
+      add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:9px;height:9px;margin:-4px;transform-origin:center;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);background:' + (k % 2 ? '#e3c8ff' : '#8ff3ff') + ';--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;animation:mgBurst ' + 0.6 * B + 's ease-out forwards;z-index:9;');
     }
-  }, 200);
+  }, T);
+  return T;
 }
 if (typeof window !== 'undefined') window._attackStrikeFx = attackStrikeFx;
 
@@ -3249,28 +3256,30 @@ export function fxImpactDestroy(items, callback) {
     return { d: _hitCard(ov, it.card, x, cy, CW, CH, '#c9a4ff', (it.remote ? '相手の' : '') + (it.card.name || '')), x, card: it.card };
   });
   // ① 斬撃を受ける（ヒットストップ・揺れ・ひび）
+  const T = 1550; // 魔法攻撃が当たる時刻（attackStrikeFx の slow）
+  const STEP = 450; // 複数体のときの1体ごとのずれ
   els.forEach(({ d, x }, i) => setTimeout(() => {
-    attackStrikeFx(ov, x, cy, CW);
+    attackStrikeFx(ov, x, cy, CW, true);
     setTimeout(() => {
-      d.style.animation = 'hxShake 0.35s linear';
+      d.style.animation = 'hxShake 0.5s linear';
       d.style.filter = 'brightness(2.4) saturate(0.3)';
       d.style.boxShadow = '0 0 26px #b06cff,0 0 50px #7a3dff';
       setTimeout(() => {
         // 魔力に侵される: 紫に染まり、カードの上に呪印が刻まれて脈打つ
-        d.style.transition = 'filter 0.4s';
+        d.style.transition = 'filter 0.7s';
         d.style.filter = 'brightness(0.8) saturate(0.7) hue-rotate(-40deg)';
         const sigil = document.createElement('div');
-        sigil.style.cssText = 'position:absolute;left:10%;top:18%;width:80%;height:57%;pointer-events:none;filter:drop-shadow(0 0 4px #b06cff) drop-shadow(0 0 10px #b06cff);animation:mgSigil 0.6s ease-out forwards;';
+        sigil.style.cssText = 'position:absolute;left:10%;top:18%;width:80%;height:57%;pointer-events:none;filter:drop-shadow(0 0 4px #b06cff) drop-shadow(0 0 10px #b06cff);animation:mgSigil 1.1s ease-out forwards;';
         sigil.innerHTML = _MAGIC_SVG('#f0e0ff', '#8ff3ff');
         d.appendChild(sigil);
         const veil = document.createElement('div');
         veil.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle,rgba(176,108,255,0.15),rgba(122,61,255,0.55));mix-blend-mode:screen;';
         d.appendChild(veil);
-      }, 160);
-    }, 200);
-  }, 250 + i * 160));
-  // ② 砕け散ってトラッシュへ（カードの絵の破片）
-  const t2 = 250 + n * 160 + 650;
+      }, 300);
+    }, T);
+  }, 350 + i * STEP));
+  // ② 呪印が刻まれた姿を少し見せてから、砕け散ってトラッシュへ（カードの絵の破片）
+  const t2 = 350 + (n - 1) * STEP + T + 1500;
   setTimeout(() => {
     bin.style.opacity = '1';
     els.forEach(({ d, x, card }, i) => setTimeout(() => {
@@ -3285,20 +3294,20 @@ export function fxImpactDestroy(items, callback) {
         sh.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:' + (r.width / 3) + 'px;height:' + (r.height / 4) + 'px;'
           + (src ? 'background:url(' + src + ') ' + (-sx * r.width) + 'px ' + (-sy * r.height) + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#555;')
           + 'clip-path:polygon(' + (Math.random() * 30) + '% 0,100% ' + (Math.random() * 30) + '%,' + (70 + Math.random() * 30) + '% 100%,0 ' + (70 + Math.random() * 30) + '%);'
-          + 'box-shadow:0 0 6px #b06cff;filter:drop-shadow(0 0 4px #b06cff);transition:transform 0.35s ease-out,opacity 0.3s;';
+          + 'box-shadow:0 0 6px #b06cff;filter:drop-shadow(0 0 4px #b06cff);transition:transform 0.6s ease-out,opacity 0.4s;';
         ov.appendChild(sh);
-        const ang = Math.random() * Math.PI * 2, dd = 30 + Math.random() * 60;
+        const ang = Math.random() * Math.PI * 2, dd = 40 + Math.random() * 70;
         requestAnimationFrame(() => { sh.style.transform = 'translate(' + Math.cos(ang) * dd + 'px,' + Math.sin(ang) * dd + 'px) rotate(' + (Math.random() * 180 - 90) + 'deg)'; });
         setTimeout(() => {
-          sh.style.transition = 'transform 0.55s cubic-bezier(.6,0,.9,.6),opacity 0.55s';
+          sh.style.transition = 'transform 0.9s cubic-bezier(.6,0,.9,.6),opacity 0.9s';
           sh.style.transform = 'translate(' + toX + 'px,' + toY + 'px) rotate(' + (Math.random() * 720) + 'deg) scale(0.2)';
           sh.style.opacity = '0';
-        }, 380 + k * 18);
+        }, 800 + k * 30);
       }
-      setTimeout(() => _pulse(bin), 900);
-    }, i * 140));
+      setTimeout(() => _pulse(bin), 1900);
+    }, i * 250));
   }, t2);
-  const tEnd = t2 + n * 140 + 1200;
+  const tEnd = t2 + (n - 1) * 250 + 2500;
   setTimeout(() => { ov.style.opacity = '0'; }, tEnd);
   setTimeout(() => { ov.remove(); done(); }, tEnd + 250);
   setTimeout(done, tEnd + 4000);

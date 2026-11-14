@@ -354,8 +354,27 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
 if (typeof window !== 'undefined') {
   window._tryCancelBattleDestroy = (card, side, callback) => {
     const owner = side === 'ai' ? bs.ai : bs.player;
-    try { _tryCancelDestroyAsync(card, owner, side, false, (r) => callback(!!r)); }
-    catch (_) { callback(false); }
+    // 回避できなければ「バトルで消滅するとき〜することで消滅しない」（when_battle_destroy / when_destroy）も確認する
+    // （オンラインのブロック解決はここだけを呼んでいて、充填プラグインQ P-146 の進化元効果等が確認されなかった）。
+    // オンラインの相手のカードは、離れるときの判定を持ち主に任せる依頼（fx_leaveBattleDelegate）に
+    // 「バトルで消滅するときも確認して」（withWBD）を付け、持ち主の端末で確認してもらう
+    const _remote = side === 'ai' && _onlineMode;
+    if (_remote) bs._wbdDelegate = true;
+    try {
+      _tryCancelDestroyAsync(card, owner, side, false, (r) => {
+        if (_remote) bs._wbdDelegate = false;
+        if (r) { callback(true); return; }
+        if (_remote) { callback(false); return; }
+        try { _runWhenBattleDestroy(side, card, () => callback(false), () => { renderAll(); callback(true); }); }
+        catch (e) { console.error('[tryCancelBattleDestroy WBD]', e); callback(false); }
+      });
+    }
+    catch (_) { if (_remote) bs._wbdDelegate = false; callback(false); }
+  };
+  // 持ち主の端末で「バトルで消滅するとき」を確認する（battle-online.js の fx_leaveBattleDelegate withWBD から）。cb(canceled)
+  window._runWhenBattleDestroyLocal = (card, cb) => {
+    try { _runWhenBattleDestroy('player', card, () => cb(false), () => { renderAll(); cb(true); }); }
+    catch (e) { console.error('[runWhenBattleDestroyLocal]', e); cb(false); }
   };
 }
 
@@ -385,6 +404,13 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
   // 「効果で消滅するとき」（cause:'effect'）だけのものはバトルでは発揮しない
   const hasWD = _whenDestroyApplies(card, 'when_destroy', 'battle');
   if (!hasWBD && !hasWD) { onDestroy(); return; }
+  // 確認中は消滅の原因を「バトル」にしておく（cause:'battle' のステップが原因を見て絞るため）。以前はこの時点で原因が
+  // 記録されておらず、ブロックされて負けたとき等に「バトルで消滅するとき」（充填プラグインQ P-146 の進化元効果）が
+  // 発揮されなかった。終わったら元に戻す
+  const _wbPrevCause = bs._lastDestroyCause;
+  bs._lastDestroyCause = { type: 'battle', causerSide: side === 'ai' ? 'player' : 'ai', causerCard: null };
+  const _wbRestore = () => { bs._lastDestroyCause = _wbPrevCause; };
+  { const _od = onDestroy, _oc = onCancel; onDestroy = (...a) => { _wbRestore(); return _od(...a); }; onCancel = (...a) => { _wbRestore(); return _oc(...a); }; }
   const ctxWBD = _hooks.makeEffectContext(card, side);
   // 置換効果（「〜することで、消滅しない」）で付いた「消滅しない」は、この消滅を防ぐだけで外す（ターン終了まで残さない）
   const _wbBefore = new Set(Array.isArray(card.buffs) ? card.buffs : []);

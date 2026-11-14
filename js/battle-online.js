@@ -1222,7 +1222,14 @@ function onRemoteCommand(cmd) {
       const _prevLC = bs._leaveCause;
       if (cmd.cause && !cmd.byBattle) bs._leaveCause = { type: cmd.cause.type || 'effect', causerSide: cmd.cause.causerSide || 'ai', causerCard: null };
       const _restore = () => { bs._leaveByBattle = false; bs._leaveCause = _prevLC; };
-      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, (c) => { _restore(); reply(c); }); }
+      // withWBD: 離れなければ、続けて「バトルで消滅するとき〜することで消滅しない」も持ち主のこの端末で確認する
+      // （オンラインのブロックで負けた相手側の充填プラグインQ P-146 の進化元効果が確認されなかった）
+      const _afterLeave = (c) => {
+        _restore();
+        if (c || !cmd.withWBD || typeof window._runWhenBattleDestroyLocal !== 'function' || !bs.player.battleArea.includes(card)) { reply(c); return; }
+        window._runWhenBattleDestroyLocal(card, (c2) => reply(c2));
+      };
+      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, _afterLeave); }
       catch (_) { _restore(); reply(false); }
       break;
     }
@@ -3104,7 +3111,7 @@ window._requestLeaveBattleDelegate = (slotIdx, cb) => {
   // 離れる原因（効果かバトルか・誰の効果か）も送る。持ち主の端末の「相手の効果で離れるとき」（【守護】等）の判定に使う
   const _lc = bs._leaveCause || bs._lastDestroyCause || null;
   const cause = _lc ? { type: _lc.type || 'effect', causerSide: _lc.causerSide === 'player' ? 'ai' : _lc.causerSide === 'ai' ? 'player' : null } : null;
-  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle, cause });
+  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle, cause, withWBD: !!(bs._leaveByBattle && bs._wbdDelegate) });
 };
 window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);

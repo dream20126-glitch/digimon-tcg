@@ -3957,6 +3957,38 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
 }
 
+// 相手の効果で自分のデジモンが消滅するとき（オンラインで相手の端末から依頼された）: こちらの端末で「消滅するとき」を発揮し、
+// 消滅しないなら稲妻の演出（両方の画面）を出して cb(true)。cause: { type, causerSide }（こちら視点に直してある）
+export function runWhenDestroyLocal(card, cause, cb) {
+  const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
+  const done = (v) => { try { cb && cb(!!v); } catch (e) { console.error('[runWhenDestroyLocal]', e); } };
+  if (!bs || !card || !whenDestroyApplies(card, 'when_destroy', 'effect')) { done(false); return; }
+  const ctx = Object.assign({}, _buildBaseCtx(null, bs), { side: 'player', card });
+  const prevCause = bs._lastDestroyCause;
+  bs._lastDestroyCause = { type: (cause && cause.type) || 'effect', causerSide: (cause && cause.causerSide) || 'ai', causerCard: null };
+  const before = new Set(Array.isArray(card.buffs) ? card.buffs : []);
+  const wasActive = !card.suspended;
+  const stack0 = Array.isArray(card.stack) ? card.stack.slice() : [];
+  window._fxMoveHold = (window._fxMoveHold || 0) + 1;
+  triggerEffect('when_destroy', card, 'player', ctx, () => {
+    window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1);
+    bs._lastDestroyCause = prevCause;
+    const cur = card._armorPurgedTo || card;
+    const prevented = !!(cur.buffs && cur.buffs.some((b) => b && b.type === 'keyword_prevent_destroy'));
+    if (Array.isArray(cur.buffs)) cur.buffs = cur.buffs.filter(b => before.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+    if (!prevented) { done(false); return; }
+    const byEvade = wasActive && cur.suspended && !!(card._permEffects && card._permEffects.evade);
+    const purged = !!card._armorPurgedTo;
+    const gone = purged ? [card] : stack0.filter(c => c && c !== cur && !(Array.isArray(cur.stack) && cur.stack.includes(c)));
+    let isFrag = false;
+    try { isFrag = !purged && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, 'player'); } catch (_) {}
+    const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : isFrag ? '【フラグメント】' : '回避！';
+    const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+    _ddDodgeFx(ctx, cur, 'player', { label: lbl, sub, substitute: gone.length ? gone : null, subColor: '#a8ff4a', peel: purged }, () => done(true));
+  });
+}
+if (typeof window !== 'undefined') window._runWhenDestroyLocal = (card, cause, cb) => runWhenDestroyLocal(card, cause, cb);
+
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
   // 呼び出し側が「同じオブジェクトがまだその位置にいるか」で判定すると、離れなかったのに消滅扱いになる
@@ -3990,6 +4022,16 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // バフが付与されていれば消滅をキャンセルする（when_battle_destroyの_runWhenBattleDestroyと
   // 同じパターン。原因を問わず発火するため、バトル側の_runWhenBattleDestroyとは別に
   // ここでも判定する必要がある＝原因を指定しないレシピは両方の消滅で発動する）
+  // オンラインの相手のカードの「消滅するとき〜することで消滅しない」（【アーマー解除】【フラグメント】等）は、持ち主の端末で
+  // 確認・コストの支払い・演出をしてもらう（以前はこちらの端末で処理していて、確認がこちらの画面に出ていた）
+  if (_ddSide === 'ai' && causeType !== 'battle' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()
+      && typeof window._requestWhenDestroyDelegate === 'function' && whenDestroyApplies(destroyed, 'when_destroy', 'effect')) {
+    window._requestWhenDestroyDelegate(slotIdx, { type: causeType, causerSide: ctx.side }, (canceled) => {
+      if (canceled) { ctx.addLog('🛡 相手の「' + destroyed.name + '」は消滅を回避！'); ctx.renderAll && ctx.renderAll(); callback && callback(); return; }
+      _doDestroyProceed();
+    });
+    return;
+  }
   if (whenDestroyApplies(destroyed, 'when_destroy', causeType === 'battle' ? 'battle' : 'effect')) {
     const gateCtx = { bs: ctx.bs, side: _ddSide, card: destroyed, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
     // 「〜することで、消滅しない」（【フラグメント】等の置換効果）で付いた「消滅しない」は、この消滅を防ぐだけ。

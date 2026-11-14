@@ -1239,6 +1239,19 @@ function onRemoteCommand(cmd) {
       catch (_) { _restore(); reply(false); }
       break;
     }
+    // --- 相手の効果でこちらのデジモンが消滅するときの「消滅するとき」の委譲（持ち主＝こちらで確認・発揮する） ---
+    case 'fx_whenDestroyDelegate': {
+      const card = bs.player.battleArea[cmd.slotIdx];
+      const reply = (canceled) => {
+        renderAll();
+        sendMemoryUpdate();
+        sendStateSync();
+        sendCommand({ type: 'fx_leaveBattleDelegateDone', canceled: !!canceled });
+      };
+      if (!card || typeof window._runWhenDestroyLocal !== 'function') { reply(false); break; }
+      try { window._runWhenDestroyLocal(card, cmd.cause || null, reply); } catch (e) { console.error('[fx_whenDestroyDelegate]', e); reply(false); }
+      break;
+    }
     case 'fx_leaveBattleDelegateDone': {
       const cb = _pendingLeaveBattleDelegateCallback;
       _pendingLeaveBattleDelegateCallback = null;
@@ -3149,6 +3162,20 @@ window._flushOppDeferredEvo = (cb) => {
   // 【消滅時】が始まっていた）。他の委譲（fx_leaveBattleDelegate 等）と同じく、相手の完了通知だけを待つ
   _pendingFlushDeferredEvoCallback = finish;
   sendCommand({ type: 'fx_flushDeferredEvo' });
+};
+// 相手のデジモンを効果で消滅させるとき、その「消滅するとき」（【アーマー解除】【フラグメント】等）を持ち主の端末で確認してもらう。
+// 返事は fx_leaveBattleDelegateDone（離れるときの依頼と同じ待ち方）。cb(canceled)
+window._requestWhenDestroyDelegate = (slotIdx, cause, cb) => {
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
+  _pendingLeaveBattleDelegateCallback = (canceled) => {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    try { cb(canceled); } catch (e) { console.error('[whenDestroyDelegate]', e); }
+  };
+  const c = cause ? { type: cause.type || 'effect', causerSide: cause.causerSide === 'player' ? 'ai' : cause.causerSide === 'ai' ? 'player' : null } : null;
+  sendCommand({ type: 'fx_whenDestroyDelegate', slotIdx, cause: c });
 };
 window._requestLeaveBattleDelegate = (slotIdx, cb) => {
   const waitOv = document.createElement('div');

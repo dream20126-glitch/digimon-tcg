@@ -3159,10 +3159,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const appliedDuringOwnTurn = (turnSide === ctx.side);
           window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block', appliedFromSender: 'player', appliedDuringOwnTurn: appliedDuringOwnTurn });
         }
-        // 状態付与演出
-        if (window._fxBuffStatus) {
-          window._fxBuffStatus(tgt, '⚔🛡✖', 'アタック・ブロック不可付与！', '#9933ff', () => { onDone && onDone(); });
-        } else { onDone && onDone(); }
+        // 演出は盤面の封印の演出（鎖がバツ印に巻き付く。fxBoardHit 'seal'）で見せる。以前の大きな表示は出さない
+        onDone && onDone();
       };
       const finishCab = () => {
         if (typeof ctx.renderAll === 'function') { try { ctx.renderAll(true); } catch(_) { ctx.renderAll(); } }

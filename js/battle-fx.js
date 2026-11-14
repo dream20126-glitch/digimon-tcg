@@ -3652,46 +3652,38 @@ export function fxBoardHit(kind, side, idx, value) {
     const front = mkSvg(3);  // カードの表側を通る鎖
     front.style.filter = 'drop-shadow(0 2px 2px rgba(0,0,0,0.7))';
     const L = Math.max(8, Math.min(13, w * 0.15)); // 輪1つの長さ
-    const Rx = w / 2 + L * 0.55;                    // 巻き付く半径（カードより少し外）
-    const TURNS = 3.2;
-    const yTop = h * 0.1, yBot = h * 0.9;
-    const pitch = (yBot - yTop) / (TURNS * 2 * Math.PI); // θ あたりの下がり
-    const dTh = (L * 0.8) / Rx;
-    const link = (sv, k, px, py, ang, dark) => {
-      const g = document.createElementNS(svgNS, 'g');
-      g.setAttribute('transform', 'translate(' + (px + 30).toFixed(1) + ',' + (py + 30).toFixed(1) + ') rotate(' + ang.toFixed(1) + ')');
-      const C = dark ? ['#1c1c22', '#5c5c68', '#8a8a96'] : ['#3a3a44', '#d0d0dc', '#ffffff'];
-      if (k % 2 === 0) {
-        [[C[0], 5], [C[1], 2.8], [C[2], 0.8]].forEach(([col, sw]) => {
-          const e = document.createElementNS(svgNS, 'ellipse');
-          e.setAttribute('rx', L * 0.58); e.setAttribute('ry', L * 0.34); e.setAttribute('fill', 'none'); e.setAttribute('stroke', col); e.setAttribute('stroke-width', sw);
-          g.appendChild(e);
-        });
-      } else {
-        [[C[0], L * 0.42, L * 1.25], [C[1], L * 0.24, L * 1.12], [C[2], L * 0.06, L * 0.9]].forEach(([col, hh, ww]) => {
-          const rc = document.createElementNS(svgNS, 'rect');
-          rc.setAttribute('x', -ww / 2); rc.setAttribute('y', -hh / 2); rc.setAttribute('width', ww); rc.setAttribute('height', hh); rc.setAttribute('rx', hh / 2); rc.setAttribute('fill', col);
-          g.appendChild(rc);
-        });
+    // バツ印（×）に巻き付ける: 対角線の向きに、カードの表→裏→表…と2周ずつ巻く。裏を通る部分はカードに隠れ、
+    // 角の外で回り込むところだけ暗く見える。1本目（左上→右下）を巻いてから、2本目（右上→左下）を巻く
+    const half = Math.hypot(w, h) / 2;
+    const Ru = half + L * 0.7;              // 対角線の向きの巻き付く半径（角より少し外）
+    const TURNS = 2;
+    const spread = L * 1.15;                // 1周ごとに横へずれる幅（2本の鎖が並ぶ）
+    const dTh = (L * 0.8) / Ru;
+    const perTurn = Math.ceil(2 * Math.PI / dTh);
+    const nPer = Math.ceil(TURNS * 2 * Math.PI / dTh);
+    const STEP_MS = Math.max(6, Math.min(12, 520 / nPer));
+    const a1 = Math.atan2(h, w);
+    const diags = [a1, -a1];                // 左上→右下 / 左下→右上
+    let tEnd = 0;
+    diags.forEach((al, di) => {
+      const dx = Math.cos(al), dy = Math.sin(al);   // 鎖の向き
+      const nx = -dy, ny = dx;                       // 巻くごとにずれる向き
+      const base = 120 + di * (nPer * STEP_MS + 180);
+      for (let k = 0; k <= nPer; k++) {
+        const th = -Math.PI / 2 + k * dTh;           // 外側の端から表へ
+        const u = Ru * Math.sin(th);
+        const off = -spread / 2 + spread * (k / Math.max(1, nPer));
+        const px = w / 2 + dx * u + nx * off, py = h / 2 + dy * u + ny * off;
+        const frontSide = Math.cos(th) > 0;
+        // 輪の向き: 表と裏では鎖の進む向きに沿う。端で回り込むところは少し縦に
+        const ang = al * 180 / Math.PI + (Math.cos(th) < 0.25 && Math.cos(th) > -0.25 ? 90 * Math.sign(Math.sin(th)) * 0.35 : 0);
+        const g = link(frontSide ? front : back, k + di, px, py, ang, !frontSide);
+        setTimeout(() => { g.style.transition = 'opacity 0.06s'; g.style.opacity = '1'; }, base + k * STEP_MS);
       }
-      g.style.opacity = '0';
-      sv.appendChild(g);
-      return g;
-    };
-    // らせんに沿って輪を並べ、端から順に出していく（表の輪は表の層、裏の輪は裏の層）
-    const total = Math.ceil(TURNS * 2 * Math.PI / dTh);
-    const STEP_MS = Math.max(8, Math.min(14, 1100 / total));
-    // 巻き始めはカードの左外から（θ=-π/2 で左端、そこから表を右へ）
-    for (let k = 0; k <= total; k++) {
-      const th = -Math.PI / 2 + k * dTh;
-      const px = w / 2 + Rx * Math.sin(th);
-      const py = yTop + pitch * (k * dTh);
-      const frontSide = Math.cos(th) > 0;
-      const ang = Math.atan2(pitch, Rx * Math.cos(th)) * 180 / Math.PI;
-      const g = link(frontSide ? front : back, k, px, py, ang, !frontSide);
-      setTimeout(() => { g.style.transition = 'opacity 0.06s'; g.style.opacity = '1'; }, 120 + k * STEP_MS);
-    }
-    const tWrap = 120 + total * STEP_MS;
+      tEnd = base + nPer * STEP_MS;
+    });
+    void perTurn;
+    const tWrap = tEnd;
     // 巻き付くあいだカードがきしむ
     setTimeout(() => { cc.style.animation = 'bhShake 0.25s linear'; }, tWrap * 0.5);
     // 巻き終わり: ギュッと締まる → カードが暗く沈み、錠がかかる

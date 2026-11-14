@@ -2034,7 +2034,7 @@ function onRemoteCommand(cmd) {
       const labelMap = { 'cant_attack_block': 'アタック・ブロック不可', 'cant_attack': 'アタック不可', 'cant_block': 'ブロック不可', 'cant_attack_digimon': 'デジモンにアタック不可', 'cant_attack_player': 'プレイヤーにアタック不可' };
       const icon = iconMap[cmd.action] || '🔒';
       const label = (labelMap[cmd.action] || '行動制限') + '付与！';
-      if (window._fxBuffStatus && myCard) {
+      if (false && window._fxBuffStatus && myCard) { // 盤面の封印の演出（fx_boardHit）で見せるので、大きな表示は出さない
         window._fxBuffStatus(myCard, icon, label, '#9933ff', () => {});
       }
       addLog('🔒 「' + (cmd.targetName || '???') + '」' + (labelMap[cmd.action] || '行動制限') + '付与');

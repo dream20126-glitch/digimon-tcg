@@ -2421,8 +2421,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         next();
       };
       if (bounceNeed > 1 || bounceUpTo) {
+        // filter.distinct_by（「Lv.3とLv.4とLv.5の相手のデジモン1体ずつ」＝同じLvは2体選べない。マグナガルルモン P-153）
+        const _bDistinct = (defaultTarget && defaultTarget.filter && Array.isArray(defaultTarget.filter.distinct_by)) ? defaultTarget.filter.distinct_by : [];
+        const _bExclude = _bDistinct.length > 0
+          ? (i, picked) => picked.some(j => _linkSameAttr(opponent.battleArea[i], opponent.battleArea[j], _bDistinct))
+          : null;
         if (effectiveSide === 'ai') {
-          const picks = bounceTargets.slice(0, bounceNeed);
+          const picks = [];
+          bounceTargets.forEach(i => { if (picks.length < bounceNeed && !(_bExclude && _bExclude(i, picks))) picks.push(i); });
           _bounceSequential(picks, () => { ctx.renderAll(); callback(); });
           break;
         }
@@ -2430,7 +2436,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         pickUpToNTargets(rowId, bounceTargets, bounceNeed, bounceColor, (idxs) => {
           idxs.forEach(idx => sendEffectResult(opponent.battleArea[idx], 'bounce', ctx));
           _bounceSequential(idxs, callback);
-        });
+        }, { forced: !bounceUpTo, exclude: _bExclude });
         break;
       }
       if(effectiveSide === 'ai') {
@@ -4936,8 +4942,12 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
 // validIndices: 選択候補のインデックス配列
 // maxCount: 最大選択数
 // onPicked: (chosenIdxArr) => void
-function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
+// opts.forced: 強制で「N体」選ぶ効果。1体選ぶごとの「もう1体選びますか？」を出さず、選べる対象がいる間は続けて選ぶ
+// opts.exclude(idx, picked): 既に選んだ対象との関係で候補から外すか（filter.distinct_by「同じLvは選べない」等）
+function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked, opts) {
   const picked = [];
+  const _ex = (opts && typeof opts.exclude === 'function') ? opts.exclude : null;
+  const _avail = () => validIndices.filter(i => !picked.includes(i) && !(_ex && _ex(i, picked)));
   function showAskDialog(msgText, onYes, onNo) {
     const overlay = document.createElement('div');
     overlay.id = '_select-multi-confirm-overlay';
@@ -4957,15 +4967,16 @@ function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
   }
   function pickOne() {
     if (picked.length >= maxCount) { onPicked(picked.slice()); return; }
-    const remaining = validIndices.filter(i => !picked.includes(i));
+    const remaining = _avail();
     if (remaining.length === 0) { onPicked(picked.slice()); return; }
     showTargetSelection(rowSide, remaining, null, color, (selectedIdx) => {
       if (selectedIdx == null) { onPicked(picked.slice()); return; }
       picked.push(selectedIdx);
       // 上限到達 or 候補なし → 終了
       if (picked.length >= maxCount) { onPicked(picked.slice()); return; }
-      const stillValid = validIndices.filter(i => !picked.includes(i));
+      const stillValid = _avail();
       if (stillValid.length === 0) { onPicked(picked.slice()); return; }
+      if (opts && opts.forced) { pickOne(); return; }
       // 2体目以降: 「もう1体選びますか？」確認
       const remainSlot = maxCount - picked.length;
       showAskDialog('もう1体選びますか？（残り' + remainSlot + '体まで）',
@@ -22481,13 +22492,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 進化元から置く（充填プラグインQ P-146 進化元効果「このデジモンの進化元から『充填プラグインQ』1枚をセキュリティの
       // 下に置くことで消滅しない」= from:'evo_source' + from_filter）。以前はこの経路が無く、何も置かずにコストを
       // 支払った扱いになっていた。どのカードの進化元かは _evoSourceHoldersOf（既定はこのデジモン）
-      if (!step.card && (step.from === 'evo_source' || (Array.isArray(step.from) && step.from.includes('evo_source')))) {
+      // from:'stacked_cards'（「このデジモンに重ねられているカードを上から1枚セキュリティの上に置くことで」マグナガルルモン P-153）
+      // も同じ経路。上から順に決まるので選ばせない（以前はこの形の経路が無く、何も置かずに本体だけ実行していた）
+      const _peStacked = step.from === 'stacked_cards';
+      if (!step.card && (_peStacked || step.from === 'evo_source' || (Array.isArray(step.from) && step.from.includes('evo_source')))) {
         const _peIsCost = _COST_STEP_SET.has(step);
         const _peM = /:(\d+)$/.exec(String(step.target || ''));
         const _peWant = Math.max(1, parseInt(step.count || step.value || (_peM ? _peM[1] : 1), 10) || 1);
         const _peFilter = _srcCardFilterOf(step) || {};
         const _peHolderOf = new Map();
-        _evoSourceHoldersOf(step, ctx, player).forEach(h => (Array.isArray(h.stack) ? h.stack : []).forEach(c => {
+        (_peStacked ? (ctx.card ? [ctx.card] : []) : _evoSourceHoldersOf(step, ctx, player)).forEach(h => (Array.isArray(h.stack) ? h.stack : []).forEach(c => {
           if (c && !_peHolderOf.has(c) && cardMatchesFilter(c, _peFilter, ctx.bs, ctx.side, ctx.card)) _peHolderOf.set(c, h);
         }));
         const _peCands = [..._peHolderOf.keys()];
@@ -22536,7 +22550,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           callback(_peIsCost && _peMoved === 0 ? false : undefined);
         };
-        if (effectiveSide === 'ai') { _pePlace(_peCands.slice(0, _peWant)); break; }
+        if (effectiveSide === 'ai' || _peStacked) { _pePlace(_peCands.slice(0, _peWant)); break; }
         showTrashCardPicker(_peCands, Math.min(_peWant, _peCands.length), _pickOptional(ctx, step, !!step.optional),
           '🛡 セキュリティの' + (_peToBottom ? '下' : '上') + 'に置く進化元のカードを選んでください', (picked) => _pePlace(picked), _peCands);
         break;

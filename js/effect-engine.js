@@ -22468,6 +22468,69 @@ function executeRecipeStep(step, ctx, store, callback) {
           '🛡 セキュリティの' + (step.position === 'bottom' ? '下' : '上') + 'に置く手札のカードを選んでください', (picked) => _phPlace(picked), _phCands);
         break;
       }
+      // 進化元から置く（充填プラグインQ P-146 進化元効果「このデジモンの進化元から『充填プラグインQ』1枚をセキュリティの
+      // 下に置くことで消滅しない」= from:'evo_source' + from_filter）。以前はこの経路が無く、何も置かずにコストを
+      // 支払った扱いになっていた。どのカードの進化元かは _evoSourceHoldersOf（既定はこのデジモン）
+      if (!step.card && (step.from === 'evo_source' || (Array.isArray(step.from) && step.from.includes('evo_source')))) {
+        const _peIsCost = _COST_STEP_SET.has(step);
+        const _peM = /:(\d+)$/.exec(String(step.target || ''));
+        const _peWant = Math.max(1, parseInt(step.count || step.value || (_peM ? _peM[1] : 1), 10) || 1);
+        const _peFilter = _srcCardFilterOf(step) || {};
+        const _peHolderOf = new Map();
+        _evoSourceHoldersOf(step, ctx, player).forEach(h => (Array.isArray(h.stack) ? h.stack : []).forEach(c => {
+          if (c && !_peHolderOf.has(c) && cardMatchesFilter(c, _peFilter, ctx.bs, ctx.side, ctx.card)) _peHolderOf.set(c, h);
+        }));
+        const _peCands = [..._peHolderOf.keys()];
+        if (_peCands.length === 0) {
+          if (ctx.bs) ctx.bs._lastActionCount = 0;
+          ctx.addLog && ctx.addLog('💨 条件を満たす進化元がありません');
+          if (_peIsCost) { callback(false); break; }
+          if (step.optional) { callback(); break; }
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback());
+          break;
+        }
+        const _peFaceUp = Array.isArray(step.options) && step.options.includes('face_up');
+        const _peToBottom = step.position === 'bottom';
+        const _pePlace = (picked) => {
+          const list = (picked || []).filter(c => c && _peHolderOf.has(c));
+          if (list.length === 0) {
+            if (ctx.bs) ctx.bs._lastActionCount = 0;
+            ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
+            callback(_peIsCost ? false : undefined);
+            return;
+          }
+          let _peMoved = 0;
+          list.forEach((c) => {
+            const h = _peHolderOf.get(c);
+            const si = h && Array.isArray(h.stack) ? h.stack.indexOf(c) : -1;
+            if (si === -1) return;
+            h.stack.splice(si, 1);
+            if (_peFaceUp) { c._faceUp = true; delete c._faceDown; } else delete c._faceUp;
+            if (_peToBottom) player.security.push(c); else player.security.unshift(c);
+            _peMoved++;
+            ctx.addLog && ctx.addLog('🛡 「' + (h.name || '') + '」の進化元の「' + c.name + '」をセキュリティの' + (_peToBottom ? '下' : '上') + 'に置く');
+            if (ctx.side === 'player' && window._markEvoModified) {
+              const bi = (player.battleArea || []).indexOf(h);
+              if (bi !== -1) { try { window._markEvoModified('player', bi); } catch (_) {} }
+            }
+          });
+          if (_peMoved > 0) _noteSecurityIncrease(ctx, player);
+          if (ctx.bs) { ctx.bs._lastActionCount = _peMoved; ctx.bs._lastPickedCard = list[list.length - 1]; }
+          ctx.renderAll && ctx.renderAll();
+          try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+            try {
+              window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_serializeSecurityCard) });
+              if (window._onlineSendStateSync) window._onlineSendStateSync();
+            } catch (_) {}
+          }
+          callback(_peIsCost && _peMoved === 0 ? false : undefined);
+        };
+        if (effectiveSide === 'ai') { _pePlace(_peCands.slice(0, _peWant)); break; }
+        showTrashCardPicker(_peCands, Math.min(_peWant, _peCands.length), _pickOptional(ctx, step, !!step.optional),
+          '🛡 セキュリティの' + (_peToBottom ? '下' : '上') + 'に置く進化元のカードを選んでください', (picked) => _pePlace(picked), _peCands);
+        break;
+      }
       // target:"self"/"self_card"（例: オファニモン【消滅時】「このカードを自分のセキュリティの上に置く」）
       // 指定時は ctx.card（消滅したカード自身）を対象にする。それ以外は従来通り store 経由。
       // ":N" 接尾辞（例: "self_card:1"）が付いていても self 扱いにする

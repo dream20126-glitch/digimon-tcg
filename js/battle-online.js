@@ -1335,11 +1335,12 @@ function onRemoteCommand(cmd) {
     // --- 相手のアタックのバトルで、こちらのデジモンが消滅するとき: ≪防壁≫を使うか（持ち主のこちらが決めて破棄する） ---
     case 'fx_barrierRequest': {
       const card = (bs.player.battleArea || [])[cmd.slotIdx];
+      let _trashedImg = '';
       const reply = (used) => {
         try { sendStateSync(); } catch (_) {}
         // 【防壁】を使ったら、確認のときに相手の画面に出した「相手が効果を発動中…」を閉じる（残ったままになっていた）
         if (used) { try { sendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
-        sendCommand({ type: 'fx_barrierDone', used: !!used, remaining: bs.player.security.length });
+        sendCommand({ type: 'fx_barrierDone', used: !!used, remaining: bs.player.security.length, trashedImg: _trashedImg });
       };
       if (!card || !bs.player.security || bs.player.security.length === 0) { reply(false); break; }
       const rule = (window._keywordRuleText && window._keywordRuleText('barrier')) || '【防壁】このデジモンがバトルで消滅するとき、自分のセキュリティを上から1枚破棄することで、消滅しない';
@@ -1348,6 +1349,9 @@ function onRemoteCommand(cmd) {
         if (!yes) { addLog('☓ 【防壁】を使わない'); reply(false); return; }
         const t = bs.player.security.shift();
         if (t) bs.player.trash.push(t);
+        // 破棄したセキュリティの画像（VS画面の「庇うカード」に表向きで出す。こちらの画面と相手の画面の両方）
+        _trashedImg = t ? (cardImg(t) || '') : '';
+        try { if (typeof window._clashNote === 'function') window._clashNote(card, 'barrier', _trashedImg ? [_trashedImg] : []); } catch (_) {}
         addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！（残り' + bs.player.security.length + '枚）');
         renderAll();
         // 防壁でセキュリティが減った →「セキュリティが減ったとき」（効果による減少）
@@ -1365,7 +1369,7 @@ function onRemoteCommand(cmd) {
     case 'fx_barrierDone': {
       // 相手が【防壁】の確認を終えた →「相手が効果を発動中…」を閉じる
       if (m.fxRemoteEffectClose) m.fxRemoteEffectClose();
-      if (_pendingBarrierCallback) { const cb = _pendingBarrierCallback; _pendingBarrierCallback = null; cb(cmd.used ? { remaining: cmd.remaining } : false); }
+      if (_pendingBarrierCallback) { const cb = _pendingBarrierCallback; _pendingBarrierCallback = null; cb(cmd.used ? { remaining: cmd.remaining, trashedImg: cmd.trashedImg || '' } : false); }
       break;
     }
     case 'fx_handDiscardDone': {

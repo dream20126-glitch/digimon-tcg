@@ -360,7 +360,7 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   const callback = (r) => {
     if (r && r.canceled && _CANCEL_FLASH_LABEL[r.reason]) {
       // 代わりにトラッシュへ送られたカードを、VS画面の決着の演出（相手の画面にも）で見せる
-      try { card._clashSubImgs = _subImgsNow(); } catch (_) {}
+      try { const _si = _subImgsNow(); if (_si.length || !Array.isArray(card._clashSubImgs)) card._clashSubImgs = _si; } catch (_) {}
       _showCancelFlash(card, r.reason, () => { delete card._clashSubImgs; callback0(r); });
       return;
     }
@@ -403,6 +403,8 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
       }
       addLog('🛡 【防壁】相手の「' + card.name + '」がセキュリティ1枚破棄で消滅回避！');
       renderAll();
+      // 相手のセキュリティの中身はこちらでは分からないので、持ち主の端末から届いた画像を使う
+      if (typeof used === 'object' && used.trashedImg) card._clashSubImgs = [used.trashedImg];
       callback({ canceled: true, reason: 'barrier' });
     });
     return;

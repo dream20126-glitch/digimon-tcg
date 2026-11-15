@@ -2816,8 +2816,19 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   // 走っても、相手のカードのDPがこちらの見えている情報で計算し直されて変わらないように）
   const _atkDpFixed = atk.dp;
   addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + ' vs 「' + blocker.name + '」DP' + blocker.dp);
+  // ≪氷装≫: どちらかが持っていれば、DPではなく進化元の枚数で比べる（ヴァイクモン LM-040 が、オンラインでブロックされたとき
+  // DP で比べられて負けていた。ブロックのバトルはブロックした側＝こちらの端末で判定する）
+  const _iceCmp = () => {
+    const ice = typeof window._hasIceArmor === 'function' && (window._hasIceArmor(atk) || window._hasIceArmor(blocker));
+    if (!ice) return null;
+    const a = (atk.stack || []).length, b = (blocker.stack || []).length;
+    addLog('🧊 ≪氷装≫: 進化元枚数比較 「' + atk.name + '」' + a + '枚 / 「' + blocker.name + '」' + b + '枚');
+    return { a, b };
+  };
+  const _ice0 = _iceCmp();
+  const _cA = _ice0 ? _ice0.a : atk.dp, _cB = _ice0 ? _ice0.b : blocker.dp;
   let atkResult = 'survived';
-  if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
+  if (_cA <= _cB) atkResult = _cA === _cB ? 'both_destroyed' : 'destroyed';
   sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });
 
   // 攻撃側の「ブロックされた時」効果完了を待ってからバトル解決
@@ -2852,7 +2863,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     atk.dp = _atkDpFixed;
     showSC(blocker, atk, () => {
       // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
-      const _atkDp = _atkDpFixed, _blkDp = blocker.dp;
+      const _iceN = _iceCmp();
+      const _atkDp = _iceN ? _iceN.a : _atkDpFixed, _blkDp = _iceN ? _iceN.b : blocker.dp;
       removeBattleBuffs(battleBuffs);
       // 消滅する側の消滅回避（防壁/回避/【分離】/「バトルエリアを離れるとき」の置換効果）を確認してから
       // 結果を決める。相手のカード（atk）の確認は持ち主の端末に委譲される（巨神兵器 BT26-085 が【衝突】で

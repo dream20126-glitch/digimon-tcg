@@ -142,6 +142,7 @@ function _hasIceArmor(c) {
   return hasPassiveFlag(c, 'iceArmor', '【氷装】') || hasPassiveFlag(c, 'ice_armor', '【氷装】')
     || (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'ice_armor' || b.type === 'keyword_ice_armor')));
 }
+if (typeof window !== 'undefined') window._hasIceArmor = (c) => _hasIceArmor(c);
 // ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方のカード全体を氷で包んで、ひびが入り、ばらばらに砕く
 function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
   try {

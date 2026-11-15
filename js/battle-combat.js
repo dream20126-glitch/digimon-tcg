@@ -2773,7 +2773,7 @@ export function getAttackState() { return _atkState; }
 // 「アタックの対象は変更されない」（ゲコモン BT26-021 cant_redirect_attack）を持つデジモンのアタック。
 // ブロック（【ブロッカー】も効果）でアタック対象が変わることもないので、ブロックされない
 function _cantRedirectAttack(c) {
-  return !!(c && (c.cantRedirectAttack || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_redirect_attack'))));
+  return !!(c && (c.cantRedirectAttack || (c._permEffects && c._permEffects.cantRedirectAttack) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_redirect_attack'))));
 }
 function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   const ra = bs._redirectedAttack;
@@ -2783,6 +2783,8 @@ function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   // cant_redirect_attack:「アタックの対象は変更されない」— 元々の宣言先デジモンが
   // この状態なら、リダイレクトを適用せず元の宣言のまま解決する
   if (fallback.def && fallback.def.cantRedirectAttack) return fallback;
+  // アタックしているデジモン自身が「アタックの対象は変更されない」なら変更しない（ヴァルキリモン LM-039）
+  if (_atkState && _cantRedirectAttack(_atkState.card)) return fallback;
   const def = bs.ai.battleArea[ra.idx];
   if (!def) return fallback;
   return { target: 'digimon', idx: ra.idx, def, redirected: true, byDefender: !!ra.byDefender };

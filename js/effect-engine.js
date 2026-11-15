@@ -9108,6 +9108,11 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // ガードロモン等「【自分のターン】このデジモンはアタックできない」
             if (step.action !== 'cant_block') card.cantAttack = true;
             if (step.action !== 'cant_attack') card.cantBlock = true;
+          } else if (step.action === 'cant_redirect_attack' && (!step.target || step.target === 'self_card' || step.target === 'self')) {
+            // 「【自分のターン】このデジモンのアタックの対象は変更されない」（ヴァルキリモン LM-039）: 継続効果として毎回付け直す。
+            // 以前は継続効果では何も付かず、ブロッカーにブロックされていた
+            if (!card._permEffects) card._permEffects = {};
+            card._permEffects.cantRedirectAttack = true;
           }
         });
       });
@@ -16520,6 +16525,12 @@ function _stepCandidatesEmpty(st, ctx) {
     // （カプリモン EX12-003 の「離れるとき、そのデジモンと他の自分のデジモンでジョグレス進化できる」で、素材が
     // そろっていないのに確認が出ていた）
     if (st.action === 'jogress_evolve') return !_jogressFeasible(st, ctx, me);
+    // 「このデジモンをアクティブにできる」なのに既にアクティブ／「このデジモンをレストできる」なのに既にレスト:
+    // 何も起きないので確認も発動ポップアップも出さない（テティスモン LM-004 進化元。同じ効果すべて共通）
+    if ((st.action === 'active' || st.action === 'rest') && (st.target === 'self_card' || st.target === 'self') && card
+        && ((me.battleArea || []).includes(card) || (me.tamerArea || []).includes(card))) {
+      return st.action === 'active' ? !card.suspended : !!card.suspended;
+    }
     // 取得元から選ぶ処理（登場・置く・手札に加える・リンク）
     if (_NC_ZONE_ACTIONS.has(st.action) && zones.length > 0 && !st.card) {
       if (zones.some(z => !['hand', 'trash', 'evo_source'].includes(z))) return false;
@@ -24208,6 +24219,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const extreme = _raFilter.lv_extreme === 'lowest' ? Math.min(...lvs) : Math.max(...lvs);
         _raCands = _raCands.filter(i => (parseInt(_raPool.battleArea[i].level) || 0) === extreme);
       }
+      // 「アタックの対象をこのデジモンに変更できる」（target: self_card。アルクトゥルスモン P-239 進化元）: 変更先はこのデジモンだけ
+      if ((_raTargetStr === 'self_card' || _raTargetStr === 'self') && ctx.card) {
+        const _raSelfIdx = _raPool.battleArea.indexOf(ctx.card);
+        if (_raSelfIdx !== -1) _raCands = _raCands.includes(_raSelfIdx) ? [_raSelfIdx] : [_raSelfIdx];
+      }
+      console.log('[redirect_attack] side=' + ctx.side + ' 攻撃側=' + (ctx.bs && ctx.bs._currentAttackerSide) + ' アタック中=' + (ctx.bs && ctx.bs._attackingCard && ctx.bs._attackingCard.name)
+        + ' このカード=' + (ctx.card && ctx.card.name) + ' 候補=' + _raCands.map(i => _raPool.battleArea[i] && _raPool.battleArea[i].name).join(','));
       // アタック中のデジモンがバトルエリアにいなければ、アタックの対象は変更できない（公式ルール 11-2-7-4）
       {
         const _raAtk = ctx.bs && ctx.bs._attackingCard;
@@ -24234,6 +24252,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 1体に変更できる」）。このときは変更先にそのまま決まるので「ブロックしますか？」は出さない（ユーザー決定事項）
         const _raByDef = !!(ctx.bs._currentAttackerSide && ctx.side !== ctx.bs._currentAttackerSide);
         ctx.bs._redirectedAttack = { side: _raPoolSide, idx: selectedIdx, cardNo: newTarget.cardNo, byDefender: _raByDef };
+        console.log('[redirect_attack] 変更先を記録', JSON.stringify(ctx.bs._redirectedAttack));
         ctx.addLog('🎯 アタックの対象を「' + newTarget.name + '」に変更');
         ctx.renderAll();
         // 「アタックの対象が変更されたとき」(when_target_changed) 発火。attackerSideは

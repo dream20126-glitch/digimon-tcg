@@ -19261,6 +19261,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (Array.isArray(step.partition_groups) && step.partition_groups.length > 0) {
           const _ptEvo = _esCands.filter((c) => _esZoneOf.get(c) === 'evo_source');
           const _ptLists = step.partition_groups.map((g) => _ptEvo.filter((c) => _evalStepConditionGate(g, c, ctx.bs, ctx.side)));
+          console.log('[partition] host=' + (_esHost && _esHost.name) + ' 進化元=' + (_esHost && Array.isArray(_esHost.stack) ? _esHost.stack.map(c => c && (c.name + '/' + c.color + '/Lv' + c.level)).join(',') : '-')
+            + ' 候補=' + _ptEvo.map(c => c.name).join(',') + ' 組ごと=' + _ptLists.map(l => '[' + l.map(c => c.name).join(',') + ']').join(' ')
+            + ' groups=' + JSON.stringify(step.partition_groups));
           const _ptAssign = (gi, used) => {
             if (gi >= _ptLists.length) return [];
             for (const c of _ptLists[gi]) {
@@ -19274,7 +19277,19 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _ptChosen = [];
           let _ptGi = 0;
           const _ptPickNext = () => {
-            if (_ptGi >= _ptLists.length) { _ptSummon(0); return; }
+            if (_ptGi >= _ptLists.length) {
+              // 融合が解けて2体に分かれる演出（両方の画面）→ 登場
+              const _ptHost = _esHost;
+              if (typeof window !== 'undefined' && typeof window._fxPartitionSplit === 'function') {
+                if (ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+                  const _im = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '') : '';
+                  try { window._onlineSendCommand({ type: 'fx_partition', host: { name: _ptHost ? _ptHost.name : '', imgSrc: _im(_ptHost) }, parts: _ptChosen.map(c => ({ name: c.name || '', imgSrc: _im(c) })) }); } catch (_) {}
+                }
+                window._fxPartitionSplit(_ptHost || _ptChosen[0], _ptChosen, { remote: ctx.side === 'ai' }, () => _ptSummon(0));
+                return;
+              }
+              _ptSummon(0); return;
+            }
             const gi = _ptGi++;
             // 残りの指定もそろう選び方だけを候補にする
             const cands = _ptLists[gi].filter((c) => !_ptChosen.includes(c) && _ptAssignFrom(gi + 1, _ptChosen.concat([c])));

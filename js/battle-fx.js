@@ -4051,3 +4051,70 @@ export function fxMagicAbsorb(card, opts, callback) {
   setTimeout(done, tEnd + 4000);
 }
 if (typeof window !== 'undefined') window._fxMagicAbsorb = fxMagicAbsorb;
+
+
+// =====================================================
+//  【パーティション】: ジョグレスした1体の融合が解け、2体に分かれて登場する（ジョグレスの逆）
+//  host: 分かれる前のデジモン / parts: [左, 右] のカード / opts: { remote }
+// =====================================================
+export function fxPartitionSplit(host, parts, opts, callback) {
+  opts = opts || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  const list = (parts || []).filter(Boolean).slice(0, 2);
+  if (typeof document === 'undefined' || !document.body || !host || list.length === 0) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.46;
+  const CW = Math.min(118, W * 0.3), CH = CW * 1.4;
+  const ov = _hitOverlay(66500);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; ov.appendChild(d); return d; };
+  const pre = opts.remote ? '相手の' : '';
+  const src = host.imgSrc || cardImg(host) || '';
+  _hitTitle(ov, Math.max(14, cy - CH / 2 - 86), '⚡ パーティション', '#ffd84a');
+  // ① 融合体（本体）が震え、中央に光の裂け目が走る
+  const halfCss = (side) => 'position:absolute;top:' + (cy - CH / 2) + 'px;left:' + (cx - CW / 2) + 'px;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;background:#111;'
+    + 'clip-path:' + (side === 'L' ? 'polygon(0 0,52% 0,46% 30%,54% 55%,47% 78%,52% 100%,0 100%)' : 'polygon(52% 0,100% 0,100% 100%,52% 100%,47% 78%,54% 55%,46% 30%)') + ';'
+    + 'box-shadow:0 0 18px #ffd84a;transition:transform 0.7s cubic-bezier(.2,.8,.3,1),opacity 0.5s,filter 0.3s;will-change:transform;';
+  const img = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:11px;">' + (host.name || '') + '</div>';
+  const hl = add(halfCss('L'), img), hr = add(halfCss('R'), img);
+  add('position:absolute;left:50%;top:' + Math.min(H - 40, cy + CH / 2 + 10) + 'px;transform:translateX(-50%);color:#fff;font-size:12px;font-weight:bold;text-shadow:0 0 6px #000;white-space:nowrap;', pre + '「' + (host.name || '') + '」の融合が解ける');
+  setTimeout(() => { hl.style.animation = hr.style.animation = 'hxShake 0.45s linear 2'; }, 250);
+  // 光の裂け目（縦のギザギザ）
+  const seam = add('position:absolute;left:' + (cx - 12) + 'px;top:' + (cy - CH / 2 - 10) + 'px;width:24px;height:' + (CH + 20) + 'px;opacity:0;transition:opacity 0.2s;',
+    '<svg viewBox="0 0 24 100" preserveAspectRatio="none" style="width:100%;height:100%"><polyline points="13,0 9,30 15,55 10,78 13,100" fill="none" stroke="#fff" stroke-width="4" style="filter:drop-shadow(0 0 6px #ffd84a) drop-shadow(0 0 12px #ffb000)"/></svg>');
+  setTimeout(() => { seam.style.opacity = '1'; hl.style.filter = hr.style.filter = 'brightness(1.5)'; }, 650);
+  // ② 裂け目から光があふれ、左右に割れて離れる
+  setTimeout(() => {
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + cx + 'px ' + cy + 'px,rgba(255,255,255,0.95) 0%,rgba(255,216,74,0.6) 14%,rgba(0,0,0,0) 45%);animation:hxFlash 0.6s ease-out forwards;');
+    add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:100px;height:100px;border-radius:50%;border:4px solid #fff3c0;box-shadow:0 0 22px #ffc83a;animation:hxRing 0.7s ease-out forwards;');
+    seam.style.opacity = '0';
+    hl.style.transform = 'translate(' + (-CW * 0.55) + 'px,0) rotate(-12deg)'; hl.style.opacity = '0.15';
+    hr.style.transform = 'translate(' + (CW * 0.55) + 'px,0) rotate(12deg)'; hr.style.opacity = '0.15';
+    for (let k = 0; k < 18; k++) {
+      const ang = Math.random() * Math.PI * 2, dd = 60 + Math.random() * 120;
+      add('position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:7px;height:7px;margin:-3px;border-radius:50%;background:#fff6d0;box-shadow:0 0 8px #ffc83a;--dx:' + Math.cos(ang) * dd + 'px;--dy:' + Math.sin(ang) * dd + 'px;--r:0deg;animation:hxShard 0.9s ease-out forwards;');
+    }
+  }, 1150);
+  // ③ 分かれた2体（進化元にいたカード）が光の中から現れ、左右に着地する
+  const gap = Math.min(W * 0.26, CW * 1.25);
+  list.forEach((c, i) => {
+    const tx = list.length === 1 ? cx : cx + (i === 0 ? -gap : gap);
+    const d = _hitCard(ov, c, cx, cy, CW * 0.95, CH * 0.95, i === 0 ? '#ffd84a' : '#b47cff', pre + (c.name || ''));
+    d.style.opacity = '0'; d.style.transform = 'scale(0.3)';
+    d.style.transition = 'transform 0.6s cubic-bezier(.2,.9,.3,1.3),opacity 0.35s,box-shadow 0.4s';
+    setTimeout(() => { d.style.opacity = '1'; d.style.transform = 'translate(' + (tx - cx) + 'px,0) scale(1)'; }, 1350 + i * 120);
+    setTimeout(() => {
+      add('position:absolute;left:' + tx + 'px;top:' + (cy + CH * 0.47) + 'px;width:' + CW * 1.4 + 'px;height:16px;margin-left:' + (-CW * 0.7) + 'px;border-radius:50%;background:radial-gradient(ellipse,rgba(255,240,200,0.9),rgba(255,200,80,0));animation:hxFlash 0.6s ease-out forwards;');
+      d.style.animation = 'hxShake 0.25s linear';
+    }, 1950 + i * 120);
+  });
+  setTimeout(() => {
+    _hitTitle(ov, Math.min(H - 60, cy + CH / 2 + 34), '<span style="font-size:0.7em;">' + list.map(c => '「' + (c.name || '') + '」').join('と') + 'が登場！</span>', '#ffd84a');
+  }, 2150);
+  const total = 3400;
+  setTimeout(() => { ov.style.opacity = '0'; }, total);
+  setTimeout(() => { ov.remove(); done(); }, total + 250);
+  setTimeout(done, total + 4000);
+}
+if (typeof window !== 'undefined') window._fxPartitionSplit = fxPartitionSplit;

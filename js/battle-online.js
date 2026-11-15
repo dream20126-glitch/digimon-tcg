@@ -1391,6 +1391,14 @@ function onRemoteCommand(cmd) {
       break;
     }
     // 相手の効果を受ける演出（手札に戻す・デッキに戻す・セキュリティに置く・退化・進化元を破棄）
+    // 相手の【パーティション】（融合が解けて2体に分かれる）
+    case 'fx_partition': {
+      if (typeof window._fxPartitionSplit === 'function' && cmd.host) {
+        const mk = (o) => ({ name: (o && o.name) || '', imgSrc: (o && o.imgSrc) || '', _remoteFx: true });
+        enqueueFx((done) => window._fxPartitionSplit(mk(cmd.host), (cmd.parts || []).map(mk), { remote: true }, done));
+      }
+      break;
+    }
     case 'fx_effectHit': {
       if (typeof window._fxEffectHit === 'function' && cmd.card) {
         const mk = (o) => o ? { name: o.name || '', imgSrc: o.imgSrc || '', _remoteFx: true } : null;

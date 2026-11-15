@@ -3303,15 +3303,18 @@ function _holdAfterAttackEffects(atk, cont, ready) {
 }
 function _afterAtkEffectBody(atk, atkSlotIdx, callback) {
   _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
-    // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
-    _hooks.fireOnAttackBothSubjectTriggers('player', () => {
-      // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果を相手側で反応させる
-      _hooks.fireOnAttackOppSubjectTriggers('player', () => {
-        const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-        try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, callback); }
-        catch (_) { callback(); }
+    // アタックしたデジモンのキーワード（【衝突】等）はターンプレイヤー側の効果なので、相手の「アタックしたとき」より先に処理する
+    // （以前は後だったため、アンフィモン P-089 の「そのアタックを終了させる」が先に処理され、その後で【衝突】のブロッカーが付いていた）
+    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+    const _afterKw = () => {
+      // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
+      _hooks.fireOnAttackBothSubjectTriggers('player', () => {
+        // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果を相手側で反応させる
+        _hooks.fireOnAttackOppSubjectTriggers('player', () => callback());
       });
-    });
+    };
+    try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, _afterKw); }
+    catch (_) { _afterKw(); }
   });
 }
 

@@ -24280,6 +24280,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _eaArr = (_eaSide && ctx.bs[_eaSide] && ctx.bs[_eaSide].battleArea) || [];
         let _eaIdx = _eaCard ? _eaArr.indexOf(_eaCard) : -1;
         if (_eaIdx === -1 && _eaCard) _eaIdx = _eaArr.findIndex(x => x && Array.isArray(x.stack) && x.stack.includes(_eaCard));
+        // 確認やコストの選択の間に、相手からの同期で盤面のカードが作り直されている: 記録した場所の同じカード → 同じカード（1枚だけ）の順に探す
+        if (_eaIdx === -1 && _eaCard) {
+          const _same = (x) => !!(x && (x.cardNo || '') === (_eaCard.cardNo || '') && (x.name || '') === (_eaCard.name || ''));
+          const _ai0 = ctx.bs._attackingIdx;
+          if (_ai0 != null && _same(_eaArr[_ai0])) _eaIdx = _ai0;
+          else { const hits = _eaArr.filter(_same); if (hits.length === 1) _eaIdx = _eaArr.indexOf(hits[0]); }
+        }
         const _eaSlot = _eaIdx !== -1 ? { side: _eaSide, idx: _eaIdx } : null;
         // 効果を使ったカード（障壁を出す側）の場所
         const _bySide = ctx.side;

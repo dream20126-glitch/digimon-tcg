@@ -1175,6 +1175,8 @@ function onRemoteCommand(cmd) {
       if (cmd.kind === 'on_attack_opp') {
         bs._currentAttackerSide = 'ai';
         bs._attackingCard = (cmd.atkIdx != null && cmd.atkIdx >= 0) ? (bs.ai.battleArea[cmd.atkIdx] || null) : null;
+        // アタック中のデジモンの場所（確認の間に同期で盤面のカードが作り直されても、場所で探せるように）
+        bs._attackingIdx = (cmd.atkIdx != null && cmd.atkIdx >= 0) ? cmd.atkIdx : null;
       }
       const done = () => {
         sendMemoryUpdate();

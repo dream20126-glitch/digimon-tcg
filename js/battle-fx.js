@@ -4448,6 +4448,15 @@ function _fxAttackEndedBoard(p, done) {
       if (i === -1) i = arr.findIndex(x => x && Array.isArray(x.stack) && x.stack.includes(c));
       if (i !== -1) return { side: sd, idx: i };
     }
+    // 名前と画像だけのカード（相手から届いた演出）: 同じカード番号・名前で探す。アタック中（レスト状態）のものを優先
+    const same = (x) => !!(x && x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo));
+    for (const pass of [true, false]) {
+      for (const sd of ['player', 'ai']) {
+        const arr = (bsNow[sd] && bsNow[sd].battleArea) || [];
+        const i = arr.findIndex(x => same(x) && (!pass || x.suspended));
+        if (i !== -1) return { side: sd, idx: i };
+      }
+    }
     return null;
   };
   const slot = (p && p.slot) || findSlot(card);

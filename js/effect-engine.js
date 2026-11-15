@@ -16450,7 +16450,10 @@ function _resolveStepConditionGate(step) {
   // 「直前に選んだ／オープンしたカードが〜なら」（cond_picked_*）も対象の性質ではないので発動条件として先に判定する
   // （クオンタモン LM-020 の効果2「そのカードが宣言したカードカテゴリーなら〜効果を受けない」が、immune_effects が
   // condition を読まないため無条件で付いていた）
-  const _isLastActC = (c) => !!(c && /^cond_(last_action_|picked_)/.test(String(c.code || '')));
+  // メモリーの条件（cond_memory_ge / cond_memory_le / cond_memory_opponent）も対象の性質ではないので発動条件として先に判定する
+  // （レガレクスモン LM-041「その後、メモリーが1以下なら〜相手のデジモン1体はレストできない」で、cant_rest が condition を
+  // 読まないため、メモリーがいくつでも付いていた。対象の絞り込みとして相手のカード側で見るとメモリーの向きも逆になる）
+  const _isLastActC = (c) => !!(c && /^cond_(last_action_|picked_|memory_)/.test(String(c.code || '')));
   // 陣営つきの盤面の条件（cond_battle_area_ge:1@own_tamer＝「自分のテイマーがいるとき」等。対象の性質ではない）も
   // 発動条件として先に判定する（ウォーグレイモン P-050 の【進化時】で、相手のデジモン1体ずつに「テイマーがいるか」を
   // 当てはめてしまい、相手にテイマーがいないと「対象がいません」になっていた）

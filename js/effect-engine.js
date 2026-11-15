@@ -24281,12 +24281,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         let _eaIdx = _eaCard ? _eaArr.indexOf(_eaCard) : -1;
         if (_eaIdx === -1 && _eaCard) _eaIdx = _eaArr.findIndex(x => x && Array.isArray(x.stack) && x.stack.includes(_eaCard));
         const _eaSlot = _eaIdx !== -1 ? { side: _eaSide, idx: _eaIdx } : null;
+        // 効果を使ったカード（障壁を出す側）の場所
+        const _bySide = ctx.side;
+        const _byIdx = ctx.card && ctx.bs[_bySide] ? (ctx.bs[_bySide].battleArea || []).indexOf(ctx.card) : -1;
+        const _bySlot = _byIdx !== -1 ? { side: _bySide, idx: _byIdx } : null;
+        const _flip = (s0) => s0 ? { side: s0.side === 'player' ? 'ai' : 'player', idx: s0.idx } : null;
         if (typeof window !== 'undefined' && typeof window._fxAttackEnded === 'function') {
           if (ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             try { window._onlineSendCommand({ type: 'fx_attackEnded', cardName: _eaCard ? _eaCard.name || '' : '', cardImg: _eaCard ? (_eaCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(_eaCard) : '') || '') : '', byName: ctx.card ? ctx.card.name || '' : '',
-              slot: _eaSlot ? { side: _eaSlot.side === 'player' ? 'ai' : 'player', idx: _eaSlot.idx } : null }); } catch (_) {}
+              slot: _flip(_eaSlot), bySlot: _flip(_bySlot) }); } catch (_) {}
           }
-          try { window._fxAttackEnded({ card: _eaCard, by: ctx.card ? ctx.card.name : '', slot: _eaSlot }, () => callback()); } catch (_) { callback(); }
+          try { window._fxAttackEnded({ card: _eaCard, by: ctx.card ? ctx.card.name : '', slot: _eaSlot, bySlot: _bySlot }, () => callback()); } catch (_) { callback(); }
           break;
         }
       }

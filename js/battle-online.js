@@ -1200,7 +1200,9 @@ function onRemoteCommand(cmd) {
       // （公式ルール 11-1-4 / 17-1-2。アンフィモンの【アタック時】で DP0 にしたメタルガルルモンが、ウォーグレイモンの
       // 【カウンター】のジョグレス進化の素材になっていた）
       if (cmd.kind === 'on_attack_opp' && typeof window._runRuleDestroyCheckNow === 'function') {
-        window._runRuleDestroyCheckNow(() => {
+        // 相手の【アタック時】等（【衝突】のブロッカー付与等）の演出を見せ終わってから、こちらの「アタックしたとき」に進む
+        // （アンフィモン P-089 の「アタック終了」の演出の後に、相手の【衝突】の演出が出ていた）
+        _waitFxIdle(() => window._runRuleDestroyCheckNow(() => {
           renderAll(); sendStateSync();
           // ルールチェックで消滅したデジモンの【消滅時】等（後回しにしていたこちらの効果）も、カウンタータイミングより先に発揮する
           // （相手の効果は全て終わっている。15-4-3-3）
@@ -1208,7 +1210,7 @@ function onRemoteCommand(cmd) {
           if (typeof window._hasNonTurnDeferred === 'function' && window._hasNonTurnDeferred() && typeof window._flushNonTurnDeferred === 'function') {
             try { window._flushNonTurnDeferred(() => { renderAll(); sendStateSync(); _fireDelegated(); }); } catch (_) { _fireDelegated(); }
           } else _fireDelegated();
-        });
+        }));
       } else if (cmd.kind === 'destroy_subject') {
         // 「デジモンが消滅したとき」の反応: 相手から届いた消滅の演出を見せ終わってから発揮する
         // （ラストティラノモン P-173「相手のデジモンがバトルで消滅したとき」の確認が、相手のデジモンの消滅演出より先に出ていた）
@@ -1404,7 +1406,7 @@ function onRemoteCommand(cmd) {
     case 'fx_attackEnded': {
       if (typeof window._fxAttackEnded === 'function') {
         const c = cmd.cardName ? { name: cmd.cardName, imgSrc: cmd.cardImg || '', _remoteFx: true } : null;
-        enqueueFx((done) => window._fxAttackEnded({ card: c, by: cmd.byName || '', slot: cmd.slot || null }, done));
+        enqueueFx((done) => window._fxAttackEnded({ card: c, by: cmd.byName || '', slot: cmd.slot || null, bySlot: cmd.bySlot || null }, done));
       }
       break;
     }
@@ -2690,7 +2692,7 @@ function _clearCollisionBlockerBadges() {
 function _waitFxIdle(cb, maxMs) {
   const limit = Date.now() + (maxMs || 15000);
   const tick = () => {
-    if ((!_fxRunning && _fxQueue.length === 0 && !(window._fxAnimActive > 0)) || Date.now() > limit) { setTimeout(cb, 200); return; }
+    if ((!_fxRunning && _fxQueue.length === 0 && !(window._fxAnimActive > 0) && !(Date.now() < (window._fxBoardBusyUntil || 0))) || Date.now() > limit) { setTimeout(cb, 200); return; }
     setTimeout(tick, 100);
   };
   tick();

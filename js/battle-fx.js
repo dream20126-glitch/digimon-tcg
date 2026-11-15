@@ -4429,13 +4429,13 @@ export function fxAttackEnded(p, callback) {
 }
 if (typeof window !== 'undefined') window._fxAttackEnded = fxAttackEnded;
 
-// 盤面上の「アタック終了」（作り込み版。約5秒）:
-//  ① アタックしているカードが赤く脈打つ（「⚔ アタック中」）。効果を使ったカードが青く光る（「『〇〇』の効果」）
-//  ② 効果を使ったカードから光の球が飛び、アタックしているカードの前（相手側）で弾けて、六角形の光の障壁になる
-//  ③ アタックしているカードが少し下がって溜め → 障壁に突っ込む → 閃光・波紋・火花。障壁は揺れるが破れない
-//  ④ カードが弾き返されて元の場所へ戻り、色が抜けて灰色に
-//  ⑤ 「✋ アタック終了」のスタンプが押され、障壁が光の粒になって消える
-//  効果の確認ポップアップや暗い背景より前に出す（以前は後ろに隠れて見えなかった）。場所が分からなければ false（中央の演出）
+// 盤面上の「アタック終了」（約4.5秒）:
+//  ① アタックしているカードが赤く光って浮き上がる。効果を使ったカードが青く光る（「『〇〇』の効果」）
+//  ② カードが相手（セキュリティ／相手の盤面）へ向かって突進する
+//  ③ その進路に、効果を使ったカードから飛んだ光の球が弾けて光の壁ができる
+//  ④ カードが壁に激突（閃光・波紋・火花）→ 壁は揺れるが破れない
+//  ⑤ カードが回転しながら元の場所へ弾き返され、色が抜けて灰色に →「✋ アタック終了」のスタンプ
+//  場所が分からなければ false（演出なし）
 function _fxAttackEndedBoard(p, done) {
   const card = p && p.card;
   const bsNow = window._lastBattleState;
@@ -4448,7 +4448,6 @@ function _fxAttackEndedBoard(p, done) {
       if (i === -1) i = arr.findIndex(x => x && Array.isArray(x.stack) && x.stack.includes(c));
       if (i !== -1) return { side: sd, idx: i };
     }
-    // 名前と画像だけのカード（相手から届いた演出）: 同じカード番号・名前で探す。アタック中（レスト状態）のものを優先
     const same = (x) => !!(x && x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo));
     for (const pass of [true, false]) {
       for (const sd of ['player', 'ai']) {
@@ -4469,35 +4468,39 @@ function _fxAttackEndedBoard(p, done) {
   const showCard = real || card;
   const r = sp.r;
   const x = r.left + r.width / 2, y = r.top + r.height / 2;
-  const dir = slot.side === 'player' ? -1 : 1; // 相手のいる方向
-  if (!document.getElementById('fx-atkend-style2')) {
-    const st = document.createElement('style'); st.id = 'fx-atkend-style2';
+  // 向かう先: 相手のセキュリティ（無ければ相手の盤面の中央）
+  const oppSide = slot.side === 'player' ? 'ai' : 'player';
+  const tgtEl = document.getElementById(oppSide === 'ai' ? 'ai-sec-area' : 'pl-sec-area') || document.getElementById(oppSide === 'ai' ? 'ai-battle-row' : 'pl-battle-row');
+  let tx = x, ty = y + (slot.side === 'player' ? -200 : 200);
+  if (tgtEl) { const tr = tgtEl.getBoundingClientRect(); if (tr.width && tr.height) { tx = tr.left + tr.width / 2; ty = tr.top + tr.height / 2; } }
+  const vx = tx - x, vy = ty - y, len = Math.max(60, Math.hypot(vx, vy));
+  const ux = vx / len, uy = vy / len;
+  const ang = Math.atan2(uy, ux) * 180 / Math.PI;
+  if (!document.getElementById('fx-atkend-style3')) {
+    const st = document.createElement('style'); st.id = 'fx-atkend-style3';
     st.textContent = '@keyframes aeGlow{0%,100%{box-shadow:0 0 6px #ff4d4d}50%{box-shadow:0 0 22px #ff4d4d,0 0 42px #ff8080}}'
       + '@keyframes aeBlue{0%,100%{box-shadow:0 0 6px #4fb8ff}50%{box-shadow:0 0 22px #7fdcff,0 0 42px #4fb8ff}}'
-      + '@keyframes aeShieldShake{0%,100%{transform:translate(-50%,-50%) scale(1)}20%{transform:translate(calc(-50% - 5px),-50%) scale(1.04)}40%{transform:translate(calc(-50% + 5px),-50%) scale(0.98)}60%{transform:translate(calc(-50% - 3px),-50%)}80%{transform:translate(calc(-50% + 2px),-50%)}}'
+      + '@keyframes aeWallIn{0%{opacity:0;transform:scale(0.1,0.3)}70%{opacity:1;transform:scale(1.1,1.05)}100%{opacity:1;transform:scale(1,1)}}'
+      + '@keyframes aeWallHit{0%,100%{transform:scale(1,1)}25%{transform:scale(1.06,0.86)}50%{transform:scale(0.97,1.08)}75%{transform:scale(1.02,0.97)}}'
       + '@keyframes aeStamp{0%{transform:translate(-50%,-50%) scale(2.8) rotate(-18deg);opacity:0}55%{transform:translate(-50%,-50%) scale(0.9) rotate(-12deg);opacity:1}75%{transform:translate(-50%,-50%) scale(1.06) rotate(-12deg)}100%{transform:translate(-50%,-50%) scale(1) rotate(-12deg);opacity:1}}'
-      + '@keyframes aeHex{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1)}70%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}'
-      + '@keyframes aeHexPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}'
-      + '@keyframes aeLbl{0%{opacity:0;transform:translate(-50%,var(--ty)) scale(0.6)}100%{opacity:1;transform:translate(-50%,var(--ty)) scale(1)}}';
+      + '@keyframes aeLbl{0%{opacity:0}100%{opacity:1}}';
     document.head.appendChild(st);
   }
   const layer = document.createElement('div');
   layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147480500;overflow:hidden;';
   document.body.appendChild(layer);
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
-  const label = (lx, ly, below, html, bg, bd) => add('position:absolute;left:' + lx + 'px;top:' + ly + 'px;--ty:' + (below ? '0' : '-100%') + ';transform:translate(-50%,' + (below ? '0' : '-100%') + ');white-space:nowrap;font-size:11px;font-weight:900;color:#fff;padding:2px 8px;border-radius:9px;background:' + bg + ';border:1px solid ' + bd + ';box-shadow:0 0 8px ' + bd + ';opacity:0;animation:aeLbl 0.3s ease-out forwards;z-index:7;', html);
+  const label = (lx, ly, below, html, bg, bd) => add('position:absolute;left:' + lx + 'px;top:' + ly + 'px;transform:translate(-50%,' + (below ? '0' : '-100%') + ');white-space:nowrap;font-size:11px;font-weight:900;color:#fff;padding:2px 8px;border-radius:9px;background:' + bg + ';border:1px solid ' + bd + ';box-shadow:0 0 8px ' + bd + ';opacity:0;animation:aeLbl 0.3s ease-out forwards;z-index:7;', html);
   const src = (showCard && (showCard.imgSrc || cardImg(showCard))) || '';
   const susp = sp.el && sp.el.classList && sp.el.classList.contains('suspended');
   const cw = r.width, ch = r.height;
   const w0 = susp ? ch : cw, h0 = susp ? cw : ch;
   const rot0 = susp ? 90 : 0;
   const big = Math.max(cw, ch);
-  // ① アタックしているカード（写し）
-  const c = add('position:absolute;left:' + (x - w0 / 2) + 'px;top:' + (y - h0 / 2) + 'px;width:' + w0 + 'px;height:' + h0 + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + rot0 + 'deg);animation:aeGlow 0.7s ease-in-out infinite;z-index:3;',
+  // アタックしているカード（盤面のカードを隠して、同じ場所の写しを動かす）
+  const c = add('position:absolute;left:' + (x - w0 / 2) + 'px;top:' + (y - h0 / 2) + 'px;width:' + w0 + 'px;height:' + h0 + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + rot0 + 'deg);animation:aeGlow 0.7s ease-in-out infinite;z-index:6;will-change:transform;',
     src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + ((showCard && showCard.name) || '') + '</div>');
   if (sp.el) sp.el.style.visibility = 'hidden';
-  const tagBelow = dir < 0;
-  const tag = label(x, tagBelow ? y + big / 2 + 6 : y - big / 2 - 6, tagBelow, '⚔ アタック中', 'rgba(120,0,0,0.88)', '#ff6b6b');
   // 効果を使ったカード（青く光る）
   let bx = null, by = null, byGlow = null, byTag = null;
   if (bySp) {
@@ -4506,92 +4509,96 @@ function _fxAttackEndedBoard(p, done) {
     byGlow = add('position:absolute;left:' + (br.left - 3) + 'px;top:' + (br.top - 3) + 'px;width:' + (br.width + 6) + 'px;height:' + (br.height + 6) + 'px;border-radius:7px;border:2px solid #7fdcff;opacity:0;transition:opacity 0.3s;animation:aeBlue 0.7s ease-in-out infinite;z-index:3;');
     const byBelow = p.bySlot.side === 'player';
     byTag = label(bx, byBelow ? br.bottom + 6 : br.top - 6, byBelow, '🛡 「' + (p.by || '') + '」の効果', 'rgba(0,30,60,0.9)', '#7fdcff');
-    byTag.style.animationDelay = '0.35s';
-    setTimeout(() => { byGlow.style.opacity = '1'; }, 300);
+    setTimeout(() => { byGlow.style.opacity = '1'; }, 150);
   }
-  // ② 障壁の位置
-  const sy = y + dir * (big / 2 + 28);
-  const SW = big * 2, SH = big * 0.6;
+  // 壁の位置（進路の途中）と、カードが止まる位置
+  const hitD = len * 0.55;
+  const wx = x + ux * hitD, wy = y + uy * hitD;
+  const stopD = hitD - big / 2 - 8;
+  const WW = big * 2.1, WH = big * 0.5;
   const hexBg = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='21' viewBox='0 0 24 21'><path d='M6 0.5 L18 0.5 L23.5 10.5 L18 20.5 L6 20.5 L0.5 10.5 Z' fill='none' stroke='%23bff3ff' stroke-width='1.3' opacity='0.95'/></svg>\")";
-  const shield = add('position:absolute;left:' + x + 'px;top:' + sy + 'px;width:' + SW + 'px;height:' + SH + 'px;border-radius:50% / 42%;opacity:0;'
-    + 'background:' + hexBg + ' center/18px 16px,radial-gradient(ellipse at center,rgba(210,248,255,0.6) 0%,rgba(80,180,255,0.32) 55%,rgba(80,180,255,0) 72%);'
-    + 'box-shadow:0 0 26px #7fdcff,inset 0 0 24px rgba(191,243,255,0.85);border:2px solid rgba(210,248,255,0.95);transform:translate(-50%,-50%) scale(0.1);z-index:4;');
-  // 光の球が飛んでくる（効果を使ったカードの場所が分からなければ、障壁の位置で光が集まる）
-  const T_ORB = 1000, T_SHIELD = 1700;
+  // 壁: 進路に直交する向きに置く（外側で位置と向き、内側で出現・揺れ）
+  const wallBox = add('position:absolute;left:' + wx + 'px;top:' + wy + 'px;width:' + WW + 'px;height:' + WH + 'px;margin:' + (-WH / 2) + 'px 0 0 ' + (-WW / 2) + 'px;transform:rotate(' + (ang + 90) + 'deg);z-index:5;');
+  const wall = document.createElement('div');
+  wall.style.cssText = 'position:absolute;inset:0;border-radius:50% / 42%;opacity:0;'
+    + 'background:' + hexBg + ' center/16px 14px,radial-gradient(ellipse at center,rgba(210,248,255,0.65) 0%,rgba(80,180,255,0.35) 55%,rgba(80,180,255,0) 72%);'
+    + 'box-shadow:0 0 26px #7fdcff,inset 0 0 24px rgba(191,243,255,0.85);border:2px solid rgba(210,248,255,0.95);';
+  wallBox.appendChild(wall);
+  // ① 赤く光って浮き上がる
   setTimeout(() => {
-    const ox = bx != null ? bx : x, oy = by != null ? by : sy - dir * 60;
-    const orb = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:22px;height:22px;margin:-11px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#bff3ff 40%,rgba(79,184,255,0) 72%);box-shadow:0 0 18px #7fdcff,0 0 36px #4fb8ff;transition:transform 0.65s cubic-bezier(.4,0,.2,1);z-index:6;');
-    // 尾
-    for (let k = 1; k <= 6; k++) {
-      const tr = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + (14 - k) + 'px;height:' + (14 - k) + 'px;margin:-' + ((14 - k) / 2) + 'px;border-radius:50%;background:#bff3ff;opacity:' + (0.6 - k * 0.08) + ';box-shadow:0 0 8px #7fdcff;transition:transform 0.65s cubic-bezier(.4,0,.2,1) ' + (k * 0.035) + 's,opacity 0.3s ' + (0.65 + k * 0.035) + 's;z-index:5;');
-      requestAnimationFrame(() => { tr.style.transform = 'translate(' + (x - ox) + 'px,' + (sy - oy) + 'px)'; tr.style.opacity = '0'; });
+    c.style.transition = 'transform 0.35s ease-out';
+    c.style.transform = 'translate(' + (-ux * 10) + 'px,' + (-uy * 10) + 'px) rotate(' + rot0 + 'deg) scale(1.15)';
+  }, 350);
+  // ③ 光の球が飛んで壁になる（効果を使ったカードから。分からなければ壁の位置で光が集まる）
+  const T_DASH = 900, T_HIT = 1450;
+  setTimeout(() => {
+    const ox = bx != null ? bx : wx + ux * 60, oy = by != null ? by : wy + uy * 60;
+    const orb = add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:22px;height:22px;margin:-11px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#bff3ff 40%,rgba(79,184,255,0) 72%);box-shadow:0 0 18px #7fdcff,0 0 36px #4fb8ff;transition:transform 0.4s cubic-bezier(.4,0,.2,1),opacity 0.2s 0.4s;z-index:7;');
+    requestAnimationFrame(() => { orb.style.transform = 'translate(' + (wx - ox) + 'px,' + (wy - oy) + 'px) scale(1.5)'; orb.style.opacity = '0'; });
+  }, T_DASH - 200);
+  setTimeout(() => {
+    wall.style.animation = 'aeWallIn 0.3s cubic-bezier(.2,.9,.3,1.3) forwards';
+    add('position:absolute;left:' + (wx - WW) + 'px;top:' + (wy - WW) + 'px;width:' + WW * 2 + 'px;height:' + WW * 2 + 'px;background:radial-gradient(circle,rgba(191,243,255,0.7) 0%,rgba(0,0,0,0) 45%);animation:hxFlash 0.4s ease-out forwards;z-index:5;');
+  }, T_DASH + 200);
+  // ② 突進
+  setTimeout(() => {
+    c.style.transition = 'transform 0.55s cubic-bezier(.55,0,.85,.45)';
+    c.style.transform = 'translate(' + (ux * stopD) + 'px,' + (uy * stopD) + 'px) rotate(' + rot0 + 'deg) scale(1.12)';
+    // 残像
+    for (let k = 1; k <= 3; k++) {
+      setTimeout(() => {
+        const g = add('position:absolute;left:' + (x - w0 / 2) + 'px;top:' + (y - h0 / 2) + 'px;width:' + w0 + 'px;height:' + h0 + 'px;border-radius:5px;background:rgba(255,90,90,0.35);box-shadow:0 0 12px #ff4d4d;'
+          + 'transform:translate(' + (ux * stopD * (k * 0.25)) + 'px,' + (uy * stopD * (k * 0.25)) + 'px) rotate(' + rot0 + 'deg) scale(1.1);transition:opacity 0.35s;z-index:4;');
+        requestAnimationFrame(() => { g.style.opacity = '0'; });
+      }, k * 110);
     }
-    requestAnimationFrame(() => { orb.style.transform = 'translate(' + (x - ox) + 'px,' + (sy - oy) + 'px) scale(1.4)'; });
-    setTimeout(() => { orb.style.transition = 'transform 0.25s,opacity 0.25s'; orb.style.transform += ' scale(3)'; orb.style.opacity = '0'; }, 680);
-  }, T_ORB);
-  // 障壁が広がる
+  }, T_DASH);
+  // ④ 激突
   setTimeout(() => {
-    shield.style.animation = 'aeHex 0.5s cubic-bezier(.2,.9,.3,1.3) forwards, aeHexPulse 0.9s ease-in-out 0.5s infinite';
-    add('position:absolute;left:' + (x - SW) + 'px;top:' + (sy - SH * 1.4) + 'px;width:' + SW * 2 + 'px;height:' + SH * 2.8 + 'px;background:radial-gradient(ellipse at center,rgba(191,243,255,0.7) 0%,rgba(0,0,0,0) 55%);animation:hxFlash 0.45s ease-out forwards;z-index:5;');
-  }, T_SHIELD);
-  // ③ 溜め → 突っ込む
-  const T_BACK = 2500, T_HIT = 2900;
-  const dist = Math.abs(sy - y) - big / 2 - SH / 2 + 10;
-  setTimeout(() => {
-    tag.style.transition = 'opacity 0.3s'; tag.style.opacity = '0';
-    c.style.transition = 'transform 0.3s ease-out';
-    c.style.transform = 'translateY(' + (-dir * 10) + 'px) rotate(' + rot0 + 'deg) scale(1.04)';
-  }, T_BACK);
-  setTimeout(() => {
-    c.style.transition = 'transform 0.2s cubic-bezier(.6,0,1,.6)';
-    c.style.transform = 'translateY(' + (dir * dist) + 'px) rotate(' + rot0 + 'deg) scale(1.04)';
-  }, T_HIT - 200);
-  // 衝撃
-  setTimeout(() => {
-    add('position:absolute;inset:0;background:radial-gradient(ellipse at ' + x + 'px ' + (sy - dir * SH * 0.3) + 'px,rgba(255,255,255,0.95) 0%,rgba(127,220,255,0.5) 10%,rgba(0,0,0,0) 30%);animation:hxFlash 0.55s ease-out forwards;z-index:6;');
-    shield.style.animation = 'aeShieldShake 0.4s linear';
-    shield.style.opacity = '1';
+    add('position:absolute;inset:0;background:radial-gradient(circle at ' + wx + 'px ' + wy + 'px,rgba(255,255,255,0.95) 0%,rgba(127,220,255,0.5) 8%,rgba(0,0,0,0) 26%);animation:hxFlash 0.55s ease-out forwards;z-index:7;');
+    wall.style.animation = 'aeWallHit 0.4s ease-out';
+    wall.style.opacity = '1';
     for (let k = 0; k < 3; k++) {
-      const rp = add('position:absolute;left:' + x + 'px;top:' + (sy - dir * SH * 0.3) + 'px;width:26px;height:12px;margin:-6px -13px;border-radius:50%;border:2px solid #dff8ff;box-shadow:0 0 10px #7fdcff;transition:transform 0.7s ease-out ' + (k * 0.13) + 's,opacity 0.7s ' + (k * 0.13) + 's;z-index:6;');
-      requestAnimationFrame(() => { rp.style.transform = 'scale(' + (5 + k * 1.6) + ')'; rp.style.opacity = '0'; });
+      const rp = add('position:absolute;left:' + wx + 'px;top:' + wy + 'px;width:26px;height:26px;margin:-13px;border-radius:50%;border:2px solid #dff8ff;box-shadow:0 0 10px #7fdcff;transition:transform 0.7s ease-out ' + (k * 0.12) + 's,opacity 0.7s ' + (k * 0.12) + 's;z-index:7;');
+      requestAnimationFrame(() => { rp.style.transform = 'scale(' + (4 + k * 1.5) + ')'; rp.style.opacity = '0'; });
     }
-    for (let q = 0; q < 16; q++) {
-      const ang = (dir < 0 ? Math.PI / 2 : -Math.PI / 2) + (Math.random() - 0.5) * 2.4;
-      const s2 = add('position:absolute;left:' + x + 'px;top:' + (sy - dir * SH * 0.3) + 'px;width:4px;height:4px;border-radius:50%;background:' + (q % 3 ? '#fff' : '#ff8080') + ';box-shadow:0 0 6px #7fdcff;transition:transform 0.55s ease-out,opacity 0.55s;z-index:6;');
-      const dd = 30 + Math.random() * 60;
-      requestAnimationFrame(() => { s2.style.transform = 'translate(' + Math.cos(ang) * dd + 'px,' + Math.sin(ang) * dd + 'px)'; s2.style.opacity = '0'; });
+    for (let q = 0; q < 18; q++) {
+      const a2 = Math.atan2(-uy, -ux) + (Math.random() - 0.5) * 2.6;
+      const s2 = add('position:absolute;left:' + wx + 'px;top:' + wy + 'px;width:4px;height:4px;border-radius:50%;background:' + (q % 3 ? '#fff' : '#ff8080') + ';box-shadow:0 0 6px #7fdcff;transition:transform 0.55s ease-out,opacity 0.55s;z-index:7;');
+      const dd = 30 + Math.random() * 70;
+      requestAnimationFrame(() => { s2.style.transform = 'translate(' + Math.cos(a2) * dd + 'px,' + Math.sin(a2) * dd + 'px)'; s2.style.opacity = '0'; });
     }
   }, T_HIT);
-  // ④ 弾き返されて戻り、灰色に
+  // ⑤ 弾き返されて元の場所へ（回転しながら）→ 灰色に
   setTimeout(() => {
     c.style.animation = 'none';
-    c.style.transition = 'transform 0.6s cubic-bezier(.2,.9,.3,1.25),filter 0.9s,box-shadow 0.9s';
-    c.style.transform = 'translateY(0) rotate(' + (rot0 - 5) + 'deg) scale(0.97)';
+    c.style.boxShadow = '0 0 10px #ff4d4d';
+    c.style.transition = 'transform 0.7s cubic-bezier(.15,.85,.3,1.15),filter 1s,box-shadow 1s';
+    c.style.transform = 'translate(0px,0px) rotate(' + (rot0 + 360 - 6) + 'deg) scale(0.97)';
     c.style.filter = 'grayscale(1) brightness(0.7)';
-    c.style.boxShadow = '0 0 0 transparent';
   }, T_HIT + 60);
-  // ⑤ スタンプ
-  const T_STAMP = 3700;
+  setTimeout(() => { c.style.boxShadow = '0 0 0 transparent'; }, T_HIT + 800);
   setTimeout(() => {
     add('position:absolute;left:' + x + 'px;top:' + y + 'px;padding:4px 10px;white-space:nowrap;font-size:' + Math.max(13, Math.round(big * 0.17)) + 'px;font-weight:900;color:#ff3b3b;border:3px solid #ff3b3b;border-radius:6px;background:rgba(255,255,255,0.9);box-shadow:0 0 14px rgba(255,59,59,0.75);letter-spacing:1px;animation:aeStamp 0.45s cubic-bezier(.2,.9,.3,1) forwards;z-index:8;',
       '✋ アタック終了');
-  }, T_STAMP);
-  // 障壁が光の粒になって消える
+  }, T_HIT + 850);
+  // 壁が光の粒になって消える
   setTimeout(() => {
-    shield.style.animation = 'none';
-    shield.style.transition = 'opacity 0.5s,transform 0.5s';
-    shield.style.opacity = '0'; shield.style.transform = 'translate(-50%,-50%) scale(1.2)';
+    wall.style.animation = 'none';
+    wall.style.transition = 'opacity 0.5s,transform 0.5s';
+    wall.style.opacity = '0'; wall.style.transform = 'scale(1.2,1.2)';
     for (let q = 0; q < 14; q++) {
-      const px = x + (Math.random() - 0.5) * SW * 0.9, py = sy + (Math.random() - 0.5) * SH * 0.8;
+      const t = (Math.random() - 0.5) * WW * 0.9;
+      const px = wx + Math.cos((ang + 90) * Math.PI / 180) * t, py = wy + Math.sin((ang + 90) * Math.PI / 180) * t;
       const g = add('position:absolute;left:' + px + 'px;top:' + py + 'px;width:5px;height:5px;border-radius:50%;background:#dff8ff;box-shadow:0 0 6px #7fdcff;transition:transform 0.8s ease-out,opacity 0.8s;z-index:5;');
       requestAnimationFrame(() => { g.style.transform = 'translateY(' + (-20 - Math.random() * 30) + 'px)'; g.style.opacity = '0'; });
     }
-    if (byGlow) { byGlow.style.opacity = '0'; }
-    if (byTag) { byTag.style.transition = 'opacity 0.4s'; byTag.style.opacity = '0'; }
-  }, 4500);
+    if (byGlow) byGlow.style.opacity = '0';
+    if (byTag) { byTag.style.animation = 'none'; byTag.style.transition = 'opacity 0.4s'; byTag.style.opacity = '0'; }
+  }, T_HIT + 1700);
   const restore = () => { if (sp.el) sp.el.style.visibility = ''; };
-  setTimeout(() => { layer.style.transition = 'opacity 0.35s'; layer.style.opacity = '0'; }, 5000);
-  setTimeout(() => { restore(); layer.remove(); done(); }, 5380);
+  setTimeout(() => { layer.style.transition = 'opacity 0.35s'; layer.style.opacity = '0'; }, T_HIT + 2500);
+  setTimeout(() => { restore(); layer.remove(); done(); }, T_HIT + 2880);
   setTimeout(() => { restore(); try { layer.remove(); } catch (_) {} done(); }, 10000);
   return true;
 }

@@ -2214,7 +2214,13 @@ function onRemoteCommand(cmd) {
       // 進化元破棄：自分のカードのstackを実際に操作
       const discardedCards = [];
       if (cmd.targetIdx !== undefined && cmd.count) {
-        const myCard = bs.player.battleArea[cmd.targetIdx];
+        // 位置のカードが名前と合わなければ、同じ名前のカード（1枚だけ）を探す（位置がずれていて破棄されず、こちらに進化元が残っていた）
+        let myCard = bs.player.battleArea[cmd.targetIdx];
+        if (cmd.targetName && (!myCard || myCard.name !== cmd.targetName)) {
+          const hits = bs.player.battleArea.filter(c => c && c.name === cmd.targetName);
+          if (hits.length === 1) myCard = hits[0];
+        }
+        console.log('[fx_evoDiscard] 相手の効果でこちらの進化元を破棄: 位置=' + cmd.targetIdx + ' 対象=' + (myCard ? myCard.name + '(進化元' + (myCard.stack || []).length + '枚)' : 'なし') + ' 名前=' + cmd.targetName + ' 枚数=' + cmd.count + ' 位置=' + JSON.stringify(cmd.stackIdxs) + ' No=' + JSON.stringify(cmd.cardNos));
         if (myCard && myCard.stack && myCard.stack.length > 0) {
           // 相手が選んだカード（破棄する前の位置 stackIdxs）を破棄する。位置のカードが違う（カードNoが合わない）ときは
           // 同じカードNoのカードを探す。位置の情報が無い（古い版の相手）ときだけ上か下から順に破棄する
@@ -2243,6 +2249,8 @@ function onRemoteCommand(cmd) {
             }
           }
           renderAll();
+          // 進化元の枚数を相手の画面にも正しく伝える（≪氷装≫の進化元枚数の比較等で、相手の端末と枚数が食い違わないように）
+          try { sendStateSync(); } catch (_) {}
         }
       }
       addLog('📤 「' + (cmd.targetName || '???') + '」の進化元から「' + (cmd.discardedNames || '???') + '」破棄！');

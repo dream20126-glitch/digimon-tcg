@@ -4206,7 +4206,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     if (iceArmorActive) {
       _atkDp = atk.stack ? atk.stack.length : 0;
       _defDp = def.stack ? def.stack.length : 0;
-      addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
+      addLog('🧊 ≪氷装≫: 進化元枚数比較 「' + atk.name + '」' + _atkDp + '枚 / 「' + def.name + '」' + _defDp + '枚');
     }
     removeBattleBuffs(battleBuffs);
     // 「バトル終了まで」（dur_until_battle_end）のバフはここで期限切れにする
@@ -4397,7 +4397,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
     if (iceArmorActive2) {
       _atkDp = atk.stack ? atk.stack.length : 0;
       _defDp = def.stack ? def.stack.length : 0;
-      addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
+      addLog('🧊 ≪氷装≫: 進化元枚数比較 「' + atk.name + '」' + _atkDp + '枚 / 「' + def.name + '」' + _defDp + '枚');
     }
     removeBattleBuffs(battleBuffs);
     // 「バトル終了まで」（dur_until_battle_end）のバフはここで期限切れにする

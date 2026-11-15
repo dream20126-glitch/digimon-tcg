@@ -18424,7 +18424,12 @@ function executeRecipeStep(step, ctx, store, callback) {
   // 制限(limit)・発火元フィルタ(trigger_conditions)は既にこの呼び出しで1回分確認・消費済み
   // なので、各グループの再実行では取り除く（グループごとに個別カウントされてしまうのを防ぐ）
   // jogress_evolve も targets[0] を「もう1体の進化元」という別の意味で使うため対象外
-  if (Array.isArray(step.targets) && step.targets.length > 0 && step.action !== 'combat' && step.action !== 'jogress_evolve') {
+  // コスト（未解決）や効果2以降（alt_actions）があるときは先にそちらの処理に回し、対象の追加はコスト解決後の本体の中で行う
+  // （以前は対象のグループごとにコストと効果2以降まで繰り返していた。テティスモン LM-004 で、破棄 → アクティブ → 【ブロッカー】の
+  // 後に、もう一度破棄の画面が出ていた）
+  if (Array.isArray(step.targets) && step.targets.length > 0 && step.action !== 'combat' && step.action !== 'jogress_evolve'
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)
+      && !(Array.isArray(step.alt_actions) && step.alt_actions.length > 0)) {
     const _tgGroups = [{ target: step.target, filter: step.filter }, ...step.targets];
     const _tgBaseStep = Object.assign({}, step);
     delete _tgBaseStep.targets;

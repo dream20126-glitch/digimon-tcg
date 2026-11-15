@@ -3191,11 +3191,13 @@ function _magicBoltLines(svg, x1, y1, x2, y2, amp, scale) {
 export function attackStrikeFx(ov, x, y, size, slow) {
   _ensureHitStyle(); _ensureMagicStyle();
   const S = (size || 120) * 1.3;
-  const D = slow ? 2.2 : 0.62;      // 魔法陣の表示時間(s)
-  const GD = slow ? 0.9 : 0.24;     // 光が集まる時間(s)
-  const GS = slow ? 0.55 : 0;       // 光が集まり始める時刻(s)
-  const T = slow ? 1550 : 200;      // 稲妻が当たる時刻(ms)
-  const B = slow ? 1.7 : 1;         // 当たったあとの演出の長さの倍率
+  // slow: true＝ゆっくり（中央の消滅演出）/ 'mid'＝少し速め（盤面上の消滅演出）/ 無し＝速い（回避・バリア等）
+  const mid = slow === 'mid';
+  const D = mid ? 1.35 : slow ? 2.2 : 0.62;      // 魔法陣の表示時間(s)
+  const GD = mid ? 0.55 : slow ? 0.9 : 0.24;     // 光が集まる時間(s)
+  const GS = mid ? 0.3 : slow ? 0.55 : 0;        // 光が集まり始める時刻(s)
+  const T = mid ? 950 : slow ? 1550 : 200;       // 稲妻が当たる時刻(ms)
+  const B = mid ? 1.3 : slow ? 1.7 : 1;          // 当たったあとの演出の長さの倍率
   const W = window.innerWidth, H = window.innerHeight;
   // 魔法陣は対象の上（画面の上にはみ出さない）
   const mx = x, my = Math.max(S * 0.42 + 6, y - (size || 120) * 1.45);
@@ -3213,7 +3215,7 @@ export function attackStrikeFx(ov, x, y, size, slow) {
   svg.setAttribute('width', W); svg.setAttribute('height', H);
   svg.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;z-index:10;';
   ov.appendChild(svg);
-  const pre = slow ? 260 : 90; // 稲妻が伸びる時間
+  const pre = mid ? 170 : slow ? 260 : 90; // 稲妻が伸びる時間
   setTimeout(() => {
     add('position:absolute;inset:0;background:radial-gradient(circle at ' + mx + 'px ' + my + 'px,rgba(255,255,255,0.8) 0%,rgba(190,130,255,0.45) 10%,rgba(0,0,0,0) 28%);animation:hxFlash ' + 0.4 * B + 's ease-out forwards;z-index:8;');
     const t0 = Date.now(), dur = pre + 380 * B;
@@ -4155,7 +4157,7 @@ export function fxBoardDestroy(items, callback) {
   layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46600;overflow:hidden;';
   document.body.appendChild(layer);
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
-  const STEP = 300;
+  const STEP = 220;
   let tMax = 0;
   list.forEach((it, i) => {
     const { el: slotEl, r } = spots[i];
@@ -4169,8 +4171,8 @@ export function fxBoardDestroy(items, callback) {
     const c = add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + (susp ? 90 : 0) + 'deg);box-shadow:0 0 10px #b06cff;',
       src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + (it.card.name || '') + '</div>');
     // ① 魔法陣 → 稲妻（ゆっくり版）
-    let T = 1550;
-    setTimeout(() => { T = attackStrikeFx(layer, x, y, Math.max(cw, 60), true); }, t0);
+    const HIT = 950; // attackStrikeFx 'mid' の当たる時刻
+    setTimeout(() => { attackStrikeFx(layer, x, y, Math.max(cw, 60), 'mid'); }, t0);
     // ② 当たる: 揺れ・紫に染まる・呪印
     setTimeout(() => {
       c.style.animation = 'hxShake 0.45s linear';
@@ -4183,9 +4185,9 @@ export function fxBoardDestroy(items, callback) {
         sg.innerHTML = _MAGIC_SVG('#f0e0ff', '#8ff3ff');
         c.appendChild(sg);
       }, 280);
-    }, t0 + 1550);
+    }, t0 + HIT);
     // ③ 砕け散って、欠片が盤面のトラッシュへ吸い込まれる
-    const t3 = t0 + 1550 + 1300;
+    const t3 = t0 + HIT + 850;
     setTimeout(() => {
       const tr = _boardTrashRect(side);
       const tx = tr ? tr.left + tr.width / 2 : x, ty = tr ? tr.top + tr.height / 2 : y + 80;
@@ -4206,14 +4208,14 @@ export function fxBoardDestroy(items, callback) {
           sh.style.transition = 'transform 0.85s cubic-bezier(.6,0,.9,.6),opacity 0.85s';
           sh.style.transform = 'translate(' + (tx - px - cr.width / 6) + 'px,' + (ty - py - cr.height / 8) + 'px) rotate(' + (Math.random() * 720) + 'deg) scale(0.2)';
           sh.style.opacity = '0';
-        }, 550 + k * 25);
+        }, 380 + k * 20);
       }
       // トラッシュが光る
       if (tr) setTimeout(() => {
         add('position:absolute;left:' + tr.left + 'px;top:' + tr.top + 'px;width:' + tr.width + 'px;height:' + tr.height + 'px;border-radius:5px;box-shadow:0 0 16px #ff4d4d,0 0 30px #b06cff,inset 0 0 10px #ff4d4d;animation:hxFlash 0.7s ease-out forwards;');
-      }, 1350);
+      }, 1150);
     }, t3);
-    tMax = Math.max(tMax, t3 + 2100);
+    tMax = Math.max(tMax, t3 + 1700);
   });
   setTimeout(() => { layer.style.transition = 'opacity 0.25s'; layer.style.opacity = '0'; }, tMax);
   setTimeout(() => { layer.remove(); done(); }, tMax + 280);

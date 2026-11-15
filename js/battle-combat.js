@@ -341,9 +341,11 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
     if (r && r.canceled && _clashPending) {
       let kind = _CLASH_REASON_KIND[r.reason] || 'shield';
       if (r.reason === 'protection') {
-        const ln = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
-        const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
-        kind = _clashKindByZone(card) || (ln < _linkN0 ? 'separate' : sn < _stackN0 ? 'fragment' : 'shield');
+        // 前後の差から決める（場の他の自分のデジモンが代わりに消滅した＝身代わり。ポコモン LM-019「このデジモンを消滅させることで
+        // 離れない」で、以前はバリア（消滅しない）の演出になっていた）
+        kind = _clashKindByDiff(_snap, card);
+        // キーワードの【スケープゴート】ではない身代わり（ポコモン等）は「身代わり！」
+        if (kind === 'scapegoat') kind = 'substitute';
       }
       // キーワード（防壁・回避等）は fx_cancelFlash で相手に伝わる。それ以外（「離れるとき〜離れない」等）はここで送る
       if (_CANCEL_FLASH_LABEL[r.reason]) _clashNote(card, kind, _subImgsNow());
@@ -940,8 +942,12 @@ function _matchColorClause(c, baseCard, ignoreColor) {
 // baseCardに一致するか判定する。色クローズ・特徴クローズと違ってLv指定が無い（レベル不問）。
 // コロン記法（"名称:アイギオモン"）はブラケット無しなので常に完全一致扱い。
 function _matchNameClause(c, baseCard) {
-  const bracket = c.match(/名称[:：]?\s*「(.+?)」\s*(を含む)?\s*$/);
-  if (bracket) return _cardHasEvolveName(baseCard, bracket[1].trim(), !bracket[2]);
+  // 末尾に Lv 指定が付くこともある（"名称「ガンマモン」を含むLv.4"。レグルスモンACE LM-017）。付いていれば Lv も一致が必要
+  const bracket = c.match(/名称[:：]?\s*「(.+?)」\s*(を含む)?\s*(?:の)?\s*(?:Lv\.?\s*(\d+))?\s*$/);
+  if (bracket) {
+    if (bracket[3] != null && String(baseCard.level).trim() !== bracket[3]) return false;
+    return _cardHasEvolveName(baseCard, bracket[1].trim(), !bracket[2]);
+  }
   const plain = c.match(/名称[:：]\s*(.+?)\s*$/);
   if (!plain) return false;
   return _cardHasEvolveName(baseCard, plain[1].trim(), true);
@@ -5870,7 +5876,8 @@ function _clashFinish(textHint, cb, remoteInfo) {
     const card = p[side];
     if (!loserOf(side)) { out[side] = 'win'; return; }
     let kind = p.notes[side] || _clashKindByZone(card);
-    if (!kind && avoidedHint && p.winner !== 'tie') kind = 'shield';
+    // 【ジャミング】で消滅しなかった: バリアを張った瞬間に「ジャミング！」と出す（それ以外の「消滅しない」は「消滅しない！」）
+    if (!kind && avoidedHint && p.winner !== 'tie') kind = /ジャミング/.test(hint) ? 'jamming' : 'shield';
     if (!kind) kind = 'trash'; // 【不屈】もここではトラッシュへ（消滅時の効果の後、不屈で登場するときに戻ってくる演出を出す）
     out[side] = kind;
   });

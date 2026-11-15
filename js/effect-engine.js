@@ -3194,21 +3194,44 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _cdoNameM = /cond_name:(.+)/.exec(String(action.condition || ''));
       const _cdoNameFilter = _cdoNameM ? _cdoNameM[1].trim() : null;
       const candidates = [];
+      // 「デジモン1体を消滅させることで」（自分/相手を書いていない＝どちらのデジモンでもよい。both:N → target_both。
+      // レグルスモンACE LM-017）: 相手のデジモンも候補にする。番号は盤面選択と同じ（自分 100+i / 相手 i）
+      const _cdoBoth = _cdoCode === 'target_both';
+      // 対象の条件（cond_lv_le:4 等。名前の条件 cond_name は上で別に見る）
+      const _cdoConds = (action.condition && !_cdoNameM) ? parseRecipeCondition(String(action.condition)) : [];
+      const _cdoOk = (c, sideTag) => {
+        if (_cdoNameFilter && String(c.name || '') !== _cdoNameFilter) return false;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return false;
+        if (_cdoConds.length > 0 && !checkConditions(_cdoConds, c, ctx.bs, sideTag)) return false;
+        return true;
+      };
+      const _ownTag = ctx.side, _oppTag = ctx.side === 'player' ? 'ai' : 'player';
       if (_cdoCode === 'target_self') {
         const _si = ctx.card ? player.battleArea.indexOf(ctx.card) : -1;
         if (_si !== -1) candidates.push(_si);
       } else {
         player.battleArea.forEach((c, i) => {
           if (!c) return;
-          if (c === ctx.card && _cdoCode !== 'target_own') return;
-          if (_cdoNameFilter && String(c.name || '') !== _cdoNameFilter) return;
-          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return;
-          candidates.push(i);
+          if (c === ctx.card && _cdoCode !== 'target_own' && !_cdoBoth) return;
+          if (!_cdoOk(c, _ownTag)) return;
+          candidates.push(_cdoBoth ? 100 + i : i);
         });
+        if (_cdoBoth) {
+          opponent.battleArea.forEach((c, i) => {
+            if (!c) return;
+            if (!_cdoOk(c, _oppTag)) return;
+            if (_isImmuneToEffect(c, ctx)) return;
+            candidates.push(i);
+          });
+        }
       }
       if (candidates.length === 0) { callback(false); return; }
-      const doCostDestroy = (idx) => {
-        const tgt = player.battleArea[idx];
+      const doCostDestroy = (idx0) => {
+        // 両方から選ぶとき: 100以上＝自分のデジモン / それ未満＝相手のデジモン
+        const _onOpp = _cdoBoth && idx0 < 100;
+        const _owner = _onOpp ? opponent : player;
+        const idx = _cdoBoth && idx0 >= 100 ? idx0 - 100 : idx0;
+        const tgt = _owner.battleArea[idx];
         if (!tgt) { callback(false); return; }
         if (ctx.bs) ctx.bs._lastCostDestroyed = tgt;
         ctx.addLog('💀 コスト: 「' + tgt.name + '」を消滅');
@@ -3218,16 +3241,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // showDestroyEffect はオンラインの相手の画面にも fx_destroy を送る）
         const _showDE = (ctx && ctx.showDestroyEffect) || (typeof window !== 'undefined' && window.showDestroyEffect)
           || (window._fxAnimFns && window._fxAnimFns.showDestroyEffect);
-        _destroyWithFx(player, idx, ctx, (typeof _showDE === 'function') ? _showDE : null, (gone) => callback(gone));
+        _destroyWithFx(_owner, idx, ctx, (typeof _showDE === 'function') ? _showDE : null, (gone) => callback(gone));
       };
       if (_cdoCode === 'target_self') { doCostDestroy(candidates[0]); break; }
       if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
-        const tIdx = ctx._forceTargetIdx ?? candidates[0];
+        // CPU は相手（こちら）のデジモンを優先して消滅させる
+        const _cpuPick = _cdoBoth ? (candidates.find(v => v < 100) ?? candidates[0]) : candidates[0];
+        const tIdx = ctx._forceTargetIdx ?? _cpuPick;
         doCostDestroy(tIdx);
         break;
       }
       ctx.addLog('🎯 コスト: 消滅させるデジモンを選択');
-      showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', candidates, null, '#ff4444', (selectedIdx) => {
+      showTargetSelection(_cdoBoth ? 'both' : (ctx.side === 'player' ? 'pl' : 'ai'), candidates, null, '#ff4444', (selectedIdx) => {
         if (selectedIdx === null) { callback(false); return; }
         doCostDestroy(selectedIdx);
       });
@@ -16462,6 +16487,10 @@ function _stepCandidatesEmpty(st, ctx) {
 // ステップ全体として実行できる処理が何も無いか（コストあり＝コストの候補だけ / コスト無し＝本体と効果2以降のどれも候補なし）
 function _stepNothingToDo(step, ctx) {
   if (!step) return false;
+  // 強制の効果（任意でもコスト付きでもない）は、対象がいなくても誘発して「発動」のポップアップを出し、「対象がいません」で終える
+  // （ガンマモン P-065【登場時】「DP2000以下の相手のデジモン1体を消滅させる」で、対象がいないと何も出ていなかった）。
+  // 確認も発動ポップアップも出さずに飛ばすのは、任意の効果（「〜できる」）とコスト付きの効果だけ
+  if (!step.optional && !(Array.isArray(step.cost) && step.cost.length > 0)) return false;
   if (Array.isArray(step.cost) && step.cost.length > 0) return step.cost.some(cs => _stepCandidatesEmpty(cs, ctx));
   if (!_stepCandidatesEmpty(step, ctx)) return false;
   const alts = Array.isArray(step.alt_actions) ? step.alt_actions : [];
@@ -16701,6 +16730,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
       const _tgtArea = (ctx.bs[_tgtSide] && ctx.bs[_tgtSide].battleArea) || [];
       const _hasTarget = _tgtArea.some(c => c && checkConditions(conds, c, ctx.bs, _tgtSide));
       if (_hasTarget) return true;
+      // 強制の効果は対象がいなくても発動して「対象がいません」を出す（_stepNothingToDo と同じ）
+      if (!step.optional && !(Array.isArray(step.cost) && step.cost.length > 0)) return true;
       console.log('[recipeWillExecute] reactor=' + _reactor + ' target filter has no candidate → skip', 'action=' + step.action);
       continue;
     }

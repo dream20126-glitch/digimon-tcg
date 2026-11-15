@@ -2058,7 +2058,7 @@ export function consumeClashLoser(card) {
   window._clashLosers.splice(i, 1);
   return true;
 }
-const _CLASH_KW_LABEL = { evade: '【回避】', barrier: '【防壁】', armor_break: '【アーマー解除】', fragment: '【フラグメント】', separate: '【分離】', shield: '消滅しない！', scapegoat: '【スケープゴート】', indomitable: '【不屈】', recoil: '【道連れ】', to_hand: '手札へ', to_deck: 'デッキへ', to_security: 'セキュリティへ' };
+const _CLASH_KW_LABEL = { evade: '【回避】', barrier: '【防壁】', armor_break: '【アーマー解除】', fragment: '【フラグメント】', separate: '【分離】', shield: '消滅しない！', jamming: 'ジャミング！', substitute: '身代わり！', scapegoat: '【スケープゴート】', indomitable: '【不屈】', recoil: '【道連れ】', to_hand: '手札へ', to_deck: 'デッキへ', to_security: 'セキュリティへ' };
 export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk, onHold) {
   const noop = { finish: (o, cb) => { cb && cb(); }, close: () => {} };
   if (typeof document === 'undefined' || !stageEl || !atkEl || !defEl) { setTimeout(() => onHold && onHold(), 0); return noop; }
@@ -2326,8 +2326,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         setTimeout(() => { peel.style.transition = ''; blowTo(peel, dir, 'trash'); }, 950);
         return 950 + 2000;
       }
-      case 'barrier': case 'fragment': case 'separate': case 'scapegoat': {
-        const colorOf = { barrier: '#ffd84a', scapegoat: '#ff8adf' };
+      case 'barrier': case 'fragment': case 'separate': case 'scapegoat': case 'substitute': {
+        const colorOf = { barrier: '#ffd84a', scapegoat: '#ff8adf', substitute: '#ff8adf' };
         const bc = colorOf[kind] || '#a8ff4a';
         lbl(_CLASH_KW_LABEL[kind], bc);
         // 庇うカード（破棄したセキュリティ・進化元・リンクカード・身代わりのデジモン）を、守られるカードと同じ大きさで
@@ -2343,7 +2343,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
           const nameOnly = typeof im === 'string' && im.indexOf('name:') === 0 ? im.slice(5) : null;
           const src = nameOnly != null ? '' : (im || backUrl);
           const inner = nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:12px;font-weight:bold;color:#fff;background:linear-gradient(160deg,#3a3a48,#16161e);">' + nameOnly + '</div>'
-            : (!im && kind === 'scapegoat') ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '';
+            : (!im && (kind === 'scapegoat' || kind === 'substitute')) ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '';
           const gEl = el('position:absolute;left:' + (gx - GW / 2) + 'px;top:' + (gy - GH / 2) + 'px;width:' + GW + 'px;height:' + GH + 'px;border-radius:10px;overflow:hidden;border:2px solid ' + bc + ';box-shadow:0 0 22px ' + bc + ',0 0 44px ' + bc + '66;background:' + (src ? 'url(' + src + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:3;will-change:transform,opacity;opacity:0;transform:translate(' + (dir * 40) + 'px,60px) scale(0.5);transition:transform 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.25s;',
             inner);
           setTimeout(() => { gEl.style.opacity = '1'; gEl.style.transform = 'translate(0,0) scale(1.04)'; }, 40 + i * 120);
@@ -2359,8 +2359,9 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         }, hitAt);
         return hitAt + 2000 + (imgs.length - 1) * 220;
       }
+      case 'jamming':
       case 'shield': {
-        lbl(_CLASH_KW_LABEL.shield, '#4ad8ff');
+        lbl(_CLASH_KW_LABEL[kind] || _CLASH_KW_LABEL.shield, '#4ad8ff');
         // バリア: 守られるカード全体を、六角形の模様が光るバリアが包む。相手の一撃がバリアの表面に当たって波紋が広がり、
         // はじき返す。守られたカードは残る
         const im0 = area.querySelector('[id$="card-img"]');

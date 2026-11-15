@@ -3639,6 +3639,53 @@ export function fxBoardHit(kind, side, idx, value) {
       }, 40);
     }
     life = 2200;
+  } else if (kind === 'grant' || kind === 'curse') {
+    // 付与: 天から光の輪が降りてカードに重なり、魔法陣が回って光の粒が立ち上り、紋章が刻まれる（金・水色）
+    // 呪縛: 紫の霧が渦巻き、呪いの紋様がカードに刻まれてカードが一瞬暗くなる（紫）
+    const isG = kind === 'grant';
+    const c1 = isG ? '#ffe9a0' : '#d9b8ff', c2 = isG ? '#8ff3ff' : '#8a3dff', glow = isG ? '#ffc83a' : '#8a3dff';
+    const w = r.width, h = r.height, ox = r.left, oy = r.top;
+    if (isG) {
+      const halo = add('position:absolute;left:' + x + 'px;top:' + (oy - h * 0.9) + 'px;width:' + w * 1.3 + 'px;height:' + w * 0.45 + 'px;margin-left:' + (-w * 0.65) + 'px;border-radius:50%;border:4px solid ' + c1 + ';box-shadow:0 0 16px ' + glow + ',inset 0 0 10px ' + glow + ';transition:transform 0.55s cubic-bezier(.3,.7,.3,1),opacity 0.4s;');
+      requestAnimationFrame(() => requestAnimationFrame(() => { halo.style.transform = 'translateY(' + (h * 0.9 + h / 2 - w * 0.22) + 'px) scale(1.05)'; }));
+      setTimeout(() => { halo.style.opacity = '0'; }, 750);
+      add('position:absolute;left:' + x + 'px;top:' + (oy - h * 0.8) + 'px;width:' + w * 0.9 + 'px;height:' + h * 1.8 + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(255,233,160,0.75),rgba(143,243,255,0.25) 60%,rgba(143,243,255,0));animation:hxBeam 1.1s ease-out 0.35s both;');
+    } else {
+      for (let i = 0; i < 10; i++) {
+        const ang = (i / 10) * Math.PI * 2, rr = w * 0.9;
+        add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + w * 0.7 + 'px;height:' + w * 0.7 + 'px;margin:' + (-w * 0.35) + 'px 0 0 ' + (-w * 0.35) + 'px;border-radius:50%;background:radial-gradient(circle,rgba(110,40,200,0.55),rgba(60,0,120,0));--dx:' + Math.cos(ang) * rr + 'px;--dy:' + Math.sin(ang) * rr + 'px;animation:mgGather 0.8s ease-in ' + (i * 0.04) + 's both;');
+      }
+      add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + w + 'px;height:' + h + 'px;border-radius:5px;background:rgba(30,0,50,0.55);animation:hxFlash 1.4s ease-out 0.6s both;');
+    }
+    _ensureMagicStyle();
+    if (!document.getElementById('fx-absorb-style')) {
+      const st2 = document.createElement('style'); st2.id = 'fx-absorb-style';
+      st2.textContent = '@keyframes abSpin{to{transform:rotate(-360deg)}}@keyframes abSpinR{to{transform:rotate(360deg)}}@keyframes abSwirl{0%{transform:rotate(0deg) translateX(var(--r)) scale(1);opacity:0}20%{opacity:1}100%{transform:rotate(540deg) translateX(0) scale(0.2);opacity:0}}';
+      document.head.appendChild(st2);
+    }
+    const CS = Math.max(w, h) * 1.05;
+    const circ = add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + CS + 'px;height:' + CS + 'px;margin:' + (-CS / 2) + 'px 0 0 ' + (-CS / 2) + 'px;opacity:0;transform:scale(0.3);transition:opacity 0.35s,transform 0.45s cubic-bezier(.2,.9,.3,1.3);filter:drop-shadow(0 0 6px ' + glow + ') drop-shadow(0 0 14px ' + glow + ');');
+    const cin = document.createElement('div');
+    cin.style.cssText = 'width:100%;height:100%;animation:' + (isG ? 'abSpinR' : 'abSpin') + ' 2.2s linear infinite;';
+    cin.innerHTML = _MAGIC_SVG(c1, c2);
+    circ.appendChild(cin);
+    setTimeout(() => { circ.style.opacity = '0.95'; circ.style.transform = 'scale(1)'; }, 300);
+    setTimeout(() => {
+      circ.style.transition = 'opacity 0.4s,transform 0.4s ease-in';
+      circ.style.transform = 'scale(0.45)'; circ.style.opacity = '0.9';
+      add('position:absolute;left:' + ox + 'px;top:' + oy + 'px;width:' + w + 'px;height:' + h + 'px;border-radius:6px;box-shadow:0 0 20px ' + glow + ',0 0 40px ' + glow + ',inset 0 0 18px ' + c1 + ';animation:hxFlash 1.2s ease-out both;');
+      add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:70px;height:70px;border-radius:50%;border:3px solid ' + c1 + ';animation:hxRing 0.6s ease-out forwards;');
+      slot.style.animation = 'bhShake 0.25s linear'; setTimeout(() => { slot.style.animation = ''; }, 300);
+    }, 1050);
+    setTimeout(() => { circ.style.opacity = '0'; }, 1700);
+    for (let i = 0; i < 14; i++) add('position:absolute;left:' + (ox + Math.random() * w) + 'px;top:' + (oy + h * (0.5 + Math.random() * 0.5)) + 'px;width:6px;height:6px;border-radius:50%;background:' + (isG ? '#fff6d0' : '#b06cff') + ';box-shadow:0 0 8px ' + glow + ';--dx:' + ((Math.random() - 0.5) * 30) + 'px;--dy:' + (-50 - Math.random() * 70) + 'px;--r:0deg;animation:hxShard 1.1s ease-out ' + (0.4 + Math.random() * 0.6) + 's both;');
+    setTimeout(() => {
+      const t = add('position:absolute;left:' + x + 'px;top:' + (oy + h + 6) + 'px;transform:translateX(-50%);max-width:' + Math.max(160, w * 3) + 'px;white-space:normal;text-align:center;padding:4px 8px;border-radius:7px;background:rgba(0,0,0,0.85);border:2px solid ' + glow + ';box-shadow:0 0 12px ' + glow + ';color:#fff;font-weight:900;font-size:12px;line-height:1.35;opacity:0;transition:opacity 0.25s;z-index:5;',
+        (isG ? '✨ 付与：' : '☠ 呪縛：') + (value || ''));
+      requestAnimationFrame(() => { t.style.opacity = '1'; });
+    }, 1150);
+    life = 3300;
+    setTimeout(() => { layer.style.transition = 'opacity 0.35s'; layer.style.opacity = '0'; }, life - 400);
   } else if (kind === 'seal') {
     // 鎖がカードにぐるぐる巻き付き（らせん状。カードの裏を回る部分は隠れ、端で回り込む）、錠がかかって封印される（盤面）
     const w = r.width, h = r.height, ox = r.left, oy = r.top;
@@ -3822,7 +3869,10 @@ export function boardStateDiff() {
     ['player', 'ai'].forEach((sd) => {
       (bs[sd].battleArea || []).forEach((c, idx) => {
         if (!c) return;
-        const now = { s: !!c.suspended, dp: parseInt(c.dp, 10) || 0, seal: sealOf(c), no: c.cardNo || '' };
+        // 効果で付いたもの（キーワード・〜されない・行動制限等）の表示名。DP と アタック/ブロック不可 は別の演出で見せるので除く
+        const gl = (typeof window._grantBadgesOf === 'function' ? window._grantBadgesOf(c) : [])
+          .filter(it => it && it.label && !/^DP[+-]/.test(it.label) && !/^(アタック・ブロック不可|アタック不可|ブロック不可)$/.test(it.label));
+        const now = { s: !!c.suspended, dp: parseInt(c.dp, 10) || 0, seal: sealOf(c), no: c.cardNo || '', g: gl.map(it => it.label), gc: gl.map(it => it.color) };
         const prev = _boardSnap.get(c);
         _boardSnap.set(c, now);
         // 効果の処理中の変化だけ（進化等でカードが変わったときは出さない）
@@ -3833,6 +3883,12 @@ export function boardStateDiff() {
         if (prev.seal !== now.seal && now.seal.length > prev.seal.length) {
           hits.push(['seal', now.seal === 'AB' ? 'アタック・ブロック不可' : now.seal === 'A' ? 'アタック不可' : 'ブロック不可']);
         }
+        // 新しく付いた効果: 行動制限の色（紫）は「呪縛」、それ以外は「付与」
+        const added = now.g.map((l, k) => ({ l, c: now.gc[k] })).filter(it => !(prev.g || []).includes(it.l));
+        const curse = added.filter(it => it.c === '#9933ff').map(it => it.l);
+        const grant = added.filter(it => it.c !== '#9933ff').map(it => it.l);
+        if (grant.length) hits.push(['grant', grant.join('・')]);
+        if (curse.length) hits.push(['curse', curse.join('・')]);
         hits.forEach(([k, v], i) => {
           // 相手の端末から同じ演出が届いた直後なら重ねない（両方の端末で処理中のとき）
           if (_boardRecent(sd, idx, k)) return;

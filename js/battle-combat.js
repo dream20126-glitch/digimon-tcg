@@ -5,7 +5,7 @@
  * AI戦闘ロジック・戦闘演出を含む
  */
 
-import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
+import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX, canPayMemory, memoryShortText } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClashBegin, fxBattleClashReset, fxBattleResultBurst, registerClashLoser, consumeClashLoser } from './battle-fx.js';
@@ -1568,6 +1568,7 @@ export function doPlay(card, handIdx, slotIdx) {
     // showPlayEffect/showOptionEffect の演出表示（自分側画面）にも軽減後コストを反映
     card._costReduction = card.playCost - _effPlayCost;
   }
+  if (!canPayMemory('player', _effPlayCost)) { addLog('🚨 「' + card.name + '」の' + memoryShortText('player', _effPlayCost)); delete card._costReduction; return; }
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: _effPlayCost,
     digixrossMats: Array.isArray(card._digixrossMats) ? card._digixrossMats : undefined });
 
@@ -1784,6 +1785,10 @@ export function doEvolve(card, handIdx, slotIdx, opts) {
     // 【吸収進化-N】: 進化先(card)自身が持つ能力。自分のデジモン1体をレストさせることで
     // 進化コストを-Nする（アルゴモン BT2-045等）
     _checkAbsorbEvolveDiscount(card, bs, 'player', (discount2) => {
+      if (!canPayMemory('player', Math.max(0, cost - (discount2 > 0 ? discount2 : 0)))) {
+        addLog('🚨 「' + card.name + '」への進化の' + memoryShortText('player', Math.max(0, cost - (discount2 > 0 ? discount2 : 0))));
+        return;
+      }
       if (discount2 > 0) {
         cost = Math.max(0, cost - discount2);
         addLog('💠 吸収進化で進化コスト-' + discount2 + '（コスト' + cost + 'で進化）');
@@ -1855,6 +1860,7 @@ function _doBurstEvolveWith(card, base, handIdx, slotIdx, burstEvo, chosen) {
   // バースト進化の条件（テイマーを手札に戻す）を、移動演出（両画面）で見せてから進化する（以前は演出が無く、
   // すぐ進化演出と【進化時】が出るため、手札に戻していないように見えていた。ロゼモン：バーストモード BT26-050）
   const _go = () => _finishDoEvolve(card, base, handIdx, slotIdx, burstEvo.cost, { isBurst: true });
+  if (!canPayMemory('player', burstEvo.cost)) { addLog('🚨 バースト進化の' + memoryShortText('player', burstEvo.cost)); return; }
   if (typeof window._fxMoveSync === 'function') {
     try { window._fxMoveSync(chosen, 'テイマーエリア', '手札', _go, { faceUp: true, remoteFrom: '相手のテイマーエリア', remoteTo: '相手の手札' }); return; } catch (_) {}
   }
@@ -2073,6 +2079,7 @@ export function flushDeferredEvoTriggers(done0) {
 if (typeof window !== 'undefined') window._flushDeferredEvoTriggers = flushDeferredEvoTriggers;
 
 export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback) {
+  if (!canPayMemory(side === 'ai' ? 'ai' : 'player', cost)) { addLog('🚨 進化の' + memoryShortText(side === 'ai' ? 'ai' : 'player', cost)); callback && callback(false); return; }
   const p = side === 'player' ? bs.player : bs.ai;
   const base = p.battleArea[slotIdx];
   if (!base || !card) { callback && callback(false); return; }
@@ -2130,6 +2137,7 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
 // 【ターンに1回】はリセット。リンクカードは重ねる前に破棄（8-2-2-1-2）。コスト支払い → 1枚ドロー → 【進化時】
 // callback(evolved | false)
 export function doJogressFromEffect(card, left, right, cost, side, callback, opts) {
+  if (!canPayMemory(side === 'ai' ? 'ai' : 'player', cost)) { addLog('🚨 ジョグレス進化の' + memoryShortText(side === 'ai' ? 'ai' : 'player', cost)); callback && callback(false); return; }
   opts = opts || {};
   const p = side === 'player' ? bs.player : bs.ai;
   const li = p.battleArea.indexOf(left), ri = p.battleArea.indexOf(right);
@@ -2322,6 +2330,7 @@ export function doEvolveIku(card, handIdx) {
   if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  if (!canPayMemory('player', cost)) { addLog('🚨 「' + card.name + '」への進化の' + memoryShortText('player', cost)); return; }
   const evolved = Object.assign({}, card, {
     type: card.type === 'デュアル' ? 'デジモン' : card.type,
     // デュアルカードのrecipe.mainはオプション使用時の効果であり、進化後に「⚡ 効果」
@@ -2424,6 +2433,7 @@ export function doLink(card, handIdx, slotIdx, opts) {
   if (_attackInProgress) return;
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
+  if (!canPayMemory('player', card.linkCost)) { addLog('🚨 「' + card.name + '」のリンク' + memoryShortText('player', card.linkCost)); return; }
   const _fromField = !!opts.fromField;
   if (_fromField && (bs.player.battleArea[opts.fromIdx] !== card || opts.fromIdx === slotIdx)) return;
   if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }

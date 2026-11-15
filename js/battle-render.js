@@ -233,6 +233,9 @@ function _buildGrantBadges(card) {
   return items;
 }
 
+// 盤面の演出（battle-fx.js の boardStateDiff）が「効果で新しく付いたもの」を見つけるために使う
+if (typeof window !== 'undefined') window._grantBadgesOf = (card) => { try { return _buildGrantBadges(card); } catch (_) { return []; } };
+
 // トークン（_isToken）はバトルエリア以外には存在しない。
 // 場を離れたトークンはトラッシュ等に残さず消滅させる（各 trash.push 箇所を
 // 個別に直す代わりに、描画前に一括で除去する）。

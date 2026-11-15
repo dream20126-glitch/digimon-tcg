@@ -7633,7 +7633,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       });
       clearButtons();
       // 任意の選択は「キャンセル」（選ばない）。「スキップ」は分かりにくい（P-070 ドルモン 11/10 指摘）
-      const skipLabel = isOptional ? (pickedCount > 0 ? '✓ 完了' : '✕ キャンセル') : (pickedCount > 0 ? '✓ 完了' : null);
+      // 任意でない選択（「〜1枚と〜1枚を手札に加える」）は、選べるカードが残っている間は選ぶしかないのでボタンを出さない。
+      // 選べるカードが無くなれば自動で次（戻す順番を決める画面）へ進む（デジタルゲートオープン P-206）
+      const skipLabel = isOptional ? (pickedCount > 0 ? '✓ 完了' : '✕ キャンセル') : null;
       if (skipLabel) {
         const btn = document.createElement('button');
         btn.innerText = skipLabel;
@@ -9000,6 +9002,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             } else if (target === 'own:all') {
               bs[side].battleArea.forEach(tgt => {
                 if (!tgt) return;
+                // 対象の条件（filter。ゴツモンX抗体 P-144 の進化元「【ブロッカー】を持つ自分のデジモン全て」）
+                if (step.filter && !cardMatchesFilter(tgt, step.filter, bs, side, card)) return;
                 if (!tgt.buffs) tgt.buffs = [];
                 tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'recipe_perm' });
                 recalcDp(tgt);
@@ -9146,6 +9150,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               } else if (target === 'own:all') {
                 bs[side].battleArea.forEach(tgt => {
                   if (!tgt) return;
+                  // 対象の条件（filter。ゴツモンX抗体 P-144 の進化元「【ブロッカー】を持つ自分のデジモン全て」）
+                  if (step.filter && !cardMatchesFilter(tgt, step.filter, bs, side, card)) return;
                   if (!tgt.buffs) tgt.buffs = [];
                   tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
                   recalcDp(tgt);
@@ -9301,6 +9307,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               } else if (target === 'own:all') {
                 bs[side].battleArea.forEach(tgt => {
                   if (!tgt) return;
+                  // 対象の条件（filter。ゴツモンX抗体 P-144 の進化元「【ブロッカー】を持つ自分のデジモン全て」）
+                  if (step.filter && !cardMatchesFilter(tgt, step.filter, bs, side, card)) return;
                   if (!tgt.buffs) tgt.buffs = [];
                   tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'link_recipe_perm' });
                   recalcDp(tgt);

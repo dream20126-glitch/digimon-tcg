@@ -92,6 +92,25 @@ export function spendMemory(cost) {
 }
 
 /**
+ * コストを支払えるか（公式ルール 1-4-2-2: メモリーゲージは左右とも10が最大で、それを超えることはない。
+ * 支払うとメモリーが相手側の10を超えるコストは支払えない（7-1-2-3: コストを支払えなければ登場・進化等はできない）。
+ * 例: 自分側の1なら、支払えるのは11まで）
+ */
+export function canPayMemory(side, cost) {
+  const c = parseInt(cost, 10) || 0;
+  if (c <= 0) return true;
+  return side === 'ai' ? (bs.memory + c <= MEM_MAX) : (bs.memory - c >= MEM_MIN);
+}
+if (typeof window !== 'undefined') window._canPayMemory = canPayMemory;
+// 支払えないときのログ用の文言
+export function memoryShortText(side, cost) {
+  const now = side === 'ai' ? -bs.memory : bs.memory;
+  const max = now + 10;
+  return 'コスト' + cost + 'は支払えません（メモリーが' + (now >= 0 ? '自分側の' + now : '相手側の' + (-now)) + 'なので、支払えるのは' + max + 'まで）';
+}
+if (typeof window !== 'undefined') window._memoryShortText = memoryShortText;
+
+/**
  * メモリーを増加（効果によるメモリー+N）
  */
 export function addMemory(value) {

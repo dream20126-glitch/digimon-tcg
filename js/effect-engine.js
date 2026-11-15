@@ -23697,7 +23697,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _rdoIsOpp = (c) => opponent.battleArea.includes(c);
         const _rdoCands = _rdoPool.filter(c => c
           && !(_rdoNotSelf && c === ctx.card)
-          && (_rdoTamer || !c.type || c.type === 'デジモン')
+          // テイマーを戻す: テイマーエリアに置かれたオプション（【ディレイ】等）は選べない（クティーラモン LM-006）
+          && (_rdoTamer ? (!c.type || c.type === 'テイマー') : (!c.type || c.type === 'デジモン'))
           && (_rdoConds.length === 0 || checkConditions(_rdoConds, c, ctx.bs, _rdoIsOpp(c) ? _rdoOppTag : ctx.side))
           && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))
           && !(_rdoIsOpp(c) && (_isImmuneToEffect(c, ctx) || (c.buffs && c.buffs.some(b => b && b.type === 'cant_return_deck')))));
@@ -24183,6 +24184,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     // ではなく候補抽出後に別途適用する）
     // ctx.bs._redirectedAttack へ書き込んだ新対象は、攻撃側の on_attack 解決後
     // （battle-combat.js の resolveAttackTarget）で実際のバトル対象差し替えに使われる
+    // 「そのアタックを終了させる」（アンフィモン P-089【相手のターン】相手のデジモンがアタックしたとき〜）:
+    // 今のアタックを終了させる印を付ける。アタックの流れ（battle-combat.js）が【アタック時】等の効果の後に見て、
+    // ブロック・バトル・セキュリティチェックをせずにアタックを終える。オンラインでは委譲の返事（fx_reactionDelegateDone）で返す
+    case 'end_attack': {
+      if (!ctx.bs || !ctx.bs._currentAttackerSide) { ctx.addLog('⚠ アタック中ではないので、アタックを終了させられない'); callback(); break; }
+      ctx.bs._attackEndRequested = true;
+      ctx.addLog('✋ アタックを終了させる');
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
     case 'redirect_attack': {
       const _raConds = [];
       if (step.condition) _raConds.push(...parseRecipeCondition(step.condition));

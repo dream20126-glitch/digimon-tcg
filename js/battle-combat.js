@@ -2729,6 +2729,7 @@ export function startAttack(card, slotIdx, callback) {
   // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
   // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）
   _attackInProgress = true;
+  bs._attackEndRequested = false; // 前のアタックの「アタックを終了させる」が残らないように
   // アタック（バトル・セキュリティチェック）の消滅演出は、効果の消滅演出のまとめ（window._destroyFxBatch）に入れず
   // その場で出す。【エグゼキュート】等の効果でアタックしたとき、セキュリティデジモンの消滅演出が
   // 効果のステップの終わり（アタック終了時の自壊の後）まで後回しになっていた
@@ -2867,6 +2868,15 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx, noB
 // 【カウンター】等でアタック中のデジモンが消滅したのに、ブロックの確認やバトルに進んでいた（テティスモン → オメガモン）。
 // 離れていれば true を返し、アタック終了に進める
 function _attackerLeftField(atk, slotIdx) {
+  // 相手の効果で「そのアタックを終了させる」（アンフィモン P-089）: ブロック・バトル・セキュリティチェックをせずにアタックを終える
+  if (bs._attackEndRequested) {
+    bs._attackEndRequested = false;
+    addLog('✋ 「' + ((atk && atk.name) || '?') + '」のアタックは効果で終了した');
+    bs._redirectedAttack = null;
+    renderAll();
+    checkAttackEnd(atk, slotIdx);
+    return true;
+  }
   const cur = bs.player.battleArea[slotIdx];
   if (cur && (cur === atk || (Array.isArray(cur.stack) && cur.stack.indexOf(atk) >= 0))) return false;
   addLog('⚔ アタック中の「' + ((atk && atk.name) || '?') + '」がバトルエリアにいないので、アタックは成立しない');
@@ -4601,6 +4611,7 @@ export function aiAttackPhase(callback) {
   const atk = bs.ai.battleArea[atkIdx];
   atk.suspended = true;
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
+  bs._attackEndRequested = false;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
   // ≪連携≫: AI 側もバフ自動発動
@@ -4633,8 +4644,10 @@ export function aiAttackPhase(callback) {
     doAfterAtkEffect(() => {
       // アタック中のデジモンがバトルエリアを離れていれば、アタックは成立しない（公式ルール 11-2-7-4 / 11-5-1-4）
       const _aiCur = bs.ai.battleArea[atkIdx];
-      if (!(_aiCur && (_aiCur === atk || (Array.isArray(_aiCur.stack) && _aiCur.stack.indexOf(atk) >= 0)))) {
-        addLog('⚔ アタック中の「' + atk.name + '」がバトルエリアにいないので、アタックは成立しない');
+      const _aiEnded = !!bs._attackEndRequested;
+      if (_aiEnded || !(_aiCur && (_aiCur === atk || (Array.isArray(_aiCur.stack) && _aiCur.stack.indexOf(atk) >= 0)))) {
+        bs._attackEndRequested = false;
+        addLog(_aiEnded ? '✋ 「' + atk.name + '」のアタックは効果で終了した' : '⚔ アタック中の「' + atk.name + '」がバトルエリアにいないので、アタックは成立しない');
         bs._redirectedAttack = null;
         renderAll();
         if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }

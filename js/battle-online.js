@@ -1170,6 +1170,7 @@ function onRemoteCommand(cmd) {
       // 委譲された反応の中でアタック対象が変更されたら（黒井翔太 BT26-092 等の redirect_attack）、
       // 相手（アタックしている側）の視点に反転して返す。こちらの bs には残さない
       bs._redirectedAttack = null;
+      bs._attackEndRequested = false;
       // 相手のアタックへの反応なら、アタック中のデジモン（こちら視点では ai 側）を記録する（対象の変更ができるかの判定用）
       if (cmd.kind === 'on_attack_opp') {
         bs._currentAttackerSide = 'ai';
@@ -1181,7 +1182,13 @@ function onRemoteCommand(cmd) {
         const ra = bs._redirectedAttack;
         bs._redirectedAttack = null;
         const redirect = ra ? { side: ra.side === 'player' ? 'ai' : 'player', idx: ra.idx, cardNo: ra.cardNo || '', byDefender: !!ra.byDefender } : null;
-        sendCommand(redirect ? { type: 'fx_reactionDelegateDone', redirect } : { type: 'fx_reactionDelegateDone' });
+        // 「そのアタックを終了させる」（アンフィモン P-089）もアタックしている側に返す
+        const endAttack = !!bs._attackEndRequested;
+        bs._attackEndRequested = false;
+        const _ack = { type: 'fx_reactionDelegateDone' };
+        if (redirect) _ack.redirect = redirect;
+        if (endAttack) _ack.endAttack = true;
+        sendCommand(_ack);
       };
       const _fireDelegated = () => {
         try {
@@ -1261,6 +1268,7 @@ function onRemoteCommand(cmd) {
     case 'fx_reactionDelegateDone': {
       // 委譲先でアタック対象が変更されていれば、こちらのアタック解決で差し替える（_consumeRedirectedAttack）
       if (cmd.redirect) bs._redirectedAttack = cmd.redirect;
+      if (cmd.endAttack) bs._attackEndRequested = true;
       // メモリー等の変動は直前に送られる memory_update/state_sync で既に反映されている
       if (_reactionDelegateWaiters.length > 0) {
         const cb = _reactionDelegateWaiters.shift(); cb();

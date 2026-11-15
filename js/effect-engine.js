@@ -10434,7 +10434,7 @@ function checkConditions(conditions, card, bs, side) {
               case 'cond_dp_ge': return (s.dp || 0) >= (oc.value || 0);
               case 'cond_cost_le': return (s.playCost || s.cost || 0) <= (oc.value || 0);
               case 'cond_cost_ge': return (s.playCost || s.cost || 0) >= (oc.value || 0);
-              case 'cond_color': return !oc.value || (s.color && String(s.color).indexOf(String(oc.value)) >= 0);
+              case 'cond_color': return !oc.value || (!!s.color && String(oc.value).split(/[,\/]/).map(x => x.trim()).filter(Boolean).some(w => String(s.color).indexOf(w) >= 0));
               case 'cond_no_evo': return !s.stack || s.stack.length === 0;
               case 'cond_has_evo': return s.stack && s.stack.length >= (oc.value || 0);
               case 'cond_feature': return !oc.value || (s.feature && String(s.feature).indexOf(String(oc.value)) >= 0);
@@ -10637,8 +10637,13 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_color': {
-        // 指定色（cond.value に色文字列）
-        if (cond.value && card.color && !String(card.color).includes(cond.value)) return false;
+        // 指定色（cond.value に色文字列）。カンマ区切りで複数指定した場合は「いずれかの色」（OR。cond_feature と同じ仕様）
+        // （【パーティション（黄Lv.6＆紫/黒Lv.6）】カオスモン P-221 の「紫/黒」= cond_color:紫,黒 が、"紫,黒" という1つの
+        // 色として判定され、紫のLv.6が当てはまらず登場できなかった）
+        if (cond.value && card.color) {
+          const _cols = String(cond.value).split(/[,\/]/).map(s => s.trim()).filter(Boolean);
+          if (_cols.length > 0 && !_cols.some(cl => String(card.color).includes(cl))) return false;
+        }
         break;
       }
       case 'cond_color_not': {

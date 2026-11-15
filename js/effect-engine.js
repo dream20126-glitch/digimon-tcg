@@ -2903,7 +2903,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // オンラインの相手にも演出＋実データ操作コマンドを送信（相手デジモン対象の
         // 従来ケースのみ。自分側対象は state_sync 側の通常同期に任せる）
         if (edOwner === opponent && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-          const tgtIdx = edArea.indexOf(tgt);
+          const tgtIdx = (edOwner[edAreaKey] || edArea).indexOf(tgt) !== -1 ? (edOwner[edAreaKey] || edArea).indexOf(tgt) : edArea.indexOf(tgt);
           // 破棄したカードの、破棄する前の進化元での位置（[0]＝一番上）。「選んで破棄」で相手の画面では
           // 上か下から順に消していて、選んだのと違うカードが残っていた（メタルガルルモン EX12-035 → グソクモン）
           const _bef = _edBefore.get(tgt) || [];
@@ -2943,7 +2943,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (idx === tgt.stack.length - 1) _edInfo.bottomCards.push(card);
         if (idx === 0) _edInfo.topCards.push(card);
       };
-      const discardFromTarget = (tgt, onDone) => {
+      const discardFromTarget = (tgt0, onDone) => {
+        // 選んだ本体を今の盤面のカードに取り直す（効果の途中で相手からの同期で盤面のカードが作り直されると、
+        // 古いカードの進化元を見てしまい、さっき破棄した進化元がまた選べた。アンフィモンACE LM-005）
+        let tgt = tgt0;
+        const _liveArea = edOwner[edAreaKey] || [];
+        if (tgt && !_liveArea.includes(tgt)) {
+          const _same = (c) => !!(c && (c.cardNo || '') === (tgt.cardNo || '') && (c.name || '') === (tgt.name || ''));
+          const _oi = edArea.indexOf(tgt);
+          const _live = (_oi !== -1 && _same(_liveArea[_oi])) ? _liveArea[_oi] : (_liveArea.filter(_same).length === 1 ? _liveArea.find(_same) : null);
+          if (_live) tgt = _live;
+        }
+        if (!tgt || !Array.isArray(tgt.stack)) { onDone && onDone(false); return; }
         const edTrash = edOwner.trash;
         _edInfo = null;
         _edBefore.set(tgt, Array.isArray(tgt.stack) ? tgt.stack.slice() : []);
@@ -2982,7 +2993,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               const aiPick = _avail ? _avail[0] : (edConds.length > 0 ? tgt.stack.find(s => checkConditions(edConds, s, ctx.bs, edSide)) : tgt.stack[0]);
               takeCard(aiPick || null);
             } else {
-              showEvoSourceSelection(tgt, _avail || tgt.stack.slice(), null, takeCard);
+              // 破棄してトラッシュにあるカードは出さない（念のため）
+              const _shown = (_avail || tgt.stack.slice()).filter(c => !(edTrash || []).includes(c));
+              console.log('[evo_discard_select] 「' + tgt.name + '」の進化元: ' + tgt.stack.map(c => c && c.name).join(',') + ' / 選べる: ' + _shown.map(c => c && c.name).join(','));
+              if (_shown.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
+              showEvoSourceSelection(tgt, _shown, null, takeCard);
             }
           };
           pickNext(n);

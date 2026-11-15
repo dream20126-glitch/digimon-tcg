@@ -2884,7 +2884,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // それぞれの下から合わせて選べる（テイマーAの下から1枚・テイマーBの下から1枚 等。ナイトキロプモン BT26-070 / レイヴモン BT26-082）。
       // コストを払えるかもテイマー全体の合計で判定する。下から/上からの効果は、テイマーごとに選んだ枚数だけその端から破棄する
       const _edPoolQual = (c) => (edConds.length > 0 ? c.stack.filter(x => checkConditions(edConds, x, ctx.bs, edSide)) : c.stack.slice());
-      const _edPoolTamers = (edAreaKey === 'tamerArea' && !_edSelfOnly && n > 1)
+      const _edPoolTamers = ((edAreaKey === 'tamerArea' || action._evoPooled) && !_edSelfOnly && n > 1)
         ? edArea.filter(c => c && Array.isArray(c.stack) && c.stack.length > 0 && (!edContainerFilter || cardMatchesFilter(c, edContainerFilter, ctx.bs, ctx.side, ctx.card)) && _edPoolQual(c).length > 0)
         : [];
       const _edPooled = _edPoolTamers.length >= 2;
@@ -3052,7 +3052,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _ordered = _edPoolTamers.map(t => ({ t, cards: (_fromTopP || _selP) ? _edPoolQual(t) : _edPoolQual(t).slice().reverse() }));
         const _total = _ordered.reduce((a, o) => a + o.cards.length, 0);
         if (_total < n && action._isCost) {
-          ctx.addLog('⚠ テイマーの下の破棄できるカードが足りません（' + _total + '/' + n + '枚）');
+          ctx.addLog('⚠ ' + (edAreaKey === 'tamerArea' ? 'テイマーの下' : '進化元') + 'の破棄できるカードが足りません（' + _total + '/' + n + '枚）');
           showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
           break;
         }
@@ -3100,7 +3100,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         _ordered.forEach(o => o.cards.forEach(c => _cands.push(c)));
         const _pos = _selP ? '' : (_fromTopP ? '上から' : '下から');
         showTrashCardPicker(_cands, _want, !!action._isCost,
-          '🎯 テイマーの下から破棄するカードを' + _want + '枚選んでください（複数のテイマーから選べます' + (_pos ? '。各テイマーの' + _pos + '選んだ枚数を破棄' : '') + '）',
+          (edAreaKey === 'tamerArea'
+            ? '🎯 テイマーの下から破棄するカードを' + _want + '枚選んでください（複数のテイマーから選べます' + (_pos ? '。各テイマーの' + _pos + '選んだ枚数を破棄' : '') + '）'
+            : '🎯 進化元から破棄するカードを' + _want + '枚選んでください（複数のデジモンから選べます' + (_pos ? '。各デジモンの' + _pos + '選んだ枚数を破棄' : '') + '）'),
           (picked) => _doPooled(picked), _cands, { labelOf: (c) => { const t = _ownerOf(c); return t ? '「' + t.name + '」の下' : ''; } });
         break;
       }
@@ -14895,7 +14897,11 @@ function _discardToLegacyStep(step) {
     const pos = f.target_evo_source_position;
     const rest = Object.assign({}, f);
     delete rest.target_evo_source; delete rest.target_evo_source_position;
+    // 「相手のデジモンの進化元を選んで4枚破棄する」（target: opponent:4・value 無し・「1体」と書いていない。ヴァイクモン LM-040）:
+    // 複数のデジモンの進化元から合わせて選べる（_evoPooled）
+    const _pooled = !hasVal && sufN > 1 && (zone === 'opponent' || zone === 'own');
     const out = Object.assign(base, {
+      _evoPooled: _pooled || undefined,
       action: pos === 'top' ? 'evo_discard_top' : pos === 'bottom' ? 'evo_discard_bottom' : pos === 'select' ? 'evo_discard_select' : pos === 'all' ? 'evo_discard_all' : 'evo_discard',
       // 「相手のデジモン/テイマーの下から選んで4枚」（target: opponent_card:4・value 無し）は :N を枚数として扱い、対象は1体
       value: hasVal ? step.value : (sufN || 1),
@@ -23659,12 +23665,19 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (_rdN > 1 && ctx._forceTargetIdx === undefined) {
           const _rdEntries = _rdCands.map(i => ({ card: opponent.battleArea[i], own: false, zone: 'battleArea', idx: i }));
           _pickSideTargets(_rdEntries, _rdN, ctx, effectiveSide, false, '🎯 デッキの' + (_rdTop ? '上' : '下') + 'に戻すデジモンを選んでください', (picked) => {
-            const list = (picked || []).map(e => e && e.card).filter(Boolean);
+            const list = (picked || []).filter(e => e && e.card);
             let k = 0;
             const next = () => {
               if (k >= list.length) { ctx.renderAll(); callback(); return; }
-              const c = list[k++];
-              const i = opponent.battleArea.indexOf(c);
+              const e = list[k++];
+              const c = e.card;
+              // 1体目を戻している間に相手からの同期でカードが作り直されることがある: 元の位置の同じカード → 同じカード（1枚だけ）の順に探す
+              // （ガブモン-友情の絆-ACE LM-022 で、2体選んだのに1体しか戻らなかった）
+              const _same = (x) => !!(x && (x.cardNo || '') === (c.cardNo || '') && (x.name || '') === (c.name || ''));
+              let i = opponent.battleArea.indexOf(c);
+              if (i === -1 && e.idx != null && _same(opponent.battleArea[e.idx])) i = e.idx;
+              if (i === -1) { const hits = opponent.battleArea.filter(_same); if (hits.length === 1) i = opponent.battleArea.indexOf(hits[0]); }
+              console.log('[return_deck opponent:N] ' + k + '/' + list.length + '体目 「' + c.name + '」 位置=' + i);
               if (i === -1) { next(); return; }
               _doReturnDeck(i, next);
             };
@@ -25267,6 +25280,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // コストとして実行されている（step.cost の要素）ことを runOneAction 側に伝える
       // （evo_discard 系で、支払えないときに callback(false) を返すため）
       if (_COST_STEP_SET.has(step)) action._isCost = true;
+      if (step._evoPooled) action._evoPooled = true;
       // 生の条件文字列も引き継ぐ（cost_destroy_other の cond_name:xxx 名前フィルタ等で使用）
       if (step.condition) action.condition = step.condition;
       // ターン終了時メモリー復元フラグを引き継ぐ（memory_plus の revert_at_turn_end）

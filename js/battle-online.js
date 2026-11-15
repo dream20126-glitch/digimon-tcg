@@ -1718,6 +1718,7 @@ function onRemoteCommand(cmd) {
       if (typeof window._hudClearSubjectDestroy === 'function') window._hudClearSubjectDestroy();
       // 相手のアタックが全て終わった → 保留していた DP0 の消滅を行う
       bs._oppAttackInProgress = false;
+      bs._collisionBlockPending = false;
       // 相手の【衝突】のアタック中だけ付けたブロッカーを外す（ブロックの解決を通らずに終わった場合も残さない）
       if (window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
@@ -2635,6 +2636,7 @@ function checkOnlineBlock(cmd) {
     // 【衝突】のブロックは強制: 「ブロックしますか？」は出さず、ブロックするデジモンを選ぶだけ（1体なら自動）。
     // 選択をキャンセルしても必ずどれかでブロックする（選び直し）
     addLog('💥 相手の「' + (cmd.atkName || '???') + '」の【衝突】: ブロックしなければならない');
+    bs._collisionBlockPending = true; // 描画時の「アタック中でなければ【衝突】のブロッカーを外す」で消さない
     // このアタック中はこちらのデジモン全てが【ブロッカー】を得るので、盤面にもブロッカーのバッジを出す
     // （ブロック解決の開始時に _clearCollisionBlockerBadges で外す）
     bs.player.battleArea.forEach((c) => {
@@ -2749,6 +2751,7 @@ function _canBlockNow(c) {
 function resolveOnlineBlock(blockerIdx, cmd) {
   // ブロックのバトルの解決（ルールの処理）の間は、DP0 の消滅を保留する（相手のアタックの終了 attack_end で解除）
   bs._oppAttackInProgress = true;
+  bs._collisionBlockPending = false;
   _clearCollisionBlockerBadges();
   let blocker = bs.player.battleArea[blockerIdx];
   const atk = bs.ai.battleArea[cmd.atkIdx];

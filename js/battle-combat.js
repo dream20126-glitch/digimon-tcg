@@ -142,54 +142,123 @@ function _hasIceArmor(c) {
   return hasPassiveFlag(c, 'iceArmor', '【氷装】') || hasPassiveFlag(c, 'ice_armor', '【氷装】')
     || (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'ice_armor' || b.type === 'keyword_ice_armor')));
 }
-// ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方を凍らせる
+// ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方のカード全体を氷で包んで、ひびが入り、ばらばらに砕く
 function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
   try {
-    if (!document.getElementById('ice-armor-style')) {
-      const st = document.createElement('style'); st.id = 'ice-armor-style';
+    if (!document.getElementById('ice-armor-style2')) {
+      const st = document.createElement('style'); st.id = 'ice-armor-style2';
       st.textContent = '@keyframes iceIn{0%{opacity:0;transform:translateX(-50%) scale(0.6)}60%{opacity:1;transform:translateX(-50%) scale(1.08)}100%{opacity:1;transform:translateX(-50%) scale(1)}}'
         + '@keyframes iceFall{0%{transform:translateY(-20px) rotate(0);opacity:0}15%{opacity:1}100%{transform:translateY(110vh) rotate(360deg);opacity:0.2}}'
-        + '@keyframes iceFreeze{0%{opacity:0}100%{opacity:1}}';
+        + '@keyframes iceFade{0%{opacity:0}100%{opacity:1}}'
+        + '@keyframes iceGrow{0%{clip-path:inset(100% 0 0 0)}100%{clip-path:inset(0 0 0 0)}}'
+        + '@keyframes iceCrack{0%{stroke-dashoffset:200}100%{stroke-dashoffset:0}}'
+        + '@keyframes iceShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-3px,1px)}50%{transform:translate(3px,-1px)}75%{transform:translate(-2px,-1px)}}';
       document.head.appendChild(st);
     }
     const box = document.createElement('div');
     box.className = '_ice-armor-fx';
     box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147480000;overflow:hidden;';
     document.body.appendChild(box);
-    // 冷気（画面の縁が白く凍る）と雪の結晶
-    box.innerHTML = '<div style="position:absolute;inset:0;box-shadow:inset 0 0 120px rgba(170,230,255,0.75);background:radial-gradient(ellipse at center,rgba(150,220,255,0) 45%,rgba(150,220,255,0.18) 100%);animation:iceFreeze 0.5s ease-out forwards;"></div>';
+    box.innerHTML = '<div style="position:absolute;inset:0;box-shadow:inset 0 0 120px rgba(170,230,255,0.75);background:radial-gradient(ellipse at center,rgba(150,220,255,0) 45%,rgba(150,220,255,0.18) 100%);animation:iceFade 0.5s ease-out forwards;"></div>';
     for (let i = 0; i < 26; i++) {
       const f = document.createElement('div');
       f.textContent = '❄';
       f.style.cssText = 'position:absolute;left:' + (Math.random() * 100) + '%;top:-20px;color:#e6f7ff;font-size:' + (10 + Math.random() * 16) + 'px;text-shadow:0 0 6px #8fd8ff;animation:iceFall ' + (2.4 + Math.random() * 1.8) + 's linear ' + (Math.random() * 1.2) + 's forwards;';
       box.appendChild(f);
     }
-    // 「氷装 — 進化元の枚数で勝負」と枚数
     const ban = document.createElement('div');
     ban.style.cssText = 'position:absolute;left:50%;top:12%;transform:translateX(-50%);text-align:center;padding:8px 18px;border-radius:12px;background:rgba(10,30,60,0.85);border:2px solid #9be3ff;box-shadow:0 0 18px #6ccfff,inset 0 0 14px rgba(155,227,255,0.5);color:#fff;animation:iceIn 0.45s ease-out forwards;white-space:nowrap;';
     ban.innerHTML = '<div style="font-size:clamp(1rem,4.6vw,1.5rem);font-weight:900;text-shadow:0 0 10px #6ccfff;">🧊 氷装 ― 進化元の枚数で勝負！</div>'
       + '<div style="font-size:clamp(1.2rem,6vw,2rem);font-weight:900;margin-top:2px;"><span style="color:' + (winner === 'atk' ? '#bff0ff' : '#8aa') + '">' + a + '枚</span>'
       + '<span style="color:#9be3ff;margin:0 10px;">vs</span><span style="color:' + (winner === 'def' ? '#bff0ff' : '#8aa') + '">' + d + '枚</span></div>';
     box.appendChild(ban);
-    // 負けた方（引き分けは両方）のカードが凍りつく
-    const freeze = (area) => {
+    const hidden = [];
+    // 負けた方のカード: 氷が下から包み込む → ひびが入る → ばらばらに砕けて飛び散る
+    const freezeShatter = (area) => {
       if (!area) return;
       const r = area.getBoundingClientRect();
       if (!r.width) return;
-      const ic = document.createElement('div');
-      ic.style.cssText = 'position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:8px;opacity:0;'
-        + 'background:linear-gradient(135deg,rgba(220,245,255,0.55),rgba(120,200,255,0.35) 40%,rgba(230,250,255,0.6) 70%,rgba(140,210,255,0.4));'
-        + 'box-shadow:0 0 22px #9be3ff,inset 0 0 26px rgba(255,255,255,0.8);border:2px solid rgba(220,245,255,0.9);animation:iceFreeze 0.6s ease-out forwards;';
-      ic.innerHTML = '<svg width="100%" height="100%" viewBox="0 0 100 140" preserveAspectRatio="none" style="position:absolute;inset:0;"><path d="M50 0 L44 40 L58 62 L40 95 L52 140 M44 40 L20 55 M58 62 L85 70 M40 95 L15 112" stroke="rgba(255,255,255,0.9)" stroke-width="1.6" fill="none"/></svg>'
-        + '<div style="position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:12px;font-weight:900;color:#fff;text-shadow:0 0 8px #3bb6ff;">❄ 凍結 ❄</div>';
-      box.appendChild(ic);
+      const imgEl = area.querySelector('img');
+      const src = imgEl ? imgEl.src : '';
+      const pad = 6;
+      const L = r.left - pad, T = r.top - pad, Wd = r.width + pad * 2, Ht = r.height + pad * 2;
+      // 氷の塊（カードの写し＋氷の層）
+      const blk = document.createElement('div');
+      blk.style.cssText = 'position:absolute;left:' + L + 'px;top:' + T + 'px;width:' + Wd + 'px;height:' + Ht + 'px;';
+      blk.innerHTML = (src ? '<img src="' + src + '" style="position:absolute;left:' + pad + 'px;top:' + pad + 'px;width:' + r.width + 'px;height:' + r.height + 'px;object-fit:cover;border-radius:6px;filter:saturate(0.4) brightness(1.1) hue-rotate(160deg);">' : '')
+        + '<div style="position:absolute;inset:0;border-radius:10px;animation:iceGrow 0.7s ease-out forwards;'
+        + 'background:linear-gradient(160deg,rgba(235,250,255,0.7),rgba(140,210,255,0.45) 35%,rgba(225,248,255,0.65) 60%,rgba(120,195,255,0.5));'
+        + 'box-shadow:0 0 26px #9be3ff,inset 0 0 30px rgba(255,255,255,0.9);border:2px solid rgba(235,250,255,0.95);"></div>';
+      box.appendChild(blk);
+      // 元のカードは隠す（氷の塊が代わりに見える）
+      hidden.push({ el: area, v: area.style.visibility });
+      setTimeout(() => { area.style.visibility = 'hidden'; }, 80);
+      // ひび
+      setTimeout(() => {
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const sv = document.createElementNS(svgNS, 'svg');
+        sv.setAttribute('viewBox', '0 0 100 140'); sv.setAttribute('preserveAspectRatio', 'none');
+        sv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+        ['M50 0 L44 38 L58 60 L40 96 L54 140', 'M44 38 L12 52 L0 48', 'M58 60 L88 66 L100 80', 'M40 96 L14 112 L0 120', 'M54 120 L80 108 L100 116', 'M50 70 L70 30 L92 20'].forEach((d0, k) => {
+          const pth = document.createElementNS(svgNS, 'path');
+          pth.setAttribute('d', d0); pth.setAttribute('fill', 'none'); pth.setAttribute('stroke', '#ffffff'); pth.setAttribute('stroke-width', '1.6');
+          pth.setAttribute('stroke-dasharray', '200');
+          pth.style.cssText = 'stroke-dashoffset:200;filter:drop-shadow(0 0 2px #6ccfff);animation:iceCrack 0.35s ease-out ' + (k * 0.06) + 's forwards;';
+          sv.appendChild(pth);
+        });
+        blk.appendChild(sv);
+        blk.style.animation = 'iceShake 0.3s linear 2';
+      }, 900);
+      // 砕け散る（カードの絵の入った氷の欠片がばらばらに飛ぶ）
+      setTimeout(() => {
+        blk.style.opacity = '0';
+        const cols = 4, rows = 5;
+        for (let k = 0; k < cols * rows; k++) {
+          const cx0 = k % cols, cy0 = Math.floor(k / cols);
+          const pw = Wd / cols, ph = Ht / rows;
+          const px = L + cx0 * pw, py = T + cy0 * ph;
+          const sh = document.createElement('div');
+          sh.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:' + pw + 'px;height:' + ph + 'px;'
+            + (src ? 'background:linear-gradient(rgba(200,240,255,0.45),rgba(150,215,255,0.35)),url(' + src + ') ' + (-cx0 * pw + pad) + 'px ' + (-cy0 * ph + pad) + 'px/' + r.width + 'px ' + r.height + 'px no-repeat;' : 'background:rgba(190,235,255,0.8);')
+            + 'clip-path:polygon(' + (Math.random() * 25) + '% 0,100% ' + (Math.random() * 25) + '%,' + (75 + Math.random() * 25) + '% 100%,0 ' + (75 + Math.random() * 25) + '%);'
+            + 'box-shadow:inset 0 0 6px #fff;filter:drop-shadow(0 0 3px #9be3ff);transition:transform 0.9s cubic-bezier(.2,.7,.4,1),opacity 0.9s;';
+          box.appendChild(sh);
+          const ang = Math.atan2(py + ph / 2 - (T + Ht / 2), px + pw / 2 - (L + Wd / 2)) + (Math.random() - 0.5) * 0.8;
+          const dist = 60 + Math.random() * 120;
+          requestAnimationFrame(() => {
+            sh.style.transform = 'translate(' + Math.cos(ang) * dist + 'px,' + (Math.sin(ang) * dist + 40 + Math.random() * 60) + 'px) rotate(' + (Math.random() * 540 - 270) + 'deg) scale(' + (0.4 + Math.random() * 0.5) + ')';
+            sh.style.opacity = '0';
+          });
+        }
+        // 氷の粒
+        for (let q = 0; q < 18; q++) {
+          const g = document.createElement('div');
+          const gx = L + Wd / 2, gy = T + Ht / 2;
+          g.style.cssText = 'position:absolute;left:' + gx + 'px;top:' + gy + 'px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 8px #9be3ff;transition:transform 0.8s ease-out,opacity 0.8s;';
+          box.appendChild(g);
+          const an = Math.random() * Math.PI * 2, dd = 50 + Math.random() * 110;
+          requestAnimationFrame(() => { g.style.transform = 'translate(' + Math.cos(an) * dd + 'px,' + Math.sin(an) * dd + 'px)'; g.style.opacity = '0'; });
+        }
+        const fl = document.createElement('div');
+        fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + (L + Wd / 2) + 'px ' + (T + Ht / 2) + 'px,rgba(255,255,255,0.8) 0%,rgba(155,227,255,0.35) 12%,rgba(0,0,0,0) 30%);animation:hxFlashIce 0.5s ease-out forwards;';
+        if (!document.getElementById('ice-flash-style')) { const s2 = document.createElement('style'); s2.id = 'ice-flash-style'; s2.textContent = '@keyframes hxFlashIce{0%{opacity:0}15%{opacity:1}100%{opacity:0}}'; document.head.appendChild(s2); }
+        box.appendChild(fl);
+      }, 1700);
     };
     setTimeout(() => {
-      if (winner === 'atk' || winner === 'tie') freeze(defArea);
-      if (winner === 'def' || winner === 'tie') freeze(atkArea);
-    }, 1500);
-    setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 3600);
-    setTimeout(() => box.remove(), 4100);
+      if (winner === 'atk' || winner === 'tie') freezeShatter(defArea);
+      if (winner === 'def' || winner === 'tie') freezeShatter(atkArea);
+    }, 1300);
+    setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 4300);
+    setTimeout(() => box.remove(), 4800);
+    // 隠したVS画面のカードは、VS画面が閉じたら（念のため最長12秒で）元に戻す
+    const t0 = Date.now();
+    const restore = () => {
+      const closed = !overlay || overlay.style.display === 'none';
+      if (!closed && Date.now() - t0 < 12000) { setTimeout(restore, 300); return; }
+      hidden.forEach(h => { try { h.el.style.visibility = h.v || ''; } catch (_) {} });
+    };
+    setTimeout(restore, 3000);
   } catch (e) { console.error('[iceArmorVsFx]', e); }
 }
 function hasPassiveFlag(c, flagName, kwBracket) {

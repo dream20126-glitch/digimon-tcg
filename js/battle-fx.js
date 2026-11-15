@@ -4385,6 +4385,8 @@ export function fxAttackEnded(p, callback) {
   if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
   window._fxAnimActive = (window._fxAnimActive || 0) + 1;
   _ensureHitStyle();
+  // 盤面上で演出する（アタックしていたカードの場所が分かれば）
+  try { if (_fxAttackEndedBoard(p, done)) return; } catch (e) { console.error('[fxAttackEndedBoard]', e); }
   const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.45;
   const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
   const ov = _hitOverlay(66000);
@@ -4420,3 +4422,63 @@ export function fxAttackEnded(p, callback) {
   setTimeout(done, 6000);
 }
 if (typeof window !== 'undefined') window._fxAttackEnded = fxAttackEnded;
+
+// 盤面上の「アタック終了」: アタックしていたカードの前（相手側）に光の壁が立ち、カードが突っ込んで弾き返され、
+// 「✋ アタック終了」の札が出る。カードの場所が分からなければ false（中央の演出）
+function _fxAttackEndedBoard(p, done) {
+  const card = p && p.card;
+  const bsNow = window._lastBattleState;
+  if (!card || !bsNow || typeof document === 'undefined') return false;
+  let slot = null;
+  for (const sd of ['player', 'ai']) {
+    const arr = (bsNow[sd] && bsNow[sd].battleArea) || [];
+    let i = arr.indexOf(card);
+    if (i === -1) i = arr.findIndex(x => x && x.name === card.name && (!card.cardNo || x.cardNo === card.cardNo));
+    if (i !== -1) { slot = { side: sd, idx: i }; break; }
+  }
+  if (!slot) return false;
+  const sp = _boardSlotRect(slot);
+  if (!sp) return false;
+  const r = sp.r;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const dir = slot.side === 'player' ? -1 : 1; // 相手のいる方向（自分のデジモンなら上）
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46600;overflow:hidden;';
+  document.body.appendChild(layer);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const src = card.imgSrc || cardImg(card) || '';
+  const cw = r.width, ch = r.height;
+  // カードの写し（レスト中ならそのまま横向き）
+  const susp = sp.el && sp.el.classList && sp.el.classList.contains('suspended');
+  const w0 = susp ? ch : cw, h0 = susp ? cw : ch;
+  const c = add('position:absolute;left:' + (x - w0 / 2) + 'px;top:' + (y - h0 / 2) + 'px;width:' + w0 + 'px;height:' + h0 + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + (susp ? 90 : 0) + 'deg);box-shadow:0 0 10px #ff6b6b;transition:transform 0.22s ease-in;',
+    src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + (card.name || '') + '</div>');
+  if (sp.el) sp.el.style.visibility = 'hidden';
+  // 光の壁（カードの前）
+  const wy = y + dir * (Math.max(cw, ch) / 2 + 14);
+  const WW = Math.max(cw, ch) * 1.8;
+  const wall = add('position:absolute;left:' + x + 'px;top:' + wy + 'px;width:' + WW + 'px;height:10px;margin-top:-5px;transform:translateX(-50%) scaleX(0);border-radius:6px;'
+    + 'background:linear-gradient(90deg,rgba(120,220,255,0),#bff3ff 20%,#ffffff 50%,#bff3ff 80%,rgba(120,220,255,0));box-shadow:0 0 18px #7fdcff,0 0 36px #4fb8ff;transition:transform 0.25s ease-out,opacity 0.4s;');
+  setTimeout(() => { wall.style.transform = 'translateX(-50%) scaleX(1)'; }, 100);
+  // 突っ込む → 弾き返される
+  setTimeout(() => { c.style.transform = 'translateY(' + (dir * 16) + 'px) rotate(' + (susp ? 90 : 0) + 'deg)'; }, 380);
+  setTimeout(() => {
+    c.style.transition = 'transform 0.45s cubic-bezier(.2,.9,.3,1.3),filter 0.3s';
+    c.style.transform = 'translateY(' + (-dir * 10) + 'px) rotate(' + ((susp ? 90 : 0) - 5) + 'deg) scale(0.95)';
+    c.style.filter = 'grayscale(0.6) brightness(0.85)';
+    add('position:absolute;left:' + (x - WW / 2) + 'px;top:' + (wy - 40) + 'px;width:' + WW + 'px;height:80px;background:radial-gradient(ellipse at center,rgba(255,255,255,0.85) 0%,rgba(127,220,255,0.4) 30%,rgba(0,0,0,0) 65%);animation:hxFlash 0.5s ease-out forwards;');
+    // 波紋
+    const rp = add('position:absolute;left:' + x + 'px;top:' + wy + 'px;width:20px;height:20px;margin:-10px;border-radius:50%;border:2px solid #bff3ff;box-shadow:0 0 10px #7fdcff;transition:transform 0.5s ease-out,opacity 0.5s;');
+    requestAnimationFrame(() => { rp.style.transform = 'scale(5)'; rp.style.opacity = '0'; });
+  }, 600);
+  // 「✋ アタック終了」の札
+  const lbl = add('position:absolute;left:' + x + 'px;top:' + (y - Math.max(cw, ch) / 2 - 8 + (dir > 0 ? Math.max(cw, ch) + 30 : 0)) + 'px;transform:translate(-50%,-100%) scale(0.5);opacity:0;white-space:nowrap;font-size:12px;font-weight:900;color:#fff;padding:3px 9px;border-radius:10px;background:rgba(0,20,40,0.85);border:1px solid #7fdcff;box-shadow:0 0 10px #7fdcff;transition:transform 0.25s cubic-bezier(.2,.9,.3,1.4),opacity 0.25s;z-index:5;',
+    '✋ アタック終了' + (p.by ? '<div style="font-size:9px;font-weight:bold;color:#cfefff;">「' + p.by + '」の効果</div>' : ''));
+  setTimeout(() => { lbl.style.opacity = '1'; lbl.style.transform = 'translate(-50%,-100%) scale(1)'; }, 650);
+  const restore = () => { if (sp.el) sp.el.style.visibility = ''; };
+  setTimeout(() => { wall.style.opacity = '0'; }, 1500);
+  setTimeout(() => { layer.style.transition = 'opacity 0.25s'; layer.style.opacity = '0'; }, 2000);
+  setTimeout(() => { restore(); layer.remove(); done(); }, 2280);
+  setTimeout(() => { restore(); try { layer.remove(); } catch (_) {} done(); }, 6000);
+  return true;
+}

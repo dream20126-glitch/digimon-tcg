@@ -255,6 +255,12 @@ let _syncTimer = null;
 export function renderAll(force) {
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
+  // 【衝突】で付けたブロッカーは、アタック中だけのもの。どちらのアタックも行われていないのに残っていれば外す
+  // （アルクトゥルスモン P-239 の【衝突】のアタックが終わってもブロッカーのフラグが残っていた）
+  try {
+    const _atkNow = (typeof window._isAttackInProgress === 'function' && window._isAttackInProgress()) || !!bs._oppAttackInProgress || !!bs._collisionBlockPending;
+    if (!_atkNow && typeof window._clearCollisionBlockers === 'function') window._clearCollisionBlockers(bs);
+  } catch (_) {}
   // トークンが場を離れていたら消滅させる
   _purgeTokens();
   // 《オーバーフロー》: 場や下のカードから他の場所へ移ったカードのメモリー処理（どの経路で移っても拾うよう描画前に確認）

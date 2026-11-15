@@ -1404,7 +1404,7 @@ function onRemoteCommand(cmd) {
     case 'fx_attackEnded': {
       if (typeof window._fxAttackEnded === 'function') {
         const c = cmd.cardName ? { name: cmd.cardName, imgSrc: cmd.cardImg || '', _remoteFx: true } : null;
-        enqueueFx((done) => window._fxAttackEnded({ card: c, by: cmd.byName || '' }, done));
+        enqueueFx((done) => window._fxAttackEnded({ card: c, by: cmd.byName || '', slot: cmd.slot || null }, done));
       }
       break;
     }

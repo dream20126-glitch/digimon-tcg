@@ -14846,6 +14846,9 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // カウンタータイミングで発揮する。1回のアタックで使える【カウンター】は1つだけ（executeRecipeStep が _counterUsedSeq で弾く）
   if (bs) bs._attackSeq = (bs._attackSeq || 0) + 1;
   return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => {
+    // アタック宣言のタイミングの効果で「そのアタックを終了させる」が処理されたら、即座にアタック終了時になる
+    // （公式ルール 15-15-1-1）。カウンタータイミング・ブロックタイミングは来ない（アンフィモン P-089）
+    if (bs && bs._attackEndRequested) { done && done(); return; }
     // 場の【カウンター】の後に、手札の［手札］【カウンター】【ブラスト進化】/【ブラストジョグレス】
     const afterBoard = () => _fireBlastCounters(reactSide, bs, ctxBase, done);
     if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', _isCounterStep)) { afterBoard(); return; }
@@ -24272,11 +24275,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 「アタック終了！」の演出（両方の画面）
       {
         const _eaCard = ctx.bs._attackingCard || null;
+        // アタックしているデジモンの場所（同じカードが2枚あっても、実際にアタックしている方に演出を出す）
+        const _eaSide = ctx.bs._currentAttackerSide;
+        const _eaArr = (_eaSide && ctx.bs[_eaSide] && ctx.bs[_eaSide].battleArea) || [];
+        let _eaIdx = _eaCard ? _eaArr.indexOf(_eaCard) : -1;
+        if (_eaIdx === -1 && _eaCard) _eaIdx = _eaArr.findIndex(x => x && Array.isArray(x.stack) && x.stack.includes(_eaCard));
+        const _eaSlot = _eaIdx !== -1 ? { side: _eaSide, idx: _eaIdx } : null;
         if (typeof window !== 'undefined' && typeof window._fxAttackEnded === 'function') {
           if (ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-            try { window._onlineSendCommand({ type: 'fx_attackEnded', cardName: _eaCard ? _eaCard.name || '' : '', cardImg: _eaCard ? (_eaCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(_eaCard) : '') || '') : '', byName: ctx.card ? ctx.card.name || '' : '' }); } catch (_) {}
+            try { window._onlineSendCommand({ type: 'fx_attackEnded', cardName: _eaCard ? _eaCard.name || '' : '', cardImg: _eaCard ? (_eaCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(_eaCard) : '') || '') : '', byName: ctx.card ? ctx.card.name || '' : '',
+              slot: _eaSlot ? { side: _eaSlot.side === 'player' ? 'ai' : 'player', idx: _eaSlot.idx } : null }); } catch (_) {}
           }
-          try { window._fxAttackEnded({ card: _eaCard, by: ctx.card ? ctx.card.name : '' }, () => callback()); } catch (_) { callback(); }
+          try { window._fxAttackEnded({ card: _eaCard, by: ctx.card ? ctx.card.name : '', slot: _eaSlot }, () => callback()); } catch (_) { callback(); }
           break;
         }
       }

@@ -3045,6 +3045,51 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         doneCb && doneCb();
       };
+      // 「相手のデジモンの進化元を選んで4枚破棄する」（1体と書いていない。ヴァイクモン LM-040）: 1枚ごとに、どのデジモンから破棄するかを
+      // 選び直してから、そのデジモンの進化元を1枚選ぶ（同じデジモンを続けて選んでもよい）
+      if (_edPooled && edAreaKey === 'battleArea' && action._evoPooled) {
+        const _selS = action.code === 'evo_discard_select';
+        const _topS = action.code === 'evo_discard_top';
+        let _left = n, _done = 0, _anyS = false;
+        const _area = () => edOwner[edAreaKey] || [];
+        const _qualIdx = () => _area().map((c, i) => (c && Array.isArray(c.stack) && c.stack.length > 0
+          && !(edOwner === opponent && _hasCantDiscard(c))
+          && (!edContainerFilter || cardMatchesFilter(c, edContainerFilter, ctx.bs, ctx.side, ctx.card))
+          && _edPoolQual(c).length > 0) ? i : -1).filter(i => i !== -1);
+        const _finish = () => { if (ctx.bs) ctx.bs._lastActionCount = _done; callback(_anyS ? undefined : (action._isCost ? false : undefined)); };
+        const _takeFrom = (tgt, chosen) => {
+          if (!tgt || !chosen) { _finish(); return; }
+          _edInfo = null;
+          _edBefore.set(tgt, tgt.stack.slice());
+          const si = tgt.stack.indexOf(chosen);
+          if (si === -1) { _nextS(); return; }
+          _edNote(tgt, chosen, si);
+          tgt.stack.splice(si, 1);
+          edOwner.trash.push(chosen);
+          _left--; _done++;
+          finalizeDiscard([chosen], tgt, (did) => { if (did) _anyS = true; afterDiscard(did, _nextS); });
+        };
+        const _pickCardOf = (tgt) => {
+          const q = _edPoolQual(tgt);
+          if (q.length === 0) { _nextS(); return; }
+          if (!_selS) { _takeFrom(tgt, _topS ? q[0] : q[q.length - 1]); return; }
+          if (effectiveSide === 'ai') { _takeFrom(tgt, q[0]); return; }
+          showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen));
+        };
+        const _nextS = () => {
+          if (_left <= 0) { _finish(); return; }
+          const cands = _qualIdx();
+          if (cands.length === 0) { _finish(); return; }
+          if (effectiveSide === 'ai') { _pickCardOf(_area()[cands[0]]); return; }
+          ctx.addLog('🎯 進化元を破棄するデジモンを選んでください（' + (_done + 1) + '/' + n + '枚目）');
+          showTargetSelection(edRowSide, cands, null, uiColor, (idx) => {
+            if (idx === null || idx === undefined) { _finish(); return; }
+            _pickCardOf(_area()[idx]);
+          }, '（進化元を破棄するデジモン・' + (_done + 1) + '/' + n + '枚目）');
+        };
+        _nextS();
+        break;
+      }
       if (_edPooled) {
         const _fromTopP = action.code === 'evo_discard_top' || action.code === 'evo_discard_tamer_top';
         const _selP = action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select';

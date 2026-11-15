@@ -175,40 +175,46 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
     box.appendChild(ban);
     const hidden = [];
     // 負けた方のカード: 氷が下から包み込む → ひびが入る → ばらばらに砕けて飛び散る
-    const freezeShatter = (area) => {
+    // 負けた方のカード: VS画面の押し合いの1回目で下1/3、2回目で2/3、3回目で全体が凍り → ひびが入り → 砕け散る。
+    // 氷はVS画面のカード（押し合いで動く）の中に重ねるので、カードと一緒に動く
+    const HITS = [340, 960, 1690]; // 押し合いでぶつかる時刻（fxBattleClashBegin と同じ。VS画面のカードの動き始めから）
+    const svgNS = 'http://www.w3.org/2000/svg';
+    if (!document.getElementById('ice-armor-style4')) {
+      const st = document.createElement('style'); st.id = 'ice-armor-style4';
+      st.textContent = '@keyframes icFrost{0%{stroke-dashoffset:120;opacity:0}20%{opacity:1}100%{stroke-dashoffset:0;opacity:1}}'
+        + '@keyframes icSpike{0%{transform:scale(0);opacity:0}70%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}'
+        + '@keyframes icDrip{0%{transform:scaleY(0)}100%{transform:scaleY(1)}}'
+        + '@keyframes icGlint{0%,100%{opacity:0;transform:scale(0.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}'
+        + '@keyframes icMist{0%{opacity:0;transform:translate(0,0) scale(0.6)}40%{opacity:0.55}100%{opacity:0;transform:translate(var(--mx),var(--my)) scale(1.6)}}'
+        + '@keyframes icGloss{0%{transform:translateX(-120%) skewX(-20deg)}100%{transform:translateX(220%) skewX(-20deg)}}'
+        + '@keyframes icBurst{0%{opacity:0.9;transform:scale(0.4)}100%{opacity:0;transform:scale(1.6)}}'
+        + '@keyframes hxFlashIce{0%{opacity:0}15%{opacity:1}100%{opacity:0}}';
+      document.head.appendChild(st);
+    }
+    const cleanups = [];
+    const freezeStaged = (area) => {
       if (!area) return;
-      const r = area.getBoundingClientRect();
-      if (!r.width) return;
+      const r0 = area.getBoundingClientRect();
+      if (!r0.width) return;
       const imgEl = area.querySelector('img');
       const src = imgEl ? imgEl.src : '';
-      const pad = 10;
-      const L = r.left - pad, T = r.top - pad, Wd = r.width + pad * 2, Ht = r.height + pad * 2;
-      const svgNS = 'http://www.w3.org/2000/svg';
-      if (!document.getElementById('ice-armor-style3')) {
-        const st = document.createElement('style'); st.id = 'ice-armor-style3';
-        st.textContent = '@keyframes icFrost{0%{stroke-dashoffset:120;opacity:0}20%{opacity:1}100%{stroke-dashoffset:0;opacity:1}}'
-          + '@keyframes icSpike{0%{transform:scale(0);opacity:0}70%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}'
-          + '@keyframes icDrip{0%{transform:scaleY(0)}100%{transform:scaleY(1)}}'
-          + '@keyframes icGlint{0%,100%{opacity:0;transform:scale(0.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}'
-          + '@keyframes icMist{0%{opacity:0;transform:translate(0,0) scale(0.6)}40%{opacity:0.55}100%{opacity:0;transform:translate(var(--mx),var(--my)) scale(1.6)}}'
-          + '@keyframes icGloss{0%{transform:translateX(-120%) skewX(-20deg)}100%{transform:translateX(220%) skewX(-20deg)}}';
-        document.head.appendChild(st);
-      }
-      const blk = document.createElement('div');
-      blk.style.cssText = 'position:absolute;left:' + L + 'px;top:' + T + 'px;width:' + Wd + 'px;height:' + Ht + 'px;';
-      box.appendChild(blk);
-      // カードの写し（だんだん青白く凍っていく）
-      const cimg = document.createElement('div');
-      cimg.style.cssText = 'position:absolute;left:' + pad + 'px;top:' + pad + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:6px;overflow:hidden;transition:filter 0.9s ease-in;';
-      cimg.innerHTML = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '';
-      blk.appendChild(cimg);
-      requestAnimationFrame(() => { cimg.style.filter = 'saturate(0.25) brightness(1.2) contrast(1.05) sepia(0.2) hue-rotate(165deg)'; });
-      hidden.push({ el: area, v: area.style.visibility });
-      setTimeout(() => { area.style.visibility = 'hidden'; }, 60);
-      // ① 霜が縁から枝分かれしながら広がる
+      // 氷を重ねる先: VS画面のカードのエリア（押し合いで一緒に動く）。カードの画像の枠（はみ出しを切る）の外側に重ね、
+      // 画像の枠と同じ位置・大きさにする（とげ・つらら・文字が枠で切れないように）
+      const host = area;
+      const prevPos = host.style.position;
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      const frame = (imgEl && imgEl.parentElement && imgEl.parentElement !== area) ? imgEl.parentElement : area;
+      const prevImgFilter = imgEl ? imgEl.style.filter : '';
+      const fz = document.createElement('div');
+      const fl0 = frame === area ? 0 : frame.offsetLeft, ft0 = frame === area ? 0 : frame.offsetTop;
+      fz.style.cssText = 'position:absolute;left:' + (fl0 - 6) + 'px;top:' + (ft0 - 6) + 'px;width:' + (frame.offsetWidth + 12) + 'px;height:' + (frame.offsetHeight + 12) + 'px;pointer-events:none;z-index:50;';
+      host.appendChild(fz);
+      cleanups.push(() => { try { fz.remove(); } catch (_) {} if (imgEl) imgEl.style.filter = prevImgFilter; host.style.position = prevPos; });
+      // 霜（段階ごとに下から上へ）
       const frost = document.createElementNS(svgNS, 'svg');
       frost.setAttribute('viewBox', '0 0 100 140'); frost.setAttribute('preserveAspectRatio', 'none');
-      frost.style.cssText = 'position:absolute;left:' + pad + 'px;top:' + pad + 'px;width:' + r.width + 'px;height:' + r.height + 'px;overflow:visible;filter:drop-shadow(0 0 2px #bff3ff);';
+      frost.style.cssText = 'position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);overflow:visible;filter:drop-shadow(0 0 2px #bff3ff);';
+      fz.appendChild(frost);
       const branch = (x0, y0, a, len, depth, delay) => {
         if (depth <= 0 || len < 4) return;
         const x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len;
@@ -216,76 +222,105 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
         pth.setAttribute('d', 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1));
         pth.setAttribute('stroke', 'rgba(240,252,255,0.95)'); pth.setAttribute('stroke-width', String(0.5 + depth * 0.35)); pth.setAttribute('fill', 'none');
         pth.setAttribute('stroke-linecap', 'round'); pth.setAttribute('stroke-dasharray', '120');
-        pth.style.cssText = 'stroke-dashoffset:120;opacity:0;animation:icFrost 0.45s ease-out ' + delay.toFixed(2) + 's forwards;';
+        pth.style.cssText = 'stroke-dashoffset:120;opacity:0;animation:icFrost 0.35s ease-out ' + delay.toFixed(2) + 's forwards;';
         frost.appendChild(pth);
-        const nd = delay + 0.12;
+        const nd = delay + 0.08;
         branch(x1, y1, a + 0.55 + (Math.random() - 0.5) * 0.3, len * 0.62, depth - 1, nd);
         branch(x1, y1, a - 0.55 + (Math.random() - 0.5) * 0.3, len * 0.62, depth - 1, nd);
         if (depth > 2) branch(x1, y1, a + (Math.random() - 0.5) * 0.2, len * 0.7, depth - 1, nd);
       };
-      const edges = [[0, 0, Math.PI / 4], [100, 0, Math.PI * 3 / 4], [0, 140, -Math.PI / 4], [100, 140, -Math.PI * 3 / 4], [50, 0, Math.PI / 2], [50, 140, -Math.PI / 2], [0, 70, 0], [100, 70, Math.PI]];
-      edges.forEach(([ex, ey, ea], k) => branch(ex, ey, ea, 22 + Math.random() * 8, 4, k * 0.04));
-      blk.appendChild(frost);
-      // ② 厚い氷の塊（下からせり上がる。つや・面取りの光）
+      const frostStage = (k) => {
+        // k=1: 下の縁から / k=2: 左右の中ほどから / k=3: 上の縁から
+        const sets = {
+          1: [[0, 140, -Math.PI / 4], [100, 140, -Math.PI * 3 / 4], [50, 140, -Math.PI / 2], [25, 140, -Math.PI / 2], [75, 140, -Math.PI / 2]],
+          2: [[0, 85, -0.3], [100, 85, Math.PI + 0.3], [0, 70, 0], [100, 70, Math.PI]],
+          3: [[0, 0, Math.PI / 4], [100, 0, Math.PI * 3 / 4], [50, 0, Math.PI / 2], [0, 35, 0.2], [100, 35, Math.PI - 0.2]],
+        };
+        (sets[k] || []).forEach(([ex, ey, ea], j) => branch(ex, ey, ea, 18 + Math.random() * 8, 4, j * 0.03));
+      };
+      // 氷の層（下から何割まで凍ったか）
       const ice = document.createElement('div');
-      ice.style.cssText = 'position:absolute;inset:0;border-radius:12px;overflow:hidden;clip-path:inset(100% 0 0 0);transition:clip-path 0.6s ease-out;'
+      ice.style.cssText = 'position:absolute;inset:0;border-radius:10px;overflow:hidden;clip-path:inset(100% 0 0 0);transition:clip-path 0.35s cubic-bezier(.2,.9,.3,1.2);'
         + 'background:linear-gradient(115deg,rgba(255,255,255,0.55) 0%,rgba(255,255,255,0) 18%,rgba(255,255,255,0) 46%,rgba(255,255,255,0.35) 52%,rgba(255,255,255,0) 60%),'
-        + 'linear-gradient(180deg,rgba(225,248,255,0.55),rgba(150,215,255,0.42) 45%,rgba(110,190,245,0.5));'
-        + 'box-shadow:inset 0 0 0 2px rgba(255,255,255,0.85),inset 4px 4px 10px rgba(255,255,255,0.75),inset -6px -8px 14px rgba(60,140,220,0.55),0 0 24px rgba(155,227,255,0.9);'
-        + 'backdrop-filter:blur(1.2px);';
-      // つやの光が走る
-      ice.innerHTML = '<div style="position:absolute;top:-10%;left:0;width:35%;height:120%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.75),rgba(255,255,255,0));animation:icGloss 1.1s ease-in-out 0.9s 1 both;"></div>';
-      blk.appendChild(ice);
-      setTimeout(() => { ice.style.clipPath = 'inset(0 0 0 0)'; }, 250);
-      // ③ 縁から氷の結晶（とげ）が突き出す
-      const spikes = 14;
-      for (let k = 0; k < spikes; k++) {
-        const t = k / spikes;
-        let sx, sy, sa;
-        if (t < 0.25) { sx = t / 0.25 * Wd; sy = 0; sa = -90; }
-        else if (t < 0.5) { sx = Wd; sy = (t - 0.25) / 0.25 * Ht; sa = 0; }
-        else if (t < 0.75) { sx = Wd - (t - 0.5) / 0.25 * Wd; sy = Ht; sa = 90; }
-        else { sx = 0; sy = Ht - (t - 0.75) / 0.25 * Ht; sa = 180; }
-        const h = 12 + Math.random() * 16, w = 7 + Math.random() * 6;
-        const sp = document.createElement('div');
-        sp.style.cssText = 'position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + h + 'px;height:' + w + 'px;margin-top:' + (-w / 2) + 'px;transform-origin:0 50%;'
-          + 'transform:rotate(' + (sa + (Math.random() - 0.5) * 40) + 'deg);';
-        const sp2 = document.createElement('div');
-        sp2.style.cssText = 'width:100%;height:100%;clip-path:polygon(0 0,100% 50%,0 100%);transform-origin:0 50%;'
-          + 'background:linear-gradient(90deg,rgba(235,250,255,0.95),rgba(140,210,255,0.85));filter:drop-shadow(0 0 3px #bff3ff);'
-          + 'opacity:0;animation:icSpike 0.35s cubic-bezier(.2,.9,.3,1.4) ' + (0.5 + Math.random() * 0.35).toFixed(2) + 's forwards;';
-        sp.appendChild(sp2);
-        blk.appendChild(sp);
-      }
-      // ④ 下につららが垂れる
-      for (let k = 0; k < 6; k++) {
-        const ix = 8 + (Wd - 16) * (k + 0.3 + Math.random() * 0.4) / 6;
-        const ih = 12 + Math.random() * 20, iw = 5 + Math.random() * 5;
-        const ic = document.createElement('div');
-        ic.style.cssText = 'position:absolute;left:' + (ix - iw / 2) + 'px;top:' + (Ht - 3) + 'px;width:' + iw + 'px;height:' + ih + 'px;clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:50% 0;transform:scaleY(0);'
-          + 'background:linear-gradient(180deg,rgba(235,250,255,0.95),rgba(150,215,255,0.7));filter:drop-shadow(0 0 3px #bff3ff);animation:icDrip 0.5s ease-out ' + (0.75 + Math.random() * 0.3).toFixed(2) + 's forwards;';
-        blk.appendChild(ic);
-      }
-      // ⑤ 冷気のもや・きらめき
-      for (let k = 0; k < 8; k++) {
-        const m = document.createElement('div');
-        const mx = (Math.random() - 0.5) * 70, my = -10 - Math.random() * 40;
-        m.style.cssText = 'position:absolute;left:' + (Wd * Math.random()) + 'px;top:' + (Ht * (0.3 + Math.random() * 0.7)) + 'px;width:30px;height:30px;margin:-15px;border-radius:50%;background:radial-gradient(circle,rgba(235,250,255,0.85),rgba(235,250,255,0));filter:blur(3px);--mx:' + mx + 'px;--my:' + my + 'px;opacity:0;animation:icMist 1.4s ease-out ' + (0.2 + k * 0.12).toFixed(2) + 's forwards;';
-        blk.appendChild(m);
-      }
-      for (let k = 0; k < 6; k++) {
-        const g = document.createElement('div');
-        g.textContent = '✦';
-        g.style.cssText = 'position:absolute;left:' + (Wd * (0.1 + Math.random() * 0.8)) + 'px;top:' + (Ht * (0.1 + Math.random() * 0.8)) + 'px;color:#fff;font-size:' + (9 + Math.random() * 8) + 'px;text-shadow:0 0 6px #bff3ff;opacity:0;animation:icGlint 0.7s ease-in-out ' + (0.9 + k * 0.12).toFixed(2) + 's 2;';
-        blk.appendChild(g);
-      }
-      // 凍結の文字
+        + 'linear-gradient(180deg,rgba(225,248,255,0.55),rgba(150,215,255,0.45) 45%,rgba(110,190,245,0.55));'
+        + 'box-shadow:inset 0 0 0 2px rgba(255,255,255,0.85),inset 4px 4px 10px rgba(255,255,255,0.75),inset -6px -8px 14px rgba(60,140,220,0.55),0 0 22px rgba(155,227,255,0.9);';
+      fz.appendChild(ice);
+      // 氷の上端の線（凍った境目がはっきり見えるように）
+      const edge = document.createElement('div');
+      edge.style.cssText = 'position:absolute;left:0;right:0;height:3px;top:100%;background:linear-gradient(90deg,rgba(255,255,255,0),#ffffff,rgba(255,255,255,0));box-shadow:0 0 10px #bff3ff;transition:top 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.3s;';
+      fz.appendChild(edge);
       const lbl = document.createElement('div');
-      lbl.style.cssText = 'position:absolute;left:0;right:0;bottom:' + (pad + 4) + 'px;text-align:center;font-size:13px;font-weight:900;color:#fff;text-shadow:0 0 8px #3bb6ff,0 0 2px #035;opacity:0;transition:opacity 0.3s;';
-      lbl.textContent = '❄ 凍結 ❄';
-      blk.appendChild(lbl);
-      setTimeout(() => { lbl.style.opacity = '1'; }, 950);
-      // ⑥ ひびが走る
+      lbl.style.cssText = 'position:absolute;left:0;right:0;top:-22px;text-align:center;font-size:13px;font-weight:900;color:#fff;text-shadow:0 0 8px #3bb6ff,0 0 2px #035;opacity:0;transition:opacity 0.2s;white-space:nowrap;';
+      fz.appendChild(lbl);
+      const burst = () => {
+        const b = document.createElement('div');
+        b.style.cssText = 'position:absolute;inset:-10px;border-radius:12px;border:3px solid #dff8ff;box-shadow:0 0 18px #9be3ff;animation:icBurst 0.45s ease-out forwards;';
+        fz.appendChild(b);
+        setTimeout(() => b.remove(), 500);
+        for (let q = 0; q < 8; q++) {
+          const g = document.createElement('div');
+          const an = Math.random() * Math.PI * 2, dd = 20 + Math.random() * 40;
+          g.style.cssText = 'position:absolute;left:50%;top:' + (40 + Math.random() * 50) + '%;width:5px;height:5px;background:#fff;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);box-shadow:0 0 6px #9be3ff;transition:transform 0.5s ease-out,opacity 0.5s;';
+          fz.appendChild(g);
+          requestAnimationFrame(() => { g.style.transform = 'translate(' + Math.cos(an) * dd + 'px,' + Math.sin(an) * dd + 'px)'; g.style.opacity = '0'; });
+          setTimeout(() => g.remove(), 600);
+        }
+      };
+      const setLevel = (k) => {
+        const pct = k === 1 ? 66.7 : k === 2 ? 33.3 : 0;
+        ice.style.clipPath = 'inset(' + pct + '% 0 0 0)';
+        edge.style.top = pct + '%';
+        if (k === 3) edge.style.opacity = '0';
+        if (imgEl) imgEl.style.filter = k === 1 ? 'saturate(0.75) brightness(1.05) hue-rotate(20deg)' : k === 2 ? 'saturate(0.5) brightness(1.12) hue-rotate(110deg)' : 'saturate(0.25) brightness(1.2) contrast(1.05) sepia(0.2) hue-rotate(165deg)';
+        lbl.textContent = k === 3 ? '❄ 凍結 ❄' : '❄ ' + k + '/3';
+        lbl.style.opacity = '1';
+        frostStage(k);
+        burst();
+      };
+      setTimeout(() => setLevel(1), HITS[0]);
+      setTimeout(() => setLevel(2), HITS[1]);
+      setTimeout(() => {
+        setLevel(3);
+        // つやの光・結晶のとげ・つらら・もや・きらめき
+        const gl = document.createElement('div');
+        gl.style.cssText = 'position:absolute;top:-10%;left:0;width:35%;height:120%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.75),rgba(255,255,255,0));animation:icGloss 0.9s ease-in-out 0.1s 1 both;';
+        ice.appendChild(gl);
+        const R = fz.getBoundingClientRect();
+        const Wd = R.width, Ht = R.height;
+        for (let k = 0; k < 14; k++) {
+          const t = k / 14;
+          let sx, sy, sa;
+          if (t < 0.25) { sx = t / 0.25 * Wd; sy = 0; sa = -90; }
+          else if (t < 0.5) { sx = Wd; sy = (t - 0.25) / 0.25 * Ht; sa = 0; }
+          else if (t < 0.75) { sx = Wd - (t - 0.5) / 0.25 * Wd; sy = Ht; sa = 90; }
+          else { sx = 0; sy = Ht - (t - 0.75) / 0.25 * Ht; sa = 180; }
+          const h = 12 + Math.random() * 16, w = 7 + Math.random() * 6;
+          const sp = document.createElement('div');
+          sp.style.cssText = 'position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + h + 'px;height:' + w + 'px;margin-top:' + (-w / 2) + 'px;transform-origin:0 50%;transform:rotate(' + (sa + (Math.random() - 0.5) * 40) + 'deg);';
+          sp.innerHTML = '<div style="width:100%;height:100%;clip-path:polygon(0 0,100% 50%,0 100%);transform-origin:0 50%;background:linear-gradient(90deg,rgba(235,250,255,0.95),rgba(140,210,255,0.85));filter:drop-shadow(0 0 3px #bff3ff);opacity:0;animation:icSpike 0.3s cubic-bezier(.2,.9,.3,1.4) ' + (Math.random() * 0.2).toFixed(2) + 's forwards;"></div>';
+          fz.appendChild(sp);
+        }
+        for (let k = 0; k < 6; k++) {
+          const ix = 8 + (Wd - 16) * (k + 0.3 + Math.random() * 0.4) / 6;
+          const ih = 12 + Math.random() * 20, iw = 5 + Math.random() * 5;
+          const ic = document.createElement('div');
+          ic.style.cssText = 'position:absolute;left:' + (ix - iw / 2) + 'px;top:' + (Ht - 3) + 'px;width:' + iw + 'px;height:' + ih + 'px;clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:50% 0;transform:scaleY(0);background:linear-gradient(180deg,rgba(235,250,255,0.95),rgba(150,215,255,0.7));filter:drop-shadow(0 0 3px #bff3ff);animation:icDrip 0.4s ease-out ' + (0.15 + Math.random() * 0.2).toFixed(2) + 's forwards;';
+          fz.appendChild(ic);
+        }
+        for (let k = 0; k < 6; k++) {
+          const m = document.createElement('div');
+          const mx = (Math.random() - 0.5) * 70, my = -10 - Math.random() * 40;
+          m.style.cssText = 'position:absolute;left:' + (Wd * Math.random()) + 'px;top:' + (Ht * (0.3 + Math.random() * 0.7)) + 'px;width:30px;height:30px;margin:-15px;border-radius:50%;background:radial-gradient(circle,rgba(235,250,255,0.85),rgba(235,250,255,0));filter:blur(3px);--mx:' + mx + 'px;--my:' + my + 'px;opacity:0;animation:icMist 1.2s ease-out ' + (k * 0.08).toFixed(2) + 's forwards;';
+          fz.appendChild(m);
+        }
+        for (let k = 0; k < 5; k++) {
+          const g = document.createElement('div');
+          g.textContent = '✦';
+          g.style.cssText = 'position:absolute;left:' + (Wd * (0.1 + Math.random() * 0.8)) + 'px;top:' + (Ht * (0.1 + Math.random() * 0.8)) + 'px;color:#fff;font-size:' + (9 + Math.random() * 8) + 'px;text-shadow:0 0 6px #bff3ff;opacity:0;animation:icGlint 0.5s ease-in-out ' + (0.2 + k * 0.08).toFixed(2) + 's 1;';
+          fz.appendChild(g);
+        }
+      }, HITS[2]);
+      // ひび
       setTimeout(() => {
         const sv = document.createElementNS(svgNS, 'svg');
         sv.setAttribute('viewBox', '0 0 100 140'); sv.setAttribute('preserveAspectRatio', 'none');
@@ -294,15 +329,20 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
           const pth = document.createElementNS(svgNS, 'path');
           pth.setAttribute('d', d0); pth.setAttribute('fill', 'none'); pth.setAttribute('stroke', '#ffffff'); pth.setAttribute('stroke-width', '1.8');
           pth.setAttribute('stroke-dasharray', '200');
-          pth.style.cssText = 'stroke-dashoffset:200;filter:drop-shadow(0 0 2px #6ccfff);animation:iceCrack 0.3s ease-out ' + (k * 0.05) + 's forwards;';
+          pth.style.cssText = 'stroke-dashoffset:200;filter:drop-shadow(0 0 2px #6ccfff);animation:iceCrack 0.25s ease-out ' + (k * 0.04) + 's forwards;';
           sv.appendChild(pth);
         });
-        blk.appendChild(sv);
-        blk.style.animation = 'iceShake 0.25s linear 3';
-      }, 1500);
-      // ⑦ 砕け散る（カードの絵の入った氷の欠片）
+        fz.appendChild(sv);
+        fz.style.animation = 'iceShake 0.22s linear 3';
+      }, HITS[2] + 650);
+      // 砕け散る（その時のカードの位置で、カードの絵の入った氷の欠片にする）
       setTimeout(() => {
-        blk.style.opacity = '0';
+        const r = frame.getBoundingClientRect();
+        if (!r.width) return;
+        const pad = 6;
+        const L = r.left - pad, T = r.top - pad, Wd = r.width + pad * 2, Ht = r.height + pad * 2;
+        hidden.push({ el: area, v: area.style.visibility });
+        area.style.visibility = 'hidden';
         const cols = 4, rows = 5;
         for (let k = 0; k < cols * rows; k++) {
           const cx0 = k % cols, cy0 = Math.floor(k / cols);
@@ -331,14 +371,12 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
         }
         const fl = document.createElement('div');
         fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + (L + Wd / 2) + 'px ' + (T + Ht / 2) + 'px,rgba(255,255,255,0.85) 0%,rgba(155,227,255,0.4) 12%,rgba(0,0,0,0) 30%);animation:hxFlashIce 0.5s ease-out forwards;';
-        if (!document.getElementById('ice-flash-style')) { const s2 = document.createElement('style'); s2.id = 'ice-flash-style'; s2.textContent = '@keyframes hxFlashIce{0%{opacity:0}15%{opacity:1}100%{opacity:0}}'; document.head.appendChild(s2); }
         box.appendChild(fl);
-      }, 2300);
+        try { fz.remove(); } catch (_) {}
+      }, HITS[2] + 1250);
     };
-    setTimeout(() => {
-      if (winner === 'atk' || winner === 'tie') freezeShatter(defArea);
-      if (winner === 'def' || winner === 'tie') freezeShatter(atkArea);
-    }, 1300);
+    if (winner === 'atk' || winner === 'tie') freezeStaged(defArea);
+    if (winner === 'def' || winner === 'tie') freezeStaged(atkArea);
     setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 4900);
     setTimeout(() => box.remove(), 5400);
     // 隠したVS画面のカードは、VS画面が閉じたら（念のため最長12秒で）元に戻す
@@ -347,6 +385,7 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
       const closed = !overlay || overlay.style.display === 'none';
       if (!closed && Date.now() - t0 < 12000) { setTimeout(restore, 300); return; }
       hidden.forEach(h => { try { h.el.style.visibility = h.v || ''; } catch (_) {} });
+      cleanups.forEach(f => { try { f(); } catch (_) {} });
     };
     setTimeout(restore, 3000);
   } catch (e) { console.error('[iceArmorVsFx]', e); }

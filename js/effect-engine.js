@@ -24231,7 +24231,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _raAtk = ctx.bs && ctx.bs._attackingCard;
         const _raAtkSide = ctx.bs && ctx.bs._currentAttackerSide;
         const _raAtkP = _raAtkSide && ctx.bs[_raAtkSide];
-        if (_raAtk && _raAtkP && !(_raAtkP.battleArea || []).some(x => x && (x === _raAtk || (Array.isArray(x.stack) && x.stack.includes(_raAtk))))) {
+        // オンラインでは確認の間に相手からの同期で盤面のカードが作り直されるので、同じカード（カード番号・名前）がいればよい
+        // （アルクトゥルスモン P-239 で、アタック中のアンフィモンがいるのに「アタック中のデジモンがいない」になっていた）
+        const _raSame = (x) => !!(x && _raAtk && (x.cardNo || '') === (_raAtk.cardNo || '') && (x.name || '') === (_raAtk.name || ''));
+        if (_raAtk && _raAtkP && !(_raAtkP.battleArea || []).some(x => x && (x === _raAtk || _raSame(x) || (Array.isArray(x.stack) && (x.stack.includes(_raAtk) || x.stack.some(_raSame)))))) {
           ctx.addLog('⚠ アタック中のデジモンがいないので、アタックの対象は変更できない');
           callback();
           return;

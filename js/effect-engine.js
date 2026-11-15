@@ -23653,6 +23653,25 @@ function executeRecipeStep(step, ctx, store, callback) {
                 { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + _rdDk }));
           });
         };
+        // 「相手のデジモン2体をデッキの下に戻す」（opponent:2。ガブモン-友情の絆-ACE LM-022）: 指定の数だけ選んで順に戻す。
+        // 以前は1体だけ選んで終わっていた
+        const _rdN = (() => { const m = /:(\d+)$/.exec(_rdTStr); return m ? parseInt(m[1], 10) : 1; })();
+        if (_rdN > 1 && ctx._forceTargetIdx === undefined) {
+          const _rdEntries = _rdCands.map(i => ({ card: opponent.battleArea[i], own: false, zone: 'battleArea', idx: i }));
+          _pickSideTargets(_rdEntries, _rdN, ctx, effectiveSide, false, '🎯 デッキの' + (_rdTop ? '上' : '下') + 'に戻すデジモンを選んでください', (picked) => {
+            const list = (picked || []).map(e => e && e.card).filter(Boolean);
+            let k = 0;
+            const next = () => {
+              if (k >= list.length) { ctx.renderAll(); callback(); return; }
+              const c = list[k++];
+              const i = opponent.battleArea.indexOf(c);
+              if (i === -1) { next(); return; }
+              _doReturnDeck(i, next);
+            };
+            next();
+          });
+          break;
+        }
         if (effectiveSide === 'ai') {
           _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0], () => callback());
           break;
@@ -24192,6 +24211,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       ctx.bs._attackEndRequested = true;
       ctx.addLog('✋ アタックを終了させる');
       ctx.renderAll && ctx.renderAll();
+      // 「アタック終了！」の演出（両方の画面）
+      {
+        const _eaCard = ctx.bs._attackingCard || null;
+        if (typeof window !== 'undefined' && typeof window._fxAttackEnded === 'function') {
+          if (ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            try { window._onlineSendCommand({ type: 'fx_attackEnded', cardName: _eaCard ? _eaCard.name || '' : '', cardImg: _eaCard ? (_eaCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(_eaCard) : '') || '') : '', byName: ctx.card ? ctx.card.name || '' : '' }); } catch (_) {}
+          }
+          try { window._fxAttackEnded({ card: _eaCard, by: ctx.card ? ctx.card.name : '' }, () => callback()); } catch (_) { callback(); }
+          break;
+        }
+      }
       callback();
       break;
     }
@@ -24283,6 +24313,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       // CPU だけ自動。前の手順で決まった対象（_forceTargetIdx）があっても、変更先は自分で選ぶ
       // （ウォーグレイモン EX12-017【カウンター】でジョグレス進化した後、変更先がオメガモンに自動で決まっていた）
       if (ctx.side === 'ai') { _raFinish(_raCands[0]); break; }
+      // 「アタックの対象をこのデジモンに変更できる」は変更先が決まっているので選ぶ画面を出さない（アルクトゥルスモン P-239）
+      if ((_raTargetStr === 'self_card' || _raTargetStr === 'self') && ctx.card && _raCands.length === 1 && _raPool.battleArea[_raCands[0]] === ctx.card) { _raFinish(_raCands[0]); break; }
       showTargetSelection(_raRowId, _raCands, null, '#ff4444', _raFinish, '（アタックの対象にするデジモン）');
       break;
     }

@@ -135,6 +135,63 @@ function fireSecurityDecreaseThen(decreasedSide, cb) {
 // passive flag を 効果テキスト / 進化元 / _permEffects / buffs / レシピ直読み で総合判定する
 // flagName: 'blocker' / 'penetrate' / 'piercing' 等
 // kwBracket: '【ブロッカー】' / '【貫通】' 等（テキスト判定用、無くても可）
+// ≪氷装≫を持つか。オンラインでは相手のカードの永続効果（_permEffects）をこちらで計算しないので、レシピの passive・バフも見る
+// （ヴァイクモン LM-040 で、相手の端末でのバトルが DP で比べられて負けていた）
+function _hasIceArmor(c) {
+  if (!c) return false;
+  return hasPassiveFlag(c, 'iceArmor', '【氷装】') || hasPassiveFlag(c, 'ice_armor', '【氷装】')
+    || (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'ice_armor' || b.type === 'keyword_ice_armor')));
+}
+// ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方を凍らせる
+function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
+  try {
+    if (!document.getElementById('ice-armor-style')) {
+      const st = document.createElement('style'); st.id = 'ice-armor-style';
+      st.textContent = '@keyframes iceIn{0%{opacity:0;transform:translateX(-50%) scale(0.6)}60%{opacity:1;transform:translateX(-50%) scale(1.08)}100%{opacity:1;transform:translateX(-50%) scale(1)}}'
+        + '@keyframes iceFall{0%{transform:translateY(-20px) rotate(0);opacity:0}15%{opacity:1}100%{transform:translateY(110vh) rotate(360deg);opacity:0.2}}'
+        + '@keyframes iceFreeze{0%{opacity:0}100%{opacity:1}}';
+      document.head.appendChild(st);
+    }
+    const box = document.createElement('div');
+    box.className = '_ice-armor-fx';
+    box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147480000;overflow:hidden;';
+    document.body.appendChild(box);
+    // 冷気（画面の縁が白く凍る）と雪の結晶
+    box.innerHTML = '<div style="position:absolute;inset:0;box-shadow:inset 0 0 120px rgba(170,230,255,0.75);background:radial-gradient(ellipse at center,rgba(150,220,255,0) 45%,rgba(150,220,255,0.18) 100%);animation:iceFreeze 0.5s ease-out forwards;"></div>';
+    for (let i = 0; i < 26; i++) {
+      const f = document.createElement('div');
+      f.textContent = '❄';
+      f.style.cssText = 'position:absolute;left:' + (Math.random() * 100) + '%;top:-20px;color:#e6f7ff;font-size:' + (10 + Math.random() * 16) + 'px;text-shadow:0 0 6px #8fd8ff;animation:iceFall ' + (2.4 + Math.random() * 1.8) + 's linear ' + (Math.random() * 1.2) + 's forwards;';
+      box.appendChild(f);
+    }
+    // 「氷装 — 進化元の枚数で勝負」と枚数
+    const ban = document.createElement('div');
+    ban.style.cssText = 'position:absolute;left:50%;top:12%;transform:translateX(-50%);text-align:center;padding:8px 18px;border-radius:12px;background:rgba(10,30,60,0.85);border:2px solid #9be3ff;box-shadow:0 0 18px #6ccfff,inset 0 0 14px rgba(155,227,255,0.5);color:#fff;animation:iceIn 0.45s ease-out forwards;white-space:nowrap;';
+    ban.innerHTML = '<div style="font-size:clamp(1rem,4.6vw,1.5rem);font-weight:900;text-shadow:0 0 10px #6ccfff;">🧊 氷装 ― 進化元の枚数で勝負！</div>'
+      + '<div style="font-size:clamp(1.2rem,6vw,2rem);font-weight:900;margin-top:2px;"><span style="color:' + (winner === 'atk' ? '#bff0ff' : '#8aa') + '">' + a + '枚</span>'
+      + '<span style="color:#9be3ff;margin:0 10px;">vs</span><span style="color:' + (winner === 'def' ? '#bff0ff' : '#8aa') + '">' + d + '枚</span></div>';
+    box.appendChild(ban);
+    // 負けた方（引き分けは両方）のカードが凍りつく
+    const freeze = (area) => {
+      if (!area) return;
+      const r = area.getBoundingClientRect();
+      if (!r.width) return;
+      const ic = document.createElement('div');
+      ic.style.cssText = 'position:absolute;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:8px;opacity:0;'
+        + 'background:linear-gradient(135deg,rgba(220,245,255,0.55),rgba(120,200,255,0.35) 40%,rgba(230,250,255,0.6) 70%,rgba(140,210,255,0.4));'
+        + 'box-shadow:0 0 22px #9be3ff,inset 0 0 26px rgba(255,255,255,0.8);border:2px solid rgba(220,245,255,0.9);animation:iceFreeze 0.6s ease-out forwards;';
+      ic.innerHTML = '<svg width="100%" height="100%" viewBox="0 0 100 140" preserveAspectRatio="none" style="position:absolute;inset:0;"><path d="M50 0 L44 40 L58 62 L40 95 L52 140 M44 40 L20 55 M58 62 L85 70 M40 95 L15 112" stroke="rgba(255,255,255,0.9)" stroke-width="1.6" fill="none"/></svg>'
+        + '<div style="position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:12px;font-weight:900;color:#fff;text-shadow:0 0 8px #3bb6ff;">❄ 凍結 ❄</div>';
+      box.appendChild(ic);
+    };
+    setTimeout(() => {
+      if (winner === 'atk' || winner === 'tie') freeze(defArea);
+      if (winner === 'def' || winner === 'tie') freeze(atkArea);
+    }, 1500);
+    setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 3600);
+    setTimeout(() => box.remove(), 4100);
+  } catch (e) { console.error('[iceArmorVsFx]', e); }
+}
 function hasPassiveFlag(c, flagName, kwBracket) {
   if (!c) return false;
   // テキスト一致は誤検知が多い（メタルグレイモン「【ブロッカー】を得る」やカプリモン進化元
@@ -3984,7 +4041,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
     // ≪氷装≫: セキュリティデジモン以外とのバトルでは DP ではなく進化元枚数を比べる
     let _atkDp = atk.dp, _defDp = def.dp;
-    const iceArmorActive = (atk._permEffects && atk._permEffects.iceArmor) || (def._permEffects && def._permEffects.iceArmor);
+    const iceArmorActive = _hasIceArmor(atk) || _hasIceArmor(def);
     if (iceArmorActive) {
       _atkDp = atk.stack ? atk.stack.length : 0;
       _defDp = def.stack ? def.stack.length : 0;
@@ -4175,7 +4232,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
     // ≪氷装≫: 進化元枚数比較
     let _atkDp = atk.dp, _defDp = def.dp;
-    const iceArmorActive2 = (atk._permEffects && atk._permEffects.iceArmor) || (def._permEffects && def._permEffects.iceArmor);
+    const iceArmorActive2 = _hasIceArmor(atk) || _hasIceArmor(def);
     if (iceArmorActive2) {
       _atkDp = atk.stack ? atk.stack.length : 0;
       _defDp = def.stack ? def.stack.length : 0;
@@ -5752,10 +5809,16 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     // デジモン同士のバトル（セキュリティデジモン・ブロック・デジモンへのアタック）: カードがぶつかり合い、火花を散らして
     // 負けた方は砕け、勝った方が光る。その後の Win/Lost・消滅の演出はいつも通り
     // （≪氷装≫は進化元の枚数で比べる）
-    const _ice = (atkCard._permEffects && atkCard._permEffects.iceArmor) || (secCard._permEffects && secCard._permEffects.iceArmor);
-    const _a = _ice ? (atkCard.stack || []).length : (parseInt(atkCard.dp) || 0);
-    const _d = _ice ? (secCard.stack || []).length : (parseInt(secCard.dp) || 0);
+    // 相手から届いたVS画面のカードは名前と画像だけなので、盤面の同じカードで見る
+    const _iceReal = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && (y === c || (y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)))); if (x) return x; } return c; };
+    const _iA = _iceReal(atkCard), _iD = _iceReal(secCard);
+    // セキュリティデジモンとのバトルは DP で比べる（場にいない＝セキュリティのカード）
+    const _isSecurity = !['player', 'ai'].some(sd => (bs[sd].battleArea || []).includes(_iD));
+    const _ice = !_isSecurity && (_hasIceArmor(_iA) || _hasIceArmor(_iD));
+    const _a = _ice ? ((_iA && _iA.stack) || []).length : (parseInt(atkCard.dp) || 0);
+    const _d = _ice ? ((_iD && _iD.stack) || []).length : (parseInt(secCard.dp) || 0);
     const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
+    if (_ice) setTimeout(() => _iceArmorVsFx(overlay, _vsAtkArea, _vsDefArea, _a, _d, _winner), 1350);
     // 3回目の押し合いに入ったら callback（勝敗・消滅回避の判定）へ進む。VS画面は決着（_clashFinish）まで出したまま
     if (_clashPending) _clashForceClose();
     window._fxMoveHold = (window._fxMoveHold || 0) + 1;

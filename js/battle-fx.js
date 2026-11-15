@@ -4373,3 +4373,50 @@ function _fxBoardReturn(kind, p, done) {
   setTimeout(() => { try { layer.remove(); } catch (_) {} done(); }, tMax + 4000);
   return true;
 }
+
+// =====================================================
+//  効果でアタックが終了した（「そのアタックを終了させる」アンフィモン P-089）:
+//  アタックしていたカードの前に光の壁が立ちはだかり、カードが押し戻されて「アタック終了！」
+// =====================================================
+export function fxAttackEnded(p, callback) {
+  p = p || {};
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.45;
+  const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
+  const ov = _hitOverlay(66000);
+  const card = p.card;
+  // アタックしていたカード（下から突っ込んでくる）
+  const c = card ? _hitCard(ov, card, cx, cy + CH * 0.9, CW, CH, '#ff6b6b', card.name || '') : null;
+  if (c) { c.style.opacity = '0'; c.style.transition = 'transform 0.35s cubic-bezier(.3,1.4,.6,1),opacity 0.2s'; }
+  // 光の壁
+  const wall = document.createElement('div');
+  wall.style.cssText = 'position:absolute;left:50%;top:' + (cy - CH * 0.15) + 'px;width:' + Math.min(W * 0.8, 360) + 'px;height:14px;transform:translateX(-50%) scaleX(0);border-radius:8px;'
+    + 'background:linear-gradient(90deg,rgba(120,220,255,0),#bff3ff 20%,#ffffff 50%,#bff3ff 80%,rgba(120,220,255,0));box-shadow:0 0 24px #7fdcff,0 0 50px #4fb8ff;transition:transform 0.3s ease-out;';
+  ov.appendChild(wall);
+  setTimeout(() => { if (c) { c.style.opacity = '1'; c.style.transform = 'translateY(' + (-CH * 0.55) + 'px)'; } }, 120);
+  setTimeout(() => { wall.style.transform = 'translateX(-50%) scaleX(1)'; }, 300);
+  // ぶつかって押し戻される
+  setTimeout(() => {
+    if (c) { c.style.transition = 'transform 0.45s cubic-bezier(.2,.9,.3,1)'; c.style.transform = 'translateY(' + (CH * 0.35) + 'px) rotate(-6deg) scale(0.92)'; c.style.filter = 'grayscale(0.6) brightness(0.8)'; }
+    const fl = document.createElement('div');
+    fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at 50% ' + (cy - CH * 0.15) + 'px,rgba(255,255,255,0.85) 0%,rgba(127,220,255,0.35) 18%,rgba(0,0,0,0) 40%);animation:hxFlash 0.5s ease-out forwards;';
+    ov.appendChild(fl);
+  }, 620);
+  setTimeout(() => {
+    _hitTitle(ov, Math.max(14, cy - CH * 0.15 - 90), '✋ アタック終了！', '#7fdcff');
+    if (p.by) {
+      const s = document.createElement('div');
+      s.style.cssText = 'position:absolute;left:50%;top:' + (cy + CH * 1.05) + 'px;transform:translateX(-50%);color:#cfefff;font-size:12px;font-weight:bold;white-space:nowrap;text-shadow:0 0 6px #000;';
+      s.textContent = '「' + p.by + '」の効果でアタックが終了した';
+      ov.appendChild(s);
+    }
+  }, 700);
+  setTimeout(() => { ov.style.transition = 'opacity 0.3s'; ov.style.opacity = '0'; }, 2100);
+  setTimeout(() => { ov.remove(); done(); }, 2450);
+  setTimeout(done, 6000);
+}
+if (typeof window !== 'undefined') window._fxAttackEnded = fxAttackEnded;

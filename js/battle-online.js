@@ -1400,6 +1400,14 @@ function onRemoteCommand(cmd) {
     }
     // 相手の効果を受ける演出（手札に戻す・デッキに戻す・セキュリティに置く・退化・進化元を破棄）
     // 相手の【パーティション】（融合が解けて2体に分かれる）
+    // 相手の効果でこちらのアタックが終了した（アンフィモン P-089「そのアタックを終了させる」）
+    case 'fx_attackEnded': {
+      if (typeof window._fxAttackEnded === 'function') {
+        const c = cmd.cardName ? { name: cmd.cardName, imgSrc: cmd.cardImg || '', _remoteFx: true } : null;
+        enqueueFx((done) => window._fxAttackEnded({ card: c, by: cmd.byName || '' }, done));
+      }
+      break;
+    }
     case 'fx_partition': {
       if (typeof window._fxPartitionSplit === 'function' && cmd.host) {
         const mk = (o) => ({ name: (o && o.name) || '', imgSrc: (o && o.imgSrc) || '', _remoteFx: true });

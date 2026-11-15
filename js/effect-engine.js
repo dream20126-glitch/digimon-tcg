@@ -3259,7 +3259,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'cost_discard': {
-      const n = action.value || 1;
+      // 枚数: value か、対象の数（own_card:2 = 2枚。テティスモン LM-004「手札から青のカード2枚を破棄することで」。以前は1枚だけだった）
+      const n = action.value || (defaultTarget && defaultTarget.count) || 1;
       // 対象の絞り込み条件（cond_feature_contains等）。指定があれば手札全体ではなく
       // 条件を満たすカードだけがピッカーの選択候補になる（他のcost系アクションと同じ規約）
       const _cdConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
@@ -4829,8 +4830,33 @@ const _STEP_PURPOSE = {
   evo_discard_top: '進化元を破棄する', evo_discard_bottom: '進化元を破棄する', evo_discard_select: '進化元を破棄する',
   place_under_digimon: '下にカードを置く', link: 'リンクする', redirect_attack: 'アタック先にする', combat: 'バトルする',
 };
+// 対象の条件（DP/Lv/コストの上限・下限）を「DP10000以下の」のように書く。上限の修正（dp_le_mod 等。「進化元の色1色ごとに
+// 上限+1000」シリウスモンACE LM-001）は今の値で計算する（選ぶ画面の文言で、実際に選べる範囲が分かるように）
+function _stepTargetCondLabel(step) {
+  if (!step) return '';
+  const f = step.filter && typeof step.filter === 'object' ? step.filter : {};
+  const c = _curEffectCtx;
+  const mod = (base, m) => { try { return (c && c.bs && typeof base === 'number') ? _applyLeMod(base, m, c.bs, c.side, c.card) : base; } catch (_) { return base; } };
+  const parts = [];
+  if (typeof f.dp_le === 'number') parts.push('DP' + mod(f.dp_le, f.dp_le_mod) + '以下');
+  if (typeof f.dp_ge === 'number') parts.push('DP' + f.dp_ge + '以上');
+  if (typeof f.lv_le === 'number') parts.push('Lv.' + mod(f.lv_le, f.lv_le_mod) + '以下');
+  if (typeof f.lv_ge === 'number') parts.push('Lv.' + f.lv_ge + '以上');
+  if (typeof f.cost_le === 'number') parts.push('登場コスト' + mod(f.cost_le, f.cost_le_mod) + '以下');
+  // 条件の書き方（cond_dp_le:4000 等）
+  String(step.condition || '').split(/[&|]/).forEach((cs) => {
+    const m = /^cond_(dp_le|dp_ge|lv_le|lv_ge|cost_le|cost_ge):(\d+)$/.exec(cs.trim());
+    if (!m) return;
+    const lbl = { dp_le: ['DP', '以下'], dp_ge: ['DP', '以上'], lv_le: ['Lv.', '以下'], lv_ge: ['Lv.', '以上'], cost_le: ['登場コスト', '以下'], cost_ge: ['登場コスト', '以上'] }[m[1]];
+    const t = lbl[0] + m[2] + lbl[1];
+    if (!parts.includes(t)) parts.push(t);
+  });
+  return parts.length ? parts.join('・') + 'の' : '';
+}
 function _stepPurposeLabel(step) {
   if (!step || !step.action) return '';
+  const _cl = _stepTargetCondLabel(step);
+  if (_cl) { const base = _stepPurposeLabel(Object.assign({}, step, { filter: null, condition: null })); return base ? _cl + 'デジモンを' + base : ''; }
   const a = step.action;
   if (a === 'cant_destroy') return step.cause === 'battle' ? 'バトルで消滅しなくする' : step.cause === 'effect' ? '効果で消滅しなくする' : '消滅しなくする';
   if (a === 'grant_keyword' && step.keyword) {
@@ -5616,7 +5642,7 @@ function _handInPlacePick(candidates, opts) {
 // opts: { optional: true なら「破棄しない」ボタンを出す（押すと callback(null)）,
 //         title: 上部の見出し（省略時「🗑 手札から N 枚破棄」） }
 function showHandDiscardPicker(hand, wantCount, callback, opts) {
-  if (_confirmedCostDepth > 0 && opts && opts.optional) opts = Object.assign({}, opts, { optional: false });
+  if ((_confirmedCostDepth > 0 || _curStepConfirmed) && opts && opts.optional) opts = Object.assign({}, opts, { optional: false });
   // 手札の上で直接選ぶ（手札が見えないときだけ下の一覧）
   if (_handInPlacePick(hand, { title: (opts && opts.title) || ('🗑 手札から ' + wantCount + ' 枚破棄'), wantCount,
     optional: !!(opts && opts.optional), skipLabel: '破棄しない', upTo: !!(opts && opts.upTo),
@@ -6049,7 +6075,7 @@ if (typeof window !== 'undefined') window._showCardListConfirm = showCardListCon
 // opts.onSelectAll: 指定すると「✅ 全て選択する」ボタンを出す（押したら画面を閉じて onSelectAll() を呼ぶ。
 // 選んだカードの確認は呼び出し側で行う）
 export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash, opts) {
-  if (_confirmedCostDepth > 0) optional = false;
+  if (_confirmedCostDepth > 0 || _curStepConfirmed) optional = false;
   // 候補が手札とトラッシュの両方にある1枚選び（「自分の手札/トラッシュから〜1枚」）は、先に「手札から／トラッシュから」を
   // 選んでから、そのゾーンの一覧で選ぶ（進化・登場と同じ選び方。カノーヴァイスモン EX12-014 の進化元の下に置く等で
   // 一覧に混ざっていた）。一覧の「↩ 戻る」で選び直せる
@@ -11681,6 +11707,9 @@ function _pickOptional(ctx, step, opt) {
   return true;
 }
 let _confirmedCostDepth = 0;
+// 今処理しているステップが「効果を発動しますか？」で「はい」を選んだ任意のステップか（executeRecipeStep が記録）。
+// そのステップの選択画面（トラッシュ/手札/盤面の一覧）には「やめる／使わない」を出さない（全挙動共通。シリウスモンACE LM-001）
+let _curStepConfirmed = false;
 const EFFECT_FAILED_NO_TARGET = '対象がいませんでした';
 // トラッシュ等のゾーンに選べるカードが無かったとき（「〜を手札に戻す」等、対象がカードの場合）
 const EFFECT_FAILED_NO_CARD = '対象がありませんでした';
@@ -17527,7 +17556,7 @@ function runRecipe(steps, ctx, callback) {
       }
       console.log('[runRecipe] step failed but next has continue_on_fail → continue');
     }
-    if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); ctx.renderAll(); callback && callback(); return; }
+    if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); _curStepConfirmed = false; ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
     console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
     // 「強制 → その後、〇〇することで（任意）」: コスト持ちステップに来たらここで発動確認する
@@ -18695,6 +18724,7 @@ function executeRecipeStep(step, ctx, store, callback) {
   }
 
   console.log('[executeRecipeStep] step:', JSON.stringify(step).substring(0, 200));
+  _curStepConfirmed = _isConfirmedStep(ctx, step);
   // 「その後」の効果のうち「効果1のコストを支払ったときだけ」（requires_prev_cost。鼓堂リツ P-087「このテイマーを
   // レストさせることで、Aなら〜。Bなら〜」の「Bなら〜」）: 前のコストを払っていなければ、この効果だけ行わない
   if (step && step.requires_prev_cost && ctx && ctx._lastCostPaid !== true) {
@@ -25243,6 +25273,7 @@ function executeRecipeStep(step, ctx, store, callback) {
 // sources: [{ card, remove, zone:'battle'|'linked'|'trash'|'hand'|'tamer', holder? }]
 // done(picked | null)。optional なら「やめる」で null
 function _showBoardMultiSourcePicker(sources, want, title, optional, done) {
+  if (_curStepConfirmed || _confirmedCostDepth > 0) optional = false;
   const bs = (typeof window !== 'undefined') ? window._lastBattleState : null;
   const row = document.getElementById('pl-battle-row');
   if (!bs || !row) { done(null); return; }

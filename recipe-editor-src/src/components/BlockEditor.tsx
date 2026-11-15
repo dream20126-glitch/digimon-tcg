@@ -346,23 +346,26 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
 // 原因の選択（バトルで / 効果で ＋「以外」）。「以外」はバトル/効果を選んだときだけ表示する
 //   効果で → effect、効果+以外 → not_effect（効果以外で）、バトル+以外 → not_battle（バトル以外で）
 // allowEmpty: 全部外して「原因を問わない」にできる（トリガーごとの原因欄）
-type CauseCodeT = 'battle' | 'effect' | 'not_battle' | 'not_effect';
+//   バトル＋効果の両方 → battle_effect、両方＋以外 → not_battle_effect（「自分の効果とバトル以外で」【パーティション】。主体は効果のほうに掛かる）
+type CauseCodeT = 'battle' | 'effect' | 'not_battle' | 'not_effect' | 'battle_effect' | 'not_battle_effect';
 function CauseToggle({ value, onChange, allowEmpty, accentColor }: { value?: string; onChange: (v: CauseCodeT | '') => void; allowEmpty?: boolean; accentColor?: string }) {
   const v = value || '';
   const not = v.startsWith('not_');
   const base = v.replace(/^not_/, '');
+  const bases = base === 'battle_effect' ? ['battle', 'effect'] : (base ? [base] : []);
   const opts = [{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }, ...(base ? [{ code: 'not', label: '以外' }] : [])];
-  const values = [...(base ? [base] : []), ...(not ? ['not'] : [])];
+  const values = [...bases, ...(not ? ['not'] : [])];
   return (
     <MultiButtonGroup
       options={opts}
       values={values}
       onToggle={(code, on) => {
-        let nb = base, nn = not;
+        let nb = bases.slice(), nn = not;
         if (code === 'not') nn = on;
-        else nb = on ? code : '';
-        if (!nb) { if (allowEmpty) onChange(''); return; }
-        onChange(((nn ? 'not_' : '') + nb) as CauseCodeT);
+        else nb = on ? Array.from(new Set(nb.concat([code]))) : nb.filter((x) => x !== code);
+        const b = nb.length === 2 ? 'battle_effect' : (nb[0] || '');
+        if (!b) { if (allowEmpty) onChange(''); return; }
+        onChange(((nn ? 'not_' : '') + b) as CauseCodeT);
       }}
       accentColor={accentColor}
     />

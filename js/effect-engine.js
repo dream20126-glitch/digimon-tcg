@@ -15485,10 +15485,15 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
     if (cs === 'opp') return dc.causerSide !== carrierSide;
     return true;
   };
+  // バトルと効果の両方（battle_effect / not_battle_effect）: 原因の主体は効果のほうだけに掛ける。
+  // not_battle_effect + own =「自分の効果とバトル以外で」（相手の効果・ルール（DP0等）なら成立。【パーティション】16-29-1）
+  const _bothMatch = () => (!!dc && dc.type === 'battle') || matches('effect');
+  if (cause === 'not_battle_effect') return !_bothMatch();
+  if (cause === 'battle_effect') { if (!_bothMatch()) return false; }
   // not_effect / not_battle（「〜以外で」）: 原因がそれに当てはまらなければ成立。原因の主体と組み合わせると
   // 「自分の効果以外で」＝自分の効果で…ではない（バトル・ルール・相手の効果）になる（EX12-003 カプリモン）
-  if (/^not_/.test(String(cause))) return !matches(String(cause).slice(4));
-  if (!matches(cause)) return false;
+  else if (/^not_/.test(String(cause))) return !matches(String(cause).slice(4));
+  else if (!matches(cause)) return false;
   // 「相打ちは除く」（cause_survived。ディルビットモン P-090「自分のデジモンがバトルで相手のデジモンだけを消滅させたとき」）:
   // バトルの相手（原因のカード）がまだ場に残っているときだけ。原因のカードが分からなければ判定しない
   if (step && step.cause_survived && cause === 'battle' && dc && dc.causerCard && bs) {
@@ -26612,6 +26617,11 @@ export function whenDestroyApplies(card, triggerCode, causeType, info) {
     const subjOk = !info || !cs || cs === 'both' ? true
       : cs === 'own' ? info.causerSide === info.carrierSide
       : cs === 'opp' ? info.causerSide !== info.carrierSide : true;
+    // バトルと効果の両方（battle_effect / not_battle_effect）: 主体は効果のほうだけに掛ける
+    if (c === 'not_battle_effect' || c === 'battle_effect') {
+      const hit = causeType === 'battle' || (causeType === 'effect' && subjOk);
+      return c === 'battle_effect' ? hit : !hit;
+    }
     if (/^not_/.test(String(c))) return !(String(c).slice(4) === causeType && subjOk);
     return c === causeType && subjOk;
   };

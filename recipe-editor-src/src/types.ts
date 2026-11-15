@@ -1,5 +1,5 @@
 // 原因: バトルで / 効果で / バトル以外で / 効果以外で
-export type CauseCode = 'battle' | 'effect' | 'not_battle' | 'not_effect';
+export type CauseCode = 'battle' | 'effect' | 'not_battle' | 'not_effect' | 'battle_effect' | 'not_battle_effect';
 // 効果ブロックで使う条件1個のペア
 export interface ConditionPair {
   base: string; // condition code (cond_xxx)

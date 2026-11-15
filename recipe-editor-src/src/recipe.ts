@@ -10,8 +10,8 @@ const NEGATE_TRIGGERS: unknown[] = ['on_play', 'on_evolve', 'on_attack', 'main']
 const parseValueMode = (s: any): 'all' | 'exact' | 'up_to' | 'until' | undefined =>
   (s?.value_mode === 'all' || s?.value_mode === 'exact' || s?.value_mode === 'up_to' || s?.value_mode === 'until') ? s.value_mode
     : s?.value_up_to === true ? 'up_to' : undefined;
-const isCauseCode = (v: unknown): v is 'battle' | 'effect' | 'not_battle' | 'not_effect' =>
-  v === 'battle' || v === 'effect' || v === 'not_battle' || v === 'not_effect';
+const isCauseCode = (v: unknown): v is 'battle' | 'effect' | 'not_battle' | 'not_effect' | 'battle_effect' | 'not_battle_effect' =>
+  v === 'battle' || v === 'effect' || v === 'not_battle' || v === 'not_effect' || v === 'battle_effect' || v === 'not_battle_effect';
 
 // 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
 // チェックがONのとき、独立したstepにはせず直前の効果のfilter.cost_le_modへ埋め込む

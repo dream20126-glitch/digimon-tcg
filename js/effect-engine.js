@@ -15468,7 +15468,9 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
 // これらは常に triggerKey='on_destroy' の文脈でのみ使われる（呼び出し元4箇所とも固定）ため、
 // _resolveStepSubject への triggerCode 指定を 'on_destroy' に固定してよい
 const _isOppSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'opp' || subj === 'opp_any' || subj === 'opp_card'; };
-const _isOwnSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'own' || subj === 'own_any' || subj === 'own_card'; };
+// 「他の自分のデジモンが消滅したとき」（other_own。ガンマモン LM-016）も自分の側の反応（以前は含めておらず、発動しなかった）。
+// 消滅したカードはもう場にいないので、反応するのは他のデジモンだけになる
+const _isOwnSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'own' || subj === 'own_any' || subj === 'own_card' || subj === 'other_own' || subj === 'other_own_digimon' || subj === 'other_own_card' || subj === 'target_other_own'; };
 const _isBothSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'both' || subj === 'both_digimon' || subj === 'both_card' || subj === 'both_other' || subj === 'both_other_digimon'; };
 
 // ===== on_destroy の「原因」(cause/cause_subject) 判定 =====

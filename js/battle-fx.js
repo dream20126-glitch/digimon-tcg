@@ -4388,8 +4388,11 @@ export function fxAttackEnded(p, callback) {
   if (typeof document === 'undefined' || !document.body) { callback && callback(); return; }
   window._fxAnimActive = (window._fxAnimActive || 0) + 1;
   _ensureHitStyle();
-  // 盤面上で演出する（アタックしていたカードの場所が分かれば）
+  // 盤面上だけで演出する（中央に出す演出は使わない）。カードの場所が分からなければ何も出さずに進む
   try { if (_fxAttackEndedBoard(p, done)) return; } catch (e) { console.error('[fxAttackEndedBoard]', e); }
+  console.warn('[fxAttackEnded] 盤面の場所が分からないので演出なし', p && p.slot, p && p.card && p.card.name);
+  done();
+  return;
   const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.45;
   const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
   const ov = _hitOverlay(66000);
@@ -4452,6 +4455,7 @@ function _fxAttackEndedBoard(p, done) {
   const sp = _boardSlotRect(slot);
   if (!sp) return false;
   const bySp = p && p.bySlot ? _boardSlotRect(p.bySlot) : null;
+  console.log('[fxAttackEnded] 盤面で演出 アタック中=' + JSON.stringify(slot) + ' 効果のカード=' + JSON.stringify((p && p.bySlot) || null));
   const real = bsNow && bsNow[slot.side] && (bsNow[slot.side].battleArea || [])[slot.idx];
   const showCard = real || card;
   const r = sp.r;

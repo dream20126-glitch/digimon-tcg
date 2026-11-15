@@ -1723,6 +1723,12 @@ function onRemoteCommand(cmd) {
       bs._collisionBlockPending = false;
       // 相手の【衝突】のアタック中だけ付けたブロッカーを外す（ブロックの解決を通らずに終わった場合も残さない）
       if (window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
+      // 相手のアタックが終わった: 「アタック終了まで」「バトル終了まで」の効果をこちらでも外す
+      // （【衝突】で相手のデジモン全てに与えた【ブロッカー】（バトル終了まで）が、こちらの画面で付きっぱなしだった。アルクトゥルスモン P-239）
+      if (m.expireBuffs) {
+        try { m.expireBuffs('dur_until_attack_end', null, 'ai'); m.expireBuffs('dur_until_battle_end', null, 'ai'); } catch (_) {}
+      }
+      renderAll();
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
       break;
     }

@@ -4778,7 +4778,8 @@ function _doBounceTamer(targetSide, tamer, ctx, callback) {
       window._onlineSendCommand({ type: 'card_removed', zone: 'tamer', tamerIdx: tIdx, cardName: tamer.name, reason: 'bounce' });
     }
     ctx.renderAll();
-    finish();
+    // 手札に戻る演出（デジモンと同じ。両方の画面）。以前はテイマーだけ演出が無かった（アンフィモンACE LM-005）
+    _effectHitSync(ctx, 'hand', { card: tamer, remote: targetSideName === 'ai' }, finish);
   });
 }
 function doBounce(targetSide, slotIdx, ctx, callback) {
@@ -17227,9 +17228,19 @@ function _inlineCostConfirmText(step, fullText, card) {
   // 含む段落から「その後〜」を取る（アンフィモン＆クリスタルフリーザー EX12-033 で、その後の効果のポップアップに
   // その後の前の効果の文章が出ていた）
   if (card) {
-    const key = t.replace(/【[^】]*】/g, '').replace(/[\s。]/g, '').slice(0, 12);
-    const paras = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n').split('\n');
-    const hit = paras.find(p => p.indexOf('その後') >= 0 && (!key || p.replace(/【[^】]*】/g, '').replace(/[\s。]/g, '').indexOf(key) >= 0));
+    const norm = (x) => String(x || '').replace(/【[^】]*】/g, '').replace(/[\s。]/g, '');
+    const full = norm(t);
+    // 【セキュリティ】の効果ならセキュリティの文章から探す。効果1の文章を長く比べてから、短く比べる
+    // （ブルー・スクランブル LM-028: 【セキュリティ】「自分のトラッシュから、青の…」の「その後」に、【メイン】側の
+    // 「自分のトラッシュから、青の…。その後、自分のデジモンがいないなら…」の文章が出ていた）
+    const order = /^【セキュリティ】/.test(t.trim()) ? [card.securityEffect, card.effect, card.evoSourceEffect] : [card.effect, card.evoSourceEffect, card.securityEffect];
+    const paras = order.filter(Boolean).join('\n').split('\n');
+    let hit = null;
+    for (const len of [40, 24, 12]) {
+      const key = full.slice(0, len);
+      hit = paras.find(p => p.indexOf('その後') >= 0 && (!key || norm(p).indexOf(key) >= 0));
+      if (hit) break;
+    }
     if (hit) return hit.slice(hit.indexOf('その後'));
   }
   return t;
@@ -20461,13 +20472,19 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _rcConds = (_rhAction.conditions || []);
           const _rcCondSide = ctx.side === 'player' ? 'ai' : 'player';
           const _rcEntries = [];
+          const _rcWhy = [];
           ['battleArea', 'tamerArea'].forEach((zone) => (opponent[zone] || []).forEach((c, idx) => {
             if (!c) return;
-            if (_rcF && !cardMatchesFilter(c, _rcF, ctx.bs, ctx.side, ctx.card)) return;
-            if (_rcConds.length > 0 && !checkConditions(_rcConds, c, ctx.bs, _rcCondSide)) return;
-            if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) return;
+            const _st = Array.isArray(c.stack) ? c.stack.length : 0;
+            if (_rcF && !cardMatchesFilter(c, _rcF, ctx.bs, ctx.side, ctx.card)) { _rcWhy.push(c.name + '(下' + _st + '枚)=条件外'); return; }
+            if (_rcConds.length > 0 && !checkConditions(_rcConds, c, ctx.bs, _rcCondSide)) { _rcWhy.push(c.name + '=条件外'); return; }
+            if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) { _rcWhy.push(c.name + '=戻らない効果'); return; }
+            if (!_stepAllowsImmunePick && _isImmuneToEffect(c, ctx)) { _rcWhy.push(c.name + '=効果を受けない'); return; }
+            _rcWhy.push(c.name + '(下' + _st + '枚)=候補');
             _rcEntries.push({ card: c, own: false, zone, idx });
           }));
+          // 調査用（アンフィモンACE LM-005 で、下にカードがないデジモンがいたのにテイマーが選ばずに戻された）
+          console.log('[return_hand opponent_card] ' + _rcWhy.join(' / '));
           if (_rcEntries.length === 0) {
             ctx.addLog('⚠ 対象がいません');
             if (step.optional) { callback(); break; }
@@ -23545,6 +23562,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         break;
       }
       if (_rdTStr.startsWith('opponent')) {
+        // 「この効果で戻らなかったなら」（cond_last_action_eq:0。ヴァルキリモン LM-039）用に、戻した数を残す。
+        // 以前はここで数を記録せず、前の効果の値が残って、戻したのに【Sアタック+1】が付いていた
+        if (ctx.bs) { ctx.bs._lastActionCount = 0; ctx.bs._lastActionCards = []; }
         const _rdConds = step.condition ? parseRecipeCondition(step.condition) : [];
         const _rdCondSide = ctx.side === 'player' ? 'ai' : 'player';
         const _rdCands = [];
@@ -23577,6 +23597,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
             if (Array.isArray(step.options) && step.options.includes('face_down')) c._faceDown = true;
             if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
+            if (ctx.bs) { ctx.bs._lastActionCount = (ctx.bs._lastActionCount || 0) + 1; ctx.bs._lastActionCards = (ctx.bs._lastActionCards || []).concat([c]); }
             ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
               window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck', top: !!_rdTop, cardName: c.name || '', faceDown: !!c._faceDown });

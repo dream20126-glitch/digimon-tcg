@@ -4131,11 +4131,37 @@ if (typeof window !== 'undefined') window._fxPartitionSplit = fxPartitionSplit;
 function _boardSlotRect(slot) {
   if (!slot) return null;
   const row = document.getElementById(slot.side === 'player' ? 'pl-battle-row' : 'ai-battle-row');
-  const el = row ? row.querySelectorAll('.b-slot')[slot.idx] : null;
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (!r.width || !r.height || r.bottom < 0 || r.top > window.innerHeight) return null;
-  return { el, r };
+  if (!row) return null;
+  const all = row.querySelectorAll('.b-slot');
+  const el = all[slot.idx];
+  if (el) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height && r.bottom >= 0 && r.top <= window.innerHeight) return { el, r };
+  }
+  // 相手の画面では、同期で盤面の後ろの空き枠が詰められて、消えたカードの枠が無いことがある
+  // （Firebase は配列の末尾の空きを落とす）。並びの間隔から、その枠があるはずの位置を割り出す
+  const vis = Array.from(all).map(e => ({ e, r: e.getBoundingClientRect() })).filter(o => o.r.width && o.r.height);
+  let r;
+  if (vis.length > 0) {
+    const base = vis[vis.length - 1], n = vis.length - 1;
+    const w = base.e.classList.contains('suspended') ? base.r.height : base.r.width;
+    const h = base.e.classList.contains('suspended') ? base.r.width : base.r.height;
+    const pitch = vis.length >= 2 ? (vis[1].r.left + vis[1].r.width / 2) - (vis[0].r.left + vis[0].r.width / 2) : w + 6;
+    const cx = base.r.left + base.r.width / 2 + (slot.idx - n) * pitch, cy = base.r.top + base.r.height / 2;
+    r = { left: cx - w / 2, top: cy - h / 2, width: w, height: h, right: cx + w / 2, bottom: cy + h / 2 };
+  } else {
+    const rr = row.getBoundingClientRect();
+    if (!rr.height) return null;
+    const h = Math.min(rr.height, 110), w = h * 0.72, cx = rr.left + rr.width / 2, cy = rr.top + rr.height / 2;
+    r = { left: cx - w / 2, top: cy - h / 2, width: w, height: h, right: cx + w / 2, bottom: cy + h / 2 };
+  }
+  if (r.bottom < 0 || r.top > window.innerHeight) return null;
+  // 画面の外にはみ出すときは画面の中に収める
+  const vw = window.innerWidth;
+  if (r.left < 4) { const d = 4 - r.left; r.left += d; r.right += d; }
+  if (r.right > vw - 4) { const d = r.right - (vw - 4); r.left -= d; r.right -= d; }
+  const ph = document.createElement('div'); // classList を見るための代わり（横向きでない扱い）
+  return { el: ph, r };
 }
 function _boardTrashRect(side) {
   const cnt = document.getElementById(side === 'player' ? 'pl-trash-count' : 'ai-trash-count');

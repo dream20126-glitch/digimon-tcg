@@ -3373,6 +3373,10 @@ export function fxEffectHit(kind, p, callback) {
   if (typeof document === 'undefined' || !document.body || !p.card) { callback && callback(); return; }
   window._fxAnimActive = (window._fxAnimActive || 0) + 1;
   _ensureHitStyle();
+  // 手札に戻す／デッキに戻すは、盤面のそのカードの場所で演出する（場所が分からなければ下の中央の演出）
+  if (kind === 'hand' || kind === 'deck') {
+    try { if (_fxBoardReturn(kind, p, done)) return; } catch (e) { console.error('[fxBoardReturn]', e); }
+  }
   const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H * 0.45;
   const CW = Math.min(120, W * 0.3), CH = CW * 1.4;
   const ov = _hitOverlay(66000);
@@ -4252,4 +4256,120 @@ if (typeof window !== 'undefined') {
   window._fxBoltDestroy = (items, cb) => {
     try { fxBoardDestroy(items, cb); } catch (e) { console.error('[fxBoardDestroy]', e); fxImpactDestroy(items, cb); }
   };
+}
+
+
+// =====================================================
+//  手札に戻す／デッキに戻す（盤面上の演出）: 画面を暗くせず、盤面のそのカードの場所で
+//  手札＝緑の渦に巻かれて回りながら手札へ／デッキ＝光の鎖がX字に巻き付いてデッキへ引き込まれる。
+//  カードの場所（_fxSlot / slot）が分からなければ false（従来の中央の演出）
+// =====================================================
+function _boardZoneRect(side, kind) {
+  let el = null;
+  if (kind === 'deck') el = document.getElementById(side === 'player' ? 'pl-deck-img' : 'ai-deck-img');
+  else if (side === 'player') el = document.getElementById('hand-wrap') || (document.getElementById('pl-hand-count') || {}).parentElement;
+  else { const c = document.getElementById('ai-hand-count'); el = c ? (c.parentElement || c) : null; }
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  // 手札の並びは横に長いので、真ん中あたりへ
+  return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 40), r };
+}
+function _fxBoardReturn(kind, p, done) {
+  if (typeof document === 'undefined' || !document.body) return false;
+  const list = (Array.isArray(p.cards) && p.cards.length ? p.cards : [{ card: p.card, remote: p.remote, slot: p.slot }])
+    .filter(it => it && it.card).slice(0, 6);
+  if (list.length === 0) return false;
+  const slots = list.map(it => it.slot || it.card._fxSlot || (list.length === 1 ? p.slot : null));
+  if (slots.some(s => !s || s.zone === 'tamer')) return false;
+  const spots = slots.map(s => _boardSlotRect(s));
+  if (spots.some(s => !s)) return false;
+  if (!document.getElementById('fx-absorb-style')) {
+    const st2 = document.createElement('style'); st2.id = 'fx-absorb-style';
+    st2.textContent = '@keyframes abSpin{to{transform:rotate(-360deg)}}@keyframes abSpinR{to{transform:rotate(360deg)}}@keyframes abSwirl{0%{transform:rotate(0deg) translateX(var(--r)) scale(1);opacity:0}20%{opacity:1}100%{transform:rotate(540deg) translateX(0) scale(0.2);opacity:0}}';
+    document.head.appendChild(st2);
+  }
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46600;overflow:hidden;';
+  document.body.appendChild(layer);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const isHand = kind === 'hand';
+  const COL = isHand ? '#44dd88' : '#ffd84a';
+  const STEP = 260;
+  let tMax = 0;
+  list.forEach((it, i) => {
+    const { r } = spots[i];
+    const side = slots[i].side;
+    const susp = !!slots[i].susp;
+    const cw = susp ? r.height : r.width, ch = susp ? r.width : r.height;
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const src = it.card.imgSrc || cardImg(it.card) || '';
+    const t0 = 80 + i * STEP;
+    const dest = _boardZoneRect(side, kind) || { x: x, y: side === 'player' ? window.innerHeight - 40 : 40 };
+    const c = add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + (susp ? 90 : 0) + 'deg);box-shadow:0 0 10px ' + COL + ';will-change:transform,opacity;',
+      src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + (it.card.name || '') + '</div>');
+    // 行き先のラベル（カードの上）
+    const lbl = add('position:absolute;left:' + x + 'px;top:' + (y - Math.max(cw, ch) / 2 - 6) + 'px;transform:translate(-50%,-100%) scale(0.6);opacity:0;white-space:nowrap;font-size:11px;font-weight:900;color:#fff;padding:2px 7px;border-radius:9px;background:rgba(0,0,0,0.75);border:1px solid ' + COL + ';box-shadow:0 0 8px ' + COL + ';transition:transform 0.25s cubic-bezier(.2,.9,.3,1.4),opacity 0.25s;z-index:5;',
+      isHand ? '🌀 手札へ' : '⛓ デッキの' + (p.top ? '上' : '下') + 'へ');
+    setTimeout(() => { lbl.style.opacity = '1'; lbl.style.transform = 'translate(-50%,-100%) scale(1)'; }, t0 + 100);
+    let fx = null;
+    if (isHand) {
+      // 緑の渦（カードの場所で回る）
+      const VS = Math.max(cw, ch) * 1.7;
+      const ring = (sc, wdt, op, dur) => '<div style="position:absolute;left:' + (50 - sc * 50) + '%;top:' + (50 - sc * 50) + '%;width:' + sc * 100 + '%;height:' + sc * 100 + '%;border-radius:50%;border:' + wdt + 'px dashed rgba(68,221,136,' + op + ');box-shadow:0 0 12px rgba(68,221,136,0.6),inset 0 0 14px rgba(68,221,136,0.45);animation:abSpin ' + dur + 's linear infinite;"></div>';
+      fx = add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + VS + 'px;height:' + VS + 'px;opacity:0;transform:translate(-50%,-50%) scale(0.3);transition:opacity 0.3s,transform 0.35s;',
+        '<div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,rgba(68,221,136,0.05) 0%,rgba(68,221,136,0.25) 60%,rgba(68,221,136,0) 72%);"></div>'
+        + ring(1, 4, 0.95, 1.1) + ring(0.75, 3, 0.7, 0.8) + ring(0.5, 2, 0.5, 0.6));
+      layer.insertBefore(fx, c);
+      setTimeout(() => { fx.style.opacity = '1'; fx.style.transform = 'translate(-50%,-50%) scale(1)'; }, t0);
+      setTimeout(() => { c.style.transition = 'transform 0.45s ease-in-out'; c.style.transform = 'rotate(' + ((susp ? 90 : 0) + (i % 2 ? 10 : -10)) + 'deg) scale(0.92)'; }, t0 + 250);
+    } else {
+      // 光の鎖がカードにX字に巻き付く
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const pad = 8, SW = cw + pad * 2, SH = ch + pad * 2;
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('width', SW); svg.setAttribute('height', SH);
+      svg.style.cssText = 'position:absolute;left:' + (x - SW / 2) + 'px;top:' + (y - SH / 2) + 'px;overflow:visible;z-index:3;';
+      [['M 0 0 L ' + SW + ' ' + SH, 0], ['M ' + SW + ' 0 L 0 ' + SH, 0.12], ['M -4 ' + SH * 0.5 + ' L ' + (SW + 4) + ' ' + SH * 0.5, 0.24]].forEach(([d, dl]) => {
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#ffe27a'); path.setAttribute('stroke-width', '4'); path.setAttribute('stroke-dasharray', '9 4');
+        path.style.cssText = 'filter:drop-shadow(0 0 4px #ffb000);stroke-dashoffset:300;opacity:0;';
+        svg.appendChild(path);
+        setTimeout(() => { path.style.opacity = '1'; path.style.animation = 'hxChain 0.5s ease-out forwards'; }, t0 + 150 + dl * 1000);
+      });
+      layer.appendChild(svg);
+      fx = svg;
+      setTimeout(() => { c.style.transition = 'filter 0.3s'; c.style.filter = 'brightness(1.25) sepia(0.4)'; }, t0 + 500);
+    }
+    // 行き先へ引き込まれる
+    const tFly = t0 + (isHand ? 800 : 900);
+    setTimeout(() => {
+      const dx = dest.x - x, dy = dest.y - y;
+      c.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s';
+      c.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(0.2) rotate(' + (isHand ? 540 : (susp ? 90 : 0)) + 'deg)';
+      c.style.opacity = '0.25';
+      lbl.style.transition = 'opacity 0.3s'; lbl.style.opacity = '0';
+      if (fx) {
+        fx.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s';
+        fx.style.transform = isHand ? 'translate(calc(-50% + ' + dx + 'px),calc(-50% + ' + dy + 'px)) scale(0.15)' : 'translate(' + dx + 'px,' + dy + 'px) scale(0.2)';
+        fx.style.opacity = '0';
+      }
+      for (let q = 0; q < 7; q++) {
+        const px = x + (Math.random() - 0.5) * cw, py = y + (Math.random() - 0.5) * ch;
+        const pt = add('position:absolute;left:' + px + 'px;top:' + py + 'px;width:6px;height:6px;margin:-3px;border-radius:50%;background:' + (isHand ? '#bfffd8' : '#fff1b0') + ';box-shadow:0 0 8px ' + COL + ';transition:transform 0.7s cubic-bezier(.6,0,.9,.6) ' + (q * 0.04) + 's,opacity 0.7s ' + (q * 0.04) + 's;');
+        requestAnimationFrame(() => { pt.style.transform = 'translate(' + (dest.x - px) + 'px,' + (dest.y - py) + 'px) scale(0.3)'; pt.style.opacity = '0'; });
+      }
+    }, tFly);
+    // 行き先が光る
+    setTimeout(() => {
+      c.style.opacity = '0';
+      if (dest.r) add('position:absolute;left:' + dest.r.left + 'px;top:' + dest.r.top + 'px;width:' + dest.r.width + 'px;height:' + Math.min(dest.r.height, 90) + 'px;border-radius:6px;box-shadow:0 0 16px ' + COL + ',inset 0 0 10px ' + COL + ';animation:hxFlash 0.6s ease-out forwards;');
+    }, tFly + 720);
+    tMax = Math.max(tMax, tFly + 1350);
+  });
+  setTimeout(() => { layer.style.transition = 'opacity 0.2s'; layer.style.opacity = '0'; }, tMax);
+  setTimeout(() => { layer.remove(); done(); }, tMax + 230);
+  setTimeout(() => { try { layer.remove(); } catch (_) {} done(); }, tMax + 4000);
+  return true;
 }

@@ -712,6 +712,7 @@ function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
     if (i2 === -1) { const hits = opponent.battleArea.filter(_same); if (hits.length === 1) i2 = opponent.battleArea.indexOf(hits[0]); }
     if (i2 === -1) { done && done(false); return; }
     c = opponent.battleArea[i2];
+    _setFxSlot(c, sideName, i2, c.suspended);
     opponent.battleArea[i2] = null;
     if (c.stack) c.stack.forEach(s2 => opponent.trash.push(s2));
     if (c.linkedCards) c.linkedCards.forEach(s2 => opponent.trash.push(s2));
@@ -4806,6 +4807,7 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
   // 【分離】: リンクカードを1枚破棄して、手札に戻ること自体をキャンセルできる
   tryCancelViaLeaveBattle(bounced, targetSideName, ctx.bs, ctxBase, 'hand', (canceled) => {
     if (canceled) { finish(); return; }
+    _setFxSlot(bounced, targetSideName, slotIdx, bounced.suspended);
     targetSide.battleArea[slotIdx] = null;
     // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
     // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
@@ -5893,6 +5895,16 @@ function _hitFxOn() { return typeof window !== 'undefined' && typeof window._fxE
 // 両方の画面に出す。出せないとき（_hitFxOn が false）は fallback（いつもの移動演出）
 // 複数体をまとめて手札に戻している間は、1体ずつの演出を出さずに集める（最後に1回の演出で順に吸い込む）
 let _hitCollect = null;
+// 盤面上の演出（消滅・手札に戻す・デッキに戻す）用に、場を離れるカードがいた場所を覚える
+function _setFxSlot(card, side, idx, susp) {
+  if (!card || idx == null || idx < 0) return;
+  try { Object.defineProperty(card, '_fxSlot', { value: { side, idx, susp: !!susp }, enumerable: false, writable: true, configurable: true }); } catch (_) {}
+}
+// 相手の画面向けの場所（側を入れ替える）
+function _fxSlotForRemote(c) {
+  const s = c && c._fxSlot;
+  return s ? { side: s.side === 'player' ? 'ai' : 'player', idx: s.idx, susp: !!s.susp } : null;
+}
 function _effectHitSync(ctx, kind, p, cb, fallback) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[effectHit]', e); } };
   if (!_hitFxOn() || !p || !p.card) { if (fallback) fallback(); else done(); return; }
@@ -5902,7 +5914,8 @@ function _effectHitSync(ctx, kind, p, cb, fallback) {
       const ser = (c) => c ? { name: c.name || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' } : null;
       window._onlineSendCommand({ type: 'fx_effectHit', kind, card: ser(p.card), after: ser(p.after), holder: ser(p.holder),
         removed: (p.removed || []).slice(0, 4).map(ser), top: !!p.top, bottom: !!p.bottom, faceUp: !!p.faceUp, remote: !p.remote,
-        cards: Array.isArray(p.cards) ? p.cards.slice(0, 6).map(it => ({ c: ser(it.card), remote: !it.remote })) : null });
+        slot: _fxSlotForRemote(p.card),
+        cards: Array.isArray(p.cards) ? p.cards.slice(0, 6).map(it => ({ c: ser(it.card), remote: !it.remote, slot: _fxSlotForRemote(it.card) })) : null });
     } catch (_) {}
   }
   window._fxEffectHit(kind, p, done);
@@ -23607,6 +23620,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 【分離】: リンクカードを1枚破棄して、デッキに戻ること自体をキャンセルできる
           tryCancelViaLeaveBattle(c, _rdSideName, ctx.bs, _rdCtxBase, 'deck', (canceled) => {
             if (canceled) { doneCb && doneCb(); return; }
+            _setFxSlot(c, _rdSideName, idx, c.suspended);
             opponent.battleArea[idx] = null;
             if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
             if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));

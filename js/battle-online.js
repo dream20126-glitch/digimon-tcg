@@ -1402,9 +1402,10 @@ function onRemoteCommand(cmd) {
     case 'fx_effectHit': {
       if (typeof window._fxEffectHit === 'function' && cmd.card) {
         const mk = (o) => o ? { name: o.name || '', imgSrc: o.imgSrc || '', _remoteFx: true } : null;
+        // slot: 盤面上の演出（手札/デッキに戻す）用の、カードがいた場所（送る側で側を入れ替え済み）
         const p = { card: mk(cmd.card), after: mk(cmd.after), holder: mk(cmd.holder), removed: (cmd.removed || []).map(mk).filter(Boolean),
-          top: !!cmd.top, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, remote: !!cmd.remote,
-          cards: Array.isArray(cmd.cards) ? cmd.cards.map(it => ({ card: mk(it.c), remote: !!it.remote })).filter(it => it.card) : null };
+          top: !!cmd.top, bottom: !!cmd.bottom, faceUp: !!cmd.faceUp, remote: !!cmd.remote, slot: cmd.slot || null,
+          cards: Array.isArray(cmd.cards) ? cmd.cards.map(it => ({ card: mk(it.c), remote: !!it.remote, slot: it.slot || null })).filter(it => it.card) : null };
         enqueueFx((done) => window._fxEffectHit(cmd.kind, p, done));
       }
       break;

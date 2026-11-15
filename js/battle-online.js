@@ -1417,7 +1417,7 @@ function onRemoteCommand(cmd) {
     case 'fx_boltDestroy': {
       // 相手の効果での消滅（青い稲妻 → トラッシュ）
       if (typeof window._fxBoltDestroy === 'function' && Array.isArray(cmd.items)) {
-        const items = cmd.items.map(it => ({ card: { name: it.name || '', imgSrc: it.imgSrc || '', _remoteFx: true }, remote: !!it.remote }));
+        const items = cmd.items.map(it => ({ card: { name: it.name || '', imgSrc: it.imgSrc || '', _remoteFx: true }, remote: !!it.remote, slot: it.slot || null }));
         enqueueFx((done) => window._fxBoltDestroy(items, done));
       }
       break;

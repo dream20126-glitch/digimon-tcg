@@ -4119,3 +4119,109 @@ export function fxPartitionSplit(host, parts, opts, callback) {
   setTimeout(done, total + 4000);
 }
 if (typeof window !== 'undefined') window._fxPartitionSplit = fxPartitionSplit;
+
+
+// =====================================================
+//  効果での消滅（盤面上の演出）: 画面を暗くせず、盤面のそのカードの場所で
+//  魔法陣 → 稲妻 → 呪印が刻まれる → 砕け散って欠片が盤面のトラッシュへ。
+//  items: [{ card, remote, slot: { side:'player'|'ai', idx } }]。場所が分からないカードがあれば中央の演出（fxImpactDestroy）
+// =====================================================
+function _boardSlotRect(slot) {
+  if (!slot) return null;
+  const row = document.getElementById(slot.side === 'player' ? 'pl-battle-row' : 'ai-battle-row');
+  const el = row ? row.querySelectorAll('.b-slot')[slot.idx] : null;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height || r.bottom < 0 || r.top > window.innerHeight) return null;
+  return { el, r };
+}
+function _boardTrashRect(side) {
+  const cnt = document.getElementById(side === 'player' ? 'pl-trash-count' : 'ai-trash-count');
+  const el = cnt ? (cnt.parentElement || cnt) : null;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return r.width ? r : null;
+}
+export function fxBoardDestroy(items, callback) {
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  const list = (items || []).filter(it => it && it.card).slice(0, 8);
+  if (typeof document === 'undefined' || !document.body || list.length === 0) { callback && callback(); return; }
+  const spots = list.map(it => _boardSlotRect(it.slot || it.card._fxSlot));
+  if (spots.some(s => !s)) { fxImpactDestroy(items, callback); return; }
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle(); _ensureMagicStyle();
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46600;overflow:hidden;';
+  document.body.appendChild(layer);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const STEP = 300;
+  let tMax = 0;
+  list.forEach((it, i) => {
+    const { el: slotEl, r } = spots[i];
+    const side = (it.slot || it.card._fxSlot).side;
+    const susp = slotEl.classList.contains('suspended');
+    const cw = susp ? r.height : r.width, ch = susp ? r.width : r.height;
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const src = it.card.imgSrc || cardImg(it.card) || '';
+    const t0 = 150 + i * STEP;
+    // 消えたカードの写し（盤面ではもう消えているので、同じ場所に重ねる）
+    const c = add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + (susp ? 90 : 0) + 'deg);box-shadow:0 0 10px #b06cff;',
+      src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + (it.card.name || '') + '</div>');
+    // ① 魔法陣 → 稲妻（ゆっくり版）
+    let T = 1550;
+    setTimeout(() => { T = attackStrikeFx(layer, x, y, Math.max(cw, 60), true); }, t0);
+    // ② 当たる: 揺れ・紫に染まる・呪印
+    setTimeout(() => {
+      c.style.animation = 'hxShake 0.45s linear';
+      c.style.filter = 'brightness(2.4) saturate(0.3)';
+      setTimeout(() => {
+        c.style.transition = 'filter 0.6s';
+        c.style.filter = 'brightness(0.8) saturate(0.7) hue-rotate(-40deg)';
+        const sg = document.createElement('div');
+        sg.style.cssText = 'position:absolute;left:8%;top:18%;width:84%;height:60%;filter:drop-shadow(0 0 3px #b06cff) drop-shadow(0 0 8px #b06cff);animation:mgSigil 1s ease-out forwards;';
+        sg.innerHTML = _MAGIC_SVG('#f0e0ff', '#8ff3ff');
+        c.appendChild(sg);
+      }, 280);
+    }, t0 + 1550);
+    // ③ 砕け散って、欠片が盤面のトラッシュへ吸い込まれる
+    const t3 = t0 + 1550 + 1300;
+    setTimeout(() => {
+      const tr = _boardTrashRect(side);
+      const tx = tr ? tr.left + tr.width / 2 : x, ty = tr ? tr.top + tr.height / 2 : y + 80;
+      const cr = c.getBoundingClientRect();
+      c.style.opacity = '0';
+      for (let k = 0; k < 12; k++) {
+        const sx = (k % 3) / 3, sy = Math.floor(k / 3) / 4;
+        const px = cr.left + sx * cr.width, py = cr.top + sy * cr.height;
+        const sh = document.createElement('div');
+        sh.style.cssText = 'position:absolute;left:' + px + 'px;top:' + py + 'px;width:' + (cr.width / 3) + 'px;height:' + (cr.height / 4) + 'px;'
+          + (src ? 'background:url(' + src + ') ' + (-sx * cr.width) + 'px ' + (-sy * cr.height) + 'px/' + cr.width + 'px ' + cr.height + 'px;' : 'background:#555;')
+          + 'clip-path:polygon(' + (Math.random() * 30) + '% 0,100% ' + (Math.random() * 30) + '%,' + (70 + Math.random() * 30) + '% 100%,0 ' + (70 + Math.random() * 30) + '%);'
+          + 'filter:drop-shadow(0 0 3px #b06cff);transition:transform 0.5s ease-out,opacity 0.4s;';
+        layer.appendChild(sh);
+        const ang = Math.random() * Math.PI * 2, dd = 15 + Math.random() * 30;
+        requestAnimationFrame(() => { sh.style.transform = 'translate(' + Math.cos(ang) * dd + 'px,' + Math.sin(ang) * dd + 'px) rotate(' + (Math.random() * 180 - 90) + 'deg)'; });
+        setTimeout(() => {
+          sh.style.transition = 'transform 0.85s cubic-bezier(.6,0,.9,.6),opacity 0.85s';
+          sh.style.transform = 'translate(' + (tx - px - cr.width / 6) + 'px,' + (ty - py - cr.height / 8) + 'px) rotate(' + (Math.random() * 720) + 'deg) scale(0.2)';
+          sh.style.opacity = '0';
+        }, 550 + k * 25);
+      }
+      // トラッシュが光る
+      if (tr) setTimeout(() => {
+        add('position:absolute;left:' + tr.left + 'px;top:' + tr.top + 'px;width:' + tr.width + 'px;height:' + tr.height + 'px;border-radius:5px;box-shadow:0 0 16px #ff4d4d,0 0 30px #b06cff,inset 0 0 10px #ff4d4d;animation:hxFlash 0.7s ease-out forwards;');
+      }, 1350);
+    }, t3);
+    tMax = Math.max(tMax, t3 + 2100);
+  });
+  setTimeout(() => { layer.style.transition = 'opacity 0.25s'; layer.style.opacity = '0'; }, tMax);
+  setTimeout(() => { layer.remove(); done(); }, tMax + 280);
+  setTimeout(done, tMax + 4000);
+}
+if (typeof window !== 'undefined') {
+  // 効果での消滅の演出: 盤面の場所が分かれば盤面上、分からなければ中央の演出
+  window._fxBoltDestroy = (items, cb) => {
+    try { fxBoardDestroy(items, cb); } catch (e) { console.error('[fxBoardDestroy]', e); fxImpactDestroy(items, cb); }
+  };
+}

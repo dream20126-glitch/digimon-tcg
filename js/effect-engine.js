@@ -3988,7 +3988,8 @@ function _fxBoltDestroySync(ctx, items, cb) {
   if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     try {
       const img = (c) => c ? (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '') : '';
-      window._onlineSendCommand({ type: 'fx_boltDestroy', items: items.map(it => ({ name: it.card.name || '', imgSrc: img(it.card), remote: !it.remote })) });
+      window._onlineSendCommand({ type: 'fx_boltDestroy', items: items.map(it => ({ name: it.card.name || '', imgSrc: img(it.card), remote: !it.remote,
+        slot: it.card._fxSlot ? { side: it.card._fxSlot.side === 'player' ? 'ai' : 'player', idx: it.card._fxSlot.idx } : null })) });
     } catch (_) {}
   }
   window._fxBoltDestroy(items, done);
@@ -4298,6 +4299,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       callback && callback(); return;
     }
     _ddRemoved = true;
+    // 盤面上の消滅演出（fxBoardDestroy）用に、消えたカードがいた場所を覚える
+    try { Object.defineProperty(destroyed, '_fxSlot', { value: { side: destroyedSideName, idx: slotIdx }, enumerable: false, writable: true, configurable: true }); } catch (_) {}
     targetSide.battleArea[slotIdx] = null;
     targetSide.trash.push(destroyed);
     if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));

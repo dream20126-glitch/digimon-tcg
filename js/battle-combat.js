@@ -5903,7 +5903,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     // バフ付きカードを受信側でも「元値+バフ」表示できるよう、baseDpを送る
     const secBase = parseInt(secCard._origDp != null ? secCard._origDp : (secCard.baseDp != null ? secCard.baseDp : secCard.dp)) || 0;
     const atkBase = parseInt(atkCard._origDp != null ? atkCard._origDp : (atkCard.baseDp != null ? atkCard.baseDp : atkCard.dp)) || 0;
-    _sendCommand({ type: 'fx_securityCheck', secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secBaseDp: secBase, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, atkBaseDp: atkBase, customLabel: customLabel || '' });
+    _sendCommand({ type: 'fx_securityCheck', secStack: Array.isArray(secCard.stack) ? secCard.stack.length : (typeof secCard._stackCount === 'number' ? secCard._stackCount : null), atkStack: Array.isArray(atkCard.stack) ? atkCard.stack.length : (typeof atkCard._stackCount === 'number' ? atkCard._stackCount : null), secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secBaseDp: secBase, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, atkBaseDp: atkBase, customLabel: customLabel || '' });
   }
   const overlay = document.getElementById('security-check-overlay');
   if (!overlay) { callback && callback(); return; }
@@ -5972,13 +5972,21 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     // 負けた方は砕け、勝った方が光る。その後の Win/Lost・消滅の演出はいつも通り
     // （≪氷装≫は進化元の枚数で比べる）
     // 相手から届いたVS画面のカードは名前と画像だけなので、盤面の同じカードで見る
-    const _iceReal = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && (y === c || (y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)))); if (x) return x; } return c; };
+    // 同じカードが2枚あるとき、名前で探すと別のカードになる（アルクトゥルスモン2体で、もう一方の進化元の枚数が出ていた）ので、
+    // まず同じものを探し、無いときだけ名前で探す。相手から届いたカードは、送ってきた進化元の枚数（_stackCount）を使う
+    const _iceReal = (c) => {
+      if (!c) return c;
+      for (const sd of ['player', 'ai']) { if ((bs[sd].battleArea || []).includes(c)) return c; }
+      for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)); if (x) return x; }
+      return c;
+    };
+    const _cnt = (c, real) => (c && typeof c._stackCount === 'number') ? c._stackCount : ((real && real.stack) || []).length;
     const _iA = _iceReal(atkCard), _iD = _iceReal(secCard);
     // セキュリティデジモンとのバトルは DP で比べる（場にいない＝セキュリティのカード）
     const _isSecurity = !['player', 'ai'].some(sd => (bs[sd].battleArea || []).includes(_iD));
     const _ice = !_isSecurity && (_hasIceArmor(_iA) || _hasIceArmor(_iD));
-    const _a = _ice ? ((_iA && _iA.stack) || []).length : (parseInt(atkCard.dp) || 0);
-    const _d = _ice ? ((_iD && _iD.stack) || []).length : (parseInt(secCard.dp) || 0);
+    const _a = _ice ? _cnt(atkCard, _iA) : (parseInt(atkCard.dp) || 0);
+    const _d = _ice ? _cnt(secCard, _iD) : (parseInt(secCard.dp) || 0);
     const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
     if (_ice) setTimeout(() => _iceArmorVsFx(overlay, _vsAtkArea, _vsDefArea, _a, _d, _winner), 1350);
     // 3回目の押し合いに入ったら callback（勝敗・消滅回避の判定）へ進む。VS画面は決着（_clashFinish）まで出したまま

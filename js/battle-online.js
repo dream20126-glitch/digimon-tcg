@@ -2330,6 +2330,9 @@ function onRemoteCommand(cmd) {
       // baseDp を含めて再構築（受信側でも formatDpDisplay が「元値+バフ」を表示できるように）
       const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, baseDp: cmd.secBaseDp != null ? cmd.secBaseDp : cmd.secDp, type: cmd.secType };
       const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp, baseDp: cmd.atkBaseDp != null ? cmd.atkBaseDp : cmd.atkDp };
+      // 進化元の枚数（≪氷装≫のVS画面用。同じカードが2枚あっても、送ってきた側の正しい枚数を出す）
+      if (typeof cmd.secStack === 'number') secCard._stackCount = cmd.secStack;
+      if (typeof cmd.atkStack === 'number') atkCard._stackCount = cmd.atkStack;
       if (m.showSecurityCheck) enqueueFx((done) => m.showSecurityCheck(secCard, atkCard, () => { renderAll(); done(); }, cmd.customLabel || null));
       break;
     }
@@ -2857,7 +2860,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     // baseDpも送って受信側の formatDpDisplay で「元値+バフ」表示できるようにする
     const blockerBase = parseInt(blocker._origDp != null ? blocker._origDp : (blocker.baseDp != null ? blocker.baseDp : blocker.dp)) || 0;
     const atkBase = parseInt(atk._origDp != null ? atk._origDp : (atk.baseDp != null ? atk.baseDp : atk.dp)) || 0;
-    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secBaseDp: blockerBase, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: _atkDpFixed, atkBaseDp: atkBase, customLabel: 'BLOCK!' });
+    sendCommand({ type: 'fx_securityCheck', secStack: (blocker.stack || []).length, atkStack: (atk.stack || []).length, secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secBaseDp: blockerBase, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: _atkDpFixed, atkBaseDp: atkBase, customLabel: 'BLOCK!' });
 
     // VS演出・勝敗とも確定させた攻撃側DPを使う（演出の間に状態同期等で相手のカードのDPが変わっても表示がずれないように）
     atk.dp = _atkDpFixed;

@@ -4254,7 +4254,99 @@ export function fxBoardDestroy(items, callback) {
   setTimeout(() => { layer.remove(); done(); }, tMax + 280);
   setTimeout(done, tMax + 4000);
 }
+// =====================================================
+//  【道連れ】（盤面上の演出）: バトルの勝敗の後に別の効果が挟まってから【道連れ】を発揮するので、VS画面ではなく盤面で見せる。
+//  ① 巻き込まれるカードの上に「💀【道連れ】」② 負けた側のトラッシュから黒いもやが伸びる ③ もやがカードを渦巻いて包み、
+//  カードが黒く染まって震える ④ もやごと持ち主のトラッシュへ引きずり込まれる。
+//  item: { card, slot: { side:'player'|'ai', idx } }、loserSide: 【道連れ】を持っていた（先に消滅した）側。返り値 false なら盤面の場所が分からない
+// =====================================================
+export function fxBoardMichizure(item, loserSide, callback) {
+  if (typeof document === 'undefined' || !document.body || !item || !item.card) return false;
+  const spot = _boardSlotRect(item.slot);
+  if (!spot) return false;
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  if (!document.getElementById('fx-michi-board-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-michi-board-style';
+    st.textContent = '@keyframes mzbSpin{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}'
+      + '@keyframes mzbLbl{0%{transform:translate(-50%,-100%) scale(1.8);opacity:0;filter:blur(5px)}55%{transform:translate(-50%,-100%) scale(0.95);opacity:1;filter:blur(0)}100%{transform:translate(-50%,-100%) scale(1);opacity:1}}'
+      + '@keyframes mzbShake{0%,100%{translate:0 0}20%{translate:-3px 1px}40%{translate:3px -1px}60%{translate:-2px -1px}80%{translate:2px 1px}}';
+    document.head.appendChild(st);
+  }
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:46600;overflow:hidden;';
+  document.body.appendChild(layer);
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const { el: slotEl, r } = spot;
+  const susp = slotEl.classList.contains('suspended');
+  const cw = susp ? r.height : r.width, ch = susp ? r.width : r.height;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const src = item.card.imgSrc || cardImg(item.card) || '';
+  // 巻き込まれるカードの写し（盤面ではもう消えているので、同じ場所に重ねる）
+  const c = add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:5px;overflow:hidden;background:#111;transform:rotate(' + (susp ? 90 : 0) + 'deg);box-shadow:0 0 8px #000;transition:filter 0.6s;',
+    src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:9px;padding:3px;">' + (item.card.name || '') + '</div>');
+  // ① 盤面を少しだけ暗くして「💀【道連れ】」
+  const dim = add('position:absolute;inset:0;background:radial-gradient(circle at ' + x + 'px ' + y + 'px,rgba(30,0,50,0) 0%,rgba(10,0,20,0.45) 60%);opacity:0;transition:opacity 0.4s;');
+  requestAnimationFrame(() => { dim.style.opacity = '1'; });
+  add('position:absolute;left:' + x + 'px;top:' + (y - ch / 2 - 6) + 'px;white-space:nowrap;font-size:' + Math.max(18, Math.min(30, cw * 0.32)) + 'px;font-weight:900;color:#e9c8ff;text-shadow:0 0 10px #9b3dff,0 0 24px #5a0099,0 0 2px #000;animation:mzbLbl 0.55s ease-out forwards;', '💀【道連れ】');
+  // ② 負けた側のトラッシュから黒いもやが伸びて、カードへ向かう
+  const lt = _boardTrashRect(loserSide);
+  const sx = lt ? lt.left + lt.width / 2 : x, sy = lt ? lt.top + lt.height / 2 : y + ch;
+  setTimeout(() => {
+    for (let i = 0; i < 14; i++) {
+      const t = i / 13, sz = Math.max(26, cw * 0.45) + Math.random() * 18;
+      const px = sx + (x - sx) * t + (Math.random() - 0.5) * 20, py = sy + (y - sy) * t + (Math.random() - 0.5) * 20;
+      const pf = add('position:absolute;left:' + (px - sz / 2) + 'px;top:' + (py - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.95) 0%,rgba(70,10,100,0.55) 50%,rgba(20,0,30,0) 72%);opacity:0;transform:scale(0.3);transition:opacity 0.3s ' + (i * 0.045) + 's,transform 0.45s ' + (i * 0.045) + 's;');
+      requestAnimationFrame(() => { pf.style.opacity = '1'; pf.style.transform = 'scale(1)'; });
+      setTimeout(() => { pf.style.transition = 'opacity 0.5s'; pf.style.opacity = '0'; }, 1300 + i * 30);
+    }
+  }, 350);
+  // ③ もやの輪がカードを渦巻いて包み、カードが黒く染まって震える
+  setTimeout(() => {
+    const AW = cw * 2.0, AH = ch * 1.6;
+    for (let i = 0; i < 2; i++) {
+      const ring = add('position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + (AW * (1 - i * 0.18)) + 'px;height:' + (AH * (1 - i * 0.18)) + 'px;border-radius:50%;'
+        + 'background:conic-gradient(from ' + (i * 90) + 'deg,rgba(15,0,25,0.95),rgba(80,15,120,0.55),rgba(15,0,25,0.95),rgba(60,0,90,0.4),rgba(15,0,25,0.95));'
+        + '-webkit-mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);'
+        + 'animation:mzbSpin ' + (1.3 - i * 0.4) + 's linear infinite' + (i ? ' reverse' : '') + ';opacity:0;transition:opacity 0.4s;');
+      requestAnimationFrame(() => { ring.style.opacity = '1'; });
+      setTimeout(() => { ring.style.transition = 'opacity 0.5s,transform 0.9s cubic-bezier(.6,0,.9,.5)'; ring.style.opacity = '0'; }, 1500);
+    }
+    c.style.filter = 'brightness(0.45) saturate(0.4) hue-rotate(230deg)';
+    c.style.boxShadow = '0 0 14px #5a0099,0 0 30px #1a0028';
+    c.style.animation = 'mzbShake 0.18s linear infinite';
+  }, 900);
+  // ④ もやごと持ち主のトラッシュへ引きずり込まれる
+  setTimeout(() => {
+    const vt = _boardTrashRect(item.slot.side);
+    const tx = vt ? vt.left + vt.width / 2 : x, ty = vt ? vt.top + vt.height / 2 : y + ch;
+    c.style.animation = '';
+    c.style.transition = 'transform 0.85s cubic-bezier(.6,0,.9,.5),opacity 0.85s,filter 0.4s';
+    c.style.transform = 'translate(' + (tx - x) + 'px,' + (ty - y) + 'px) rotate(' + ((susp ? 90 : 0) + 200) + 'deg) scale(0.15)';
+    c.style.opacity = '0.2';
+    for (let k = 0; k < 8; k++) {
+      const sz = 22 + Math.random() * 16;
+      const tr = add('position:absolute;left:' + (x - sz / 2) + 'px;top:' + (y - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.9),rgba(60,10,90,0) 70%);transition:transform 0.8s cubic-bezier(.6,0,.9,.5) ' + (k * 0.04) + 's,opacity 0.8s ' + (k * 0.04) + 's;');
+      requestAnimationFrame(() => { tr.style.transform = 'translate(' + (tx - x) + 'px,' + (ty - y) + 'px) scale(0.3)'; tr.style.opacity = '0'; });
+    }
+    if (vt) setTimeout(() => {
+      add('position:absolute;left:' + vt.left + 'px;top:' + vt.top + 'px;width:' + vt.width + 'px;height:' + vt.height + 'px;border-radius:5px;box-shadow:0 0 16px #9b3dff,0 0 30px #5a0099,inset 0 0 10px #9b3dff;animation:hxFlash 0.7s ease-out forwards;');
+    }, 800);
+  }, 2000);
+  const total = 3300;
+  setTimeout(() => { layer.style.transition = 'opacity 0.25s'; layer.style.opacity = '0'; }, total);
+  setTimeout(() => { layer.remove(); done(); }, total + 280);
+  setTimeout(done, total + 4000);
+  return true;
+}
+
 if (typeof window !== 'undefined') {
+  window._fxBoardMichizure = (item, loserSide, cb) => {
+    try { return fxBoardMichizure(item, loserSide, cb); } catch (e) { console.error('[fxBoardMichizure]', e); return false; }
+  };
   // 効果での消滅の演出: 盤面の場所が分かれば盤面上、分からなければ中央の演出
   window._fxBoltDestroy = (items, cb) => {
     try { fxBoardDestroy(items, cb); } catch (e) { console.error('[fxBoardDestroy]', e); fxImpactDestroy(items, cb); }

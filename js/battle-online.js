@@ -1971,6 +1971,12 @@ function onRemoteCommand(cmd) {
     case 'fx_michizure': {
       // VS画面の決着で【道連れ】を見せたなら重ねない（1回分）
       if (window._clashRecoilPending > 0 && window._clashRecoilAt && Date.now() - window._clashRecoilAt < 60000) { window._clashRecoilPending = 0; break; }
+      // 盤面の場所が分かれば、盤面で巻き込まれるカードを引きずり込む演出（送り手から見た側を、こちらから見た側に読み替え済み）
+      if (cmd.board && typeof window._fxBoardMichizure === 'function') {
+        const vSide = cmd.board.victimSide === 'self' ? 'player' : 'ai';
+        const vCard = { name: cmd.board.name || '', cardNo: cmd.board.cardNo || '', imgSrc: cmd.board.img || '' };
+        if (window._fxBoardMichizure({ card: vCard, slot: { side: vSide, idx: cmd.board.idx } }, vSide === 'player' ? 'ai' : 'player', () => {})) break;
+      }
       // 相手の道連れ発動 → 自分側でも演出を再生
       const movly = document.createElement('div');
       movly.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
@@ -2979,20 +2985,22 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                 sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy', cardData: serializeCardForCmd(cur) });
                 armOwnDestroyDone();
                 renderAll();
-                // 巻き込まれた atk の消滅前に「道連れ」演出（自他両画面）
-                sendCommand({ type: 'fx_michizure' });
-                sendCommand({ type: 'fx_destroy', cardName: cur.name, cardImg: cardImg(cur) });
-                sendCommand({ type: 'fx_ownDestroyReady' });
-                const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
-                showMichi(() => {
-                  showDE(cur, () => {
-                    addLog('💥 「' + cur.name + '」が【道連れ】で消滅');
-                    // アタッカーの消滅への「デジモンが消滅したとき」等は block_battle_done を送る前に発揮する
-                    _blkBattleCards = { atk: cur, blocker: null };
-                    if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(after);
-                    else after();
-                  });
-                });
+                // 巻き込まれた atk を盤面で引きずり込む「道連れ」演出（自他両画面。_playMichizureFx が相手の画面にも送る）
+                const _afterFx = () => {
+                  sendCommand({ type: 'fx_ownDestroyReady' });
+                  addLog('💥 「' + cur.name + '」が【道連れ】で消滅');
+                  // アタッカーの消滅への「デジモンが消滅したとき」等は block_battle_done を送る前に発揮する
+                  _blkBattleCards = { atk: cur, blocker: null };
+                  if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(after);
+                  else after();
+                };
+                if (typeof window._playMichizureFx === 'function') window._playMichizureFx(cur, { side: 'ai', idx: cmd.atkIdx }, 'player', _afterFx);
+                else {
+                  sendCommand({ type: 'fx_michizure' });
+                  sendCommand({ type: 'fx_destroy', cardName: cur.name, cardImg: cardImg(cur) });
+                  const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
+                  showMichi(() => showDE(cur, _afterFx));
+                }
               };
               const fireBlockerOwn = (after) => {
                 if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, after));
@@ -3063,11 +3071,15 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
             showDE(atk, () => {
-              // 巻き込まれた blocker の消滅前に「道連れ」演出（自他両画面）
-              sendCommand({ type: 'fx_michizure' });
-              const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
-              showMichi(() => {
-                showDE(blocker, () => {
+              // 巻き込まれた blocker を盤面で引きずり込む「道連れ」演出（自他両画面）
+              const _mzFx = (cb) => {
+                if (typeof window._playMichizureFx === 'function') { window._playMichizureFx(blocker, { side: 'player', idx: blockerIdx }, 'ai', cb); return; }
+                sendCommand({ type: 'fx_michizure' });
+                const showMichi = window._showMichizureAnnounce || ((c) => c && c());
+                showMichi(() => showDE(blocker, cb));
+              };
+              _mzFx(() => {
+                {
                   addLog('💥 両者消滅（道連れ）！');
                   // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
                   const fire = window._fireOnlineDestroyChain;
@@ -3080,7 +3092,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   };
                   if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
                   else finishAfterOwn();
-                });
+                }
               });
             });
           });

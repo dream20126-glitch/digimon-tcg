@@ -106,7 +106,7 @@ export default function App() {
           <CardList cards={cards} selectedNo={selectedNo} onSelect={selectCard} />
           <div className="right">
             {selectedCard ? (
-              <RecipeEditor key={selectedNo} card={selectedCard} password={pw} dict={dict} onSaved={handleSaved} onDirtyChange={setDirty} />
+              <RecipeEditor key={selectedNo} card={selectedCard} password={pw} dict={dict} onSaved={handleSaved} onDirtyChange={setDirty} cards={cards} />
             ) : selectedNo && detailLoading ? (
               <div className="placeholder">カード詳細読込中...</div>
             ) : (

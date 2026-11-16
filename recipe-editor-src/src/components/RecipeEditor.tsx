@@ -4,6 +4,7 @@ import { BlockEditor, MultiTextTags } from './BlockEditor';
 import { applyCardLevelSettings, blocksToRecipe, parseCardLevelSettings, recipeToBlocks } from '../recipe';
 import { saveRecipe, loadCardDetail } from '../api';
 import type { DictAPI } from '../useDict';
+import { RecipeCopyPanel } from './RecipeCopyPanel';
 
 function isMeaningfulText(s?: string): boolean {
   if (!s) return false;
@@ -17,8 +18,11 @@ export function RecipeEditor({
   dict,
   onSaved,
   onDirtyChange,
+  cards = [],
 }: {
   card: CardData;
+  // 「他のカードのレシピをコピー」のコピー元の候補（一覧の軽量情報）
+  cards?: CardData[];
   password: string;
   dict: DictAPI;
   onSaved: (cardNo: string, recipe: string) => void;
@@ -233,6 +237,22 @@ export function RecipeEditor({
           </div>
         )}
       </div>
+
+      <RecipeCopyPanel
+        card={card}
+        cards={cards}
+        onApply={(recipe, sourceNo) => {
+          try {
+            setBlocks(recipeToBlocks(recipe as any));
+            const cl = parseCardLevelSettings(recipe as any);
+            setCardLevel(cl);
+            setShowCardLevel(!!(cl.aliasNames && cl.aliasNames.length > 0));
+            setStatus('📄 ' + sourceNo + ' のレシピを読み込みました（未保存）。内容を確認してから保存してください');
+          } catch (e) {
+            setStatus('❌ 読み込みに失敗: ' + (e as Error).message);
+          }
+        }}
+      />
 
       <div className="blocks">
         {blocks.map((b, i) => (

@@ -6360,8 +6360,9 @@ function _clashFinish(textHint, cb, remoteInfo) {
     // 勝った側が場のデジモンのときだけ（セキュリティのデジモンとのバトルでは【道連れ】は発揮しない。セキュリティのデジモンは
     // 通常どおり勝ち）。相手の画面では作り直したカードなので名前でも探す
     // （場にいたかはVSの開始時に記録。決着の時点では【道連れ】で既に場から外れていることがある）
-    const _forced = p._forceRecoilName && p[p.winner] && p[p.winner].name === p._forceRecoilName;
-    if ((out[ls] === 'trash' || out[ls] === 'indomitable') && (_clashRecoilSide(p) === p.winner || _forced)) { out[p.winner] = 'recoil'; window._clashRecoilAt = Date.now(); window._clashRecoilPending = 1; }
+    // 【道連れ】は誘発効果なので、決着の演出では見せない（勝った側は勝ちのまま）。同時に誘発したターンプレイヤーの効果等の後、
+    // 【道連れ】を発揮する順番が来たときに「道連れ！」と消滅の演出を出す（P-090 の効果より先に道連れの演出が出ていた）
+    void ls; void _clashRecoilSide;
   }
   // トラッシュへ飛ばしたカードは、この後の消滅演出・セキュリティデジモンの LOSE 演出を重ねない
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });

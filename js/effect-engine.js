@@ -21337,15 +21337,29 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         break;
       }
-      if (all && step.filter) {
+      // 「相手のテイマー全て」（opponent_tamer:all。シャンブルモン LM-010）等、種類つきの「全て」は種類を条件にして、その種類の
+      // カード全て（レスト・アクティブを問わない）に1枚ずつ付ける。以前は種類を読まず「相手側の次のアクティブフェイズを丸ごと止める」
+      // 印だけを立てていたので、アクティブ状態のテイマーに付与の表示が無く、デジモンまで止まる作りだった
+      let _naAllFilter = step.filter || null;
+      const _naKind = /^(?:opponent|own)_(tamer|digimon|card):all$/.exec(tStr);
+      if (all && _naKind) {
+        const _kf = Object.assign({}, _naAllFilter || {});
+        if (!_kf.type && !Array.isArray(_kf.type_in)) {
+          if (_naKind[1] === 'tamer') _kf.type = 'テイマー';
+          else if (_naKind[1] === 'digimon') _kf.type = 'デジモン';
+          else _kf.type_in = ['デジモン', 'テイマー'];
+        }
+        _naAllFilter = _kf;
+      }
+      if (all && _naAllFilter) {
         // 「レスト状態の相手のデジモン/テイマー全てはアクティブにならない」のように条件付きの「全て」は、
         // 今その条件に当てはまるカードだけに付与する（ロゼモン：バーストモード BT26-050 オプション）
         const _naPoolAll = _naIsOpp ? opponent : player;
         const _naDurAll = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         const _naList = [...(_naPoolAll.battleArea || []), ...(_naPoolAll.tamerArea || [])]
-          .filter(c => c && cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card));
+          .filter(c => c && cardMatchesFilter(c, _naAllFilter, ctx.bs, ctx.side, ctx.card));
         // 期限つきなら、あとからその状態になったカードにも付く継続する全体処理にする
-        if (_registerStateAllEffect(ctx, _naIsOpp, 'prevent_unsuspend', _naDurAll, step.filter, null, _naList, (c) => addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx))) {
+        if (_registerStateAllEffect(ctx, _naIsOpp, 'prevent_unsuspend', _naDurAll, _naAllFilter, null, _naList, (c) => addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx))) {
           // 効果を受けないカードには付かない（受けるようになったら付く）ので、その旨を出す
           _naList.forEach(c => ctx.addLog(_isImmuneToEffect(c, ctx)
             ? '🛡 「' + c.name + '」は効果を受けない（効果を受けるようになったときに、まだ期間内なら付く）'

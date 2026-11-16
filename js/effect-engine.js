@@ -16463,22 +16463,46 @@ const _COST_STEP_SET = new WeakSet();
 // （レガレクスモン LM-041「メモリーが1以上なら〜。その後、メモリーが1以下なら〜」で、相手側のメモリーのときも
 // 「メモリーが1以上なら」の文まで出ていた）。メモリーの条件だけで決まる手順に限り、その手順より前でメモリーを
 // 動かす手順（アクション・コスト）があれば以降は判定しない（前の手順の結果で変わる条件は先に判定できないため）
+// 手順の「〜なら」が、メモリー・セキュリティの枚数・手札の枚数だけで決まるなら、その種類の集合（それ以外を含むなら null）
+function _stateGateFamilies(st) {
+  if (!st || (Array.isArray(st.condition_chain) && st.condition_chain.length > 0)) return null;
+  const strs = [st.condition, st.when, ...(Array.isArray(st.extra_conditions) ? st.extra_conditions : [])].filter(Boolean).map(String);
+  if (strs.length === 0) return null;
+  const famOf = (c) => {
+    const code = String((c && c.code) || '');
+    if (/^cond_memory_/.test(code) && !c.subject) return 'memory';
+    if (/^cond_security_(ge|le|eq|gt|lt)$/.test(code)) return 'security';
+    if (/^cond_hand_(ge|le|eq|gt|lt)$/.test(code)) return 'hand';
+    return null;
+  };
+  const fams = new Set();
+  for (const s of strs) {
+    const cs = parseRecipeCondition(s);
+    if (cs.length === 0) return null;
+    for (const c of cs) { const f = famOf(c); if (!f) return null; fams.add(f); }
+  }
+  return fams;
+}
 function _announceTextByMemoryGate(steps, text, card, bs, side) {
   try {
     if (!Array.isArray(steps) || steps.length < 2 || !bs || !side) return text;
     if (!steps.every(st => st && typeof st.display_text === 'string' && st.display_text.trim())) return text;
-    const isMemOnly = (st) => {
-      if (Array.isArray(st.condition_chain) && st.condition_chain.length > 0) return false;
-      const strs = [st.condition, st.when, ...(Array.isArray(st.extra_conditions) ? st.extra_conditions : [])].filter(Boolean).map(String);
-      if (strs.length === 0) return false;
-      return strs.every(s => { const cs = parseRecipeCondition(s); return cs.length > 0 && cs.every(c => c && !c.subject && /^cond_memory_/.test(String(c.code || ''))); });
+    // 先に判定できる条件の種類: メモリー・セキュリティの枚数・手札の枚数（シーヴァモンACE LM-024「自分のセキュリティが3枚以上なら〜。
+    // 3枚以下なら〜」で、2枚のときも「3枚以上なら」の文が出ていた）。その種類を動かす手順が前にあれば、以降は判定しない
+    const famsOf = _stateGateFamilies;
+    const MOVERS = { memory: /memory/, security: /security|recover/, hand: /hand|draw|discard|bounce|return_hand/ };
+    const movedBy = (st) => {
+      // 条件の文字列（cond_security_ge 等）は数えない。アクションとコスト（その後の alt_actions も）だけを見る
+      const s = JSON.stringify({ a: st.action, c: st.cost, alt: (Array.isArray(st.alt_actions) ? st.alt_actions : []).map(x => x && { a: x.action, c: x.cost }) });
+      return Object.keys(MOVERS).filter(f => MOVERS[f].test(s));
     };
-    const movesMemory = (st) => /memory/.test(String(st.action || '')) || (Array.isArray(st.cost) && /memory/.test(JSON.stringify(st.cost)));
     const keep = [];
-    let memMoved = false;
+    const moved = new Set();
     steps.forEach((st) => {
-      keep.push(memMoved || !isMemOnly(st) || _evalStepConditionGate(st, card, bs, side));
-      if (movesMemory(st)) memMoved = true;
+      const fams = famsOf(st);
+      const canJudge = !!fams && [...fams].every(f => !moved.has(f));
+      keep.push(!canJudge || _evalStepConditionGate(st, card, bs, side));
+      movedBy(st).forEach(f => moved.add(f));
     });
     if (keep.every(Boolean) || !keep.some(Boolean)) return text;
     const prefixM = /^((?:【[^】]+】)+)/.exec(steps[0].display_text.trim());
@@ -17781,8 +17805,11 @@ function runRecipe(steps, ctx, callback) {
     }
     // 2つ目以降の効果（その後の効果等）に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す
     // （効果1と効果2で表示を分けたい。「〜なら」を満たさず何も起きない効果では出さない）
+    // ただし、前の手順が全て「メモリー・セキュリティ・手札の枚数の条件」を満たさず飛ばされた（＝最初の効果発動ポップアップがこの手順の
+    // 文になっている。_announceTextByMemoryGate）なら、同じ文を2回出さない（シーヴァモンACE LM-024）
+    const _priorAllSkipped = idx > 1 && steps.slice(0, idx - 1).every(st => st && _stateGateFamilies(st) && !_stepCondsPassNow(st, ctx));
     if (idx > 1 && step && typeof step.display_text === 'string' && step.display_text.trim() && !step.no_announce
-        && _stepCondsPassNow(step, ctx)) {
+        && !_priorAllSkipped && _stepCondsPassNow(step, ctx)) {
       const _evoSrc = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
       showEffectAnnounce(ctx.card, step.display_text.trim(), ctx.side, () => _execStep(step, nextStep), _evoSrc);
       return;

@@ -552,6 +552,8 @@ function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー�
 function hasPenetrate(c) { return hasPassiveFlag(c, 'penetrate', '【貫通】'); }
 // 道連れ判定（ヴェノムヴァンデモン等）: バトルで自分だけ消滅したとき相手も消滅
 function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ】'); }
+// オンラインのブロックのバトル（battle-online.js）でも、レシピ・進化元・付与まで見て判定する
+if (typeof window !== 'undefined') window._hasMichizure = (c) => hasMichizure(c);
 
 // 消滅キャンセル試行ヘルパー
 // 戻り値: { canceled: true, reason: '...' } か null。

@@ -2942,11 +2942,18 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         renderAll();
         // ≪道連れ≫: ブロッカーが「自分だけバトルで消滅」したとき相手(atk)も消滅
+        // レシピの【道連れ】（デスモンACE LM-044 等）も見る。以前は計算済みの永続効果と付与だけを見ていたので、
+        // レシピに【道連れ】を持つブロッカーが負けても【道連れ】が発揮されなかった
         const blockerHasMichizure = !!(
-          (blocker._permEffects && blocker._permEffects.michizure)
+          (typeof window._hasMichizure === 'function' && window._hasMichizure(blocker))
+          || (blocker._permEffects && blocker._permEffects.michizure)
           || (Array.isArray(blocker.buffs) && blocker.buffs.some(b => b && b.type === 'keyword_michizure'))
         );
-        if (blockerHasMichizure && bs.ai.battleArea[cmd.atkIdx] === atk) {
+        // 相手（攻撃側）のカードは状態の同期で作り直されることがあるので、同じカード番号・名前でも同じアタッカーとみなす
+        const _atkSlotNow = bs.ai.battleArea[cmd.atkIdx];
+        const _atkStillThere = !!_atkSlotNow && (_atkSlotNow === atk || (_atkSlotNow.cardNo === atk.cardNo && _atkSlotNow.name === atk.name));
+        console.log('[resolveOnlineBlock] blocker lost', 'blocker=' + (blocker && blocker.name), 'michizure=' + blockerHasMichizure, 'atk=' + (atk && atk.name), 'atkStillThere=' + _atkStillThere);
+        if (blockerHasMichizure && _atkStillThere) {
           // 【道連れ】はこちら（ブロッカー側＝非ターンプレイヤー）の効果。ターンプレイヤー（攻撃側）の同時誘発
           // （「バトルで相手のデジモンだけを消滅させたとき」ディルビットモン P-090 等。攻撃側の端末に委譲）を先に全て解決し、
           // 次にブロッカーの【消滅時】、最後に【道連れ】（公式ルール 15-4-3-5。【消滅時】→【道連れ】は非ターンプレイヤーが
@@ -3041,7 +3048,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         renderAll();
         // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
         const atkHasMichizure = !!(
-          (atk._permEffects && atk._permEffects.michizure)
+          (typeof window._hasMichizure === 'function' && window._hasMichizure(atk))
+          || (atk._permEffects && atk._permEffects.michizure)
           || (Array.isArray(atk.buffs) && atk.buffs.some(b => b && b.type === 'keyword_michizure'))
         );
         if (atkHasMichizure && bs.player.battleArea[blockerIdx] === blocker) {

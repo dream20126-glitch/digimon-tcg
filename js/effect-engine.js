@@ -6590,6 +6590,19 @@ function _continuousImmune(card, effectSide, effectSourceType, effectAction) {
     });
   } catch (_) { return false; }
 }
+// 盤面のバッジ用: 継続効果の「相手の効果を受けない」が今有効か（シーヴァモンACE LM-024 のレスト中など。条件・誰のターンかで変わる）。
+// 【退化】だけを受けない等の種類限定（dedigivolve）はここでは数えない
+if (typeof window !== 'undefined') {
+  window._continuousImmuneActive = (card) => {
+    try {
+      const bs = window._lastBattleState;
+      if (!bs || !card) return false;
+      const owner = ['player', 'ai'].find(sd => bs[sd] && (((bs[sd].battleArea || []).includes(card)) || ((bs[sd].tamerArea || []).includes(card))));
+      if (!owner) return false;
+      return _continuousImmune(card, owner === 'player' ? 'ai' : 'player', null, null);
+    } catch (_) { return false; }
+  };
+}
 // ===== 「効果を受けない」の共通判定 =====
 // 実行中の効果（runRecipe / executeRecipeStep が _curEffectCtx に記録）から見て、相手側の場のカードが
 // その効果を受けないか。対象選択（showTargetSelection / showCardListPicker / _pickSideTargets）の候補と、

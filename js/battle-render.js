@@ -129,6 +129,8 @@ function _collectActiveKeywords(card) {
   // 相手のカードは state_sync の _grantedKw で受け取る
   if (Array.isArray(card._grantedRecipes)) card._grantedRecipes.forEach(g => { if (g && g.kwFlag) set.add(g.kwFlag); });
   if (Array.isArray(card._grantedKw)) card._grantedKw.forEach(kw => { if (kw) set.add(kw); });
+  // 継続効果の「相手の効果を受けない」が今有効なら「効果耐性」（シーヴァモンACE LM-024 のレスト状態の間など。バフではないので別に見る）
+  try { if (typeof window !== 'undefined' && typeof window._continuousImmuneActive === 'function' && window._continuousImmuneActive(card)) set.add('immune'); } catch (_) {}
   return [...set];
 }
 

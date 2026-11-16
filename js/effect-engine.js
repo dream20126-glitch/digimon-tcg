@@ -5150,7 +5150,13 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       }
       // opts.noConfirm: 選んだ後にもう一度カードを選ぶ画面が続く（進化元を破棄するデジモン→進化元のカード）ときは、
       // ここでは「このカードでいいですか？」を出さない（確認は最後のカードを選ぶ画面の1回だけ）
-      if (opts && opts.noConfirm) { cleanup(); callback(selectedIdx); return; }
+      // 選んだタップ（touchend の後に来る click も）が、次に開く画面（進化元の一覧）のカードに当たってカード詳細が開かないよう止める
+      if (opts && opts.noConfirm) {
+        try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+        cleanup();
+        setTimeout(() => callback(selectedIdx), 0);
+        return;
+      }
       // 確認ダイアログ表示
       showTargetConfirm(card, selectedIdx, color, (confirmed) => {
         if (confirmed) {
@@ -25664,6 +25670,7 @@ function _showBoardMultiSourcePicker(sources, want, title, optional, done) {
 // 途中でキャンセルして3枚で終えられていた）。省略時は従来どおり出す
 // onBack: 指定すると「戻る」ボタンを出す（進化元を見て、別のデジモンから破棄したいとき。デジモンを選ぶ画面へ戻る）
 function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCancel, onBack) {
+  const _openedAt = Date.now();
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';
 
@@ -25700,6 +25707,8 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCan
     wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; wrap.style.boxShadow = ''; };
     // タップ → カード詳細 →「✓ このカードに決定」で確定（共通の選択画面と同じ）
     wrap.onclick = () => {
+      // 開いた直後のタップ（前の画面で押したタップの続き）は受け付けない
+      if (Date.now() - _openedAt < 400) return;
       _showCardConfirmDialog(evoCard, () => {
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         callback(evoCard);

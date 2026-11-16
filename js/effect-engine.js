@@ -649,6 +649,9 @@ function _stackReturnMax(c) {
 // 効果は消えない（ドリモゲモンで受けた「相手のターン終了までDP+1000」が、ブルムロードモンの退化で消えていた）
 function _carryDedigiState(oldTop, nc) {
   if (!oldTop || !nc || oldTop === nc) return;
+  // 退化しても同じデジモン（公式ルール）。退化前の姿を覚えておき、アタック中のデジモンか等の判定で同じデジモンとして扱う
+  // （P-090 がアタック中にサイバードラモンACE の【進化時】で退化したら、アタックが終わっていた）
+  nc._dedigiFrom = oldTop;
   const keep = (oldTop.buffs || []).filter((b) => b && b.duration !== 'permanent');
   nc.buffs = keep.slice();
   nc._grantedRecipes = Array.isArray(oldTop._grantedRecipes) ? oldTop._grantedRecipes.slice() : [];

@@ -3210,6 +3210,19 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx, noB
 // アタック中のデジモンがバトルエリアを離れていれば、アタックはどこにも成立しない（公式ルール 11-2-7-4 / 11-5-1-4）。
 // 【カウンター】等でアタック中のデジモンが消滅したのに、ブロックの確認やバトルに進んでいた（テティスモン → オメガモン）。
 // 離れていれば true を返し、アタック終了に進める
+// cur が atk と同じデジモンか: 同じカード／atk から進化した（stack に atk）／atk が退化した（_dedigiFrom をたどる）。
+// 進化と退化が続いても同じ1体として扱う
+function _isSameDigimon(cur, atk) {
+  if (!cur || !atk) return false;
+  const seen = new Set(); const q = [cur];
+  while (q.length && seen.size < 40) {
+    const n = q.shift(); if (!n || seen.has(n)) continue; seen.add(n);
+    if (n === atk) return true;
+    if (Array.isArray(n.stack) && n.stack.indexOf(atk) >= 0) return true;
+    if (n._dedigiFrom) q.push(n._dedigiFrom);
+  }
+  return false;
+}
 function _attackerLeftField(atk, slotIdx) {
   // 相手の効果で「そのアタックを終了させる」（アンフィモン P-089）: ブロック・バトル・セキュリティチェックをせずにアタックを終える
   if (bs._attackEndRequested) {
@@ -3221,7 +3234,7 @@ function _attackerLeftField(atk, slotIdx) {
     return true;
   }
   const cur = bs.player.battleArea[slotIdx];
-  if (cur && (cur === atk || (Array.isArray(cur.stack) && cur.stack.indexOf(atk) >= 0))) return false;
+  if (_isSameDigimon(cur, atk)) return false;
   addLog('⚔ アタック中の「' + ((atk && atk.name) || '?') + '」がバトルエリアにいないので、アタックは成立しない');
   bs._redirectedAttack = null;
   renderAll();
@@ -3230,7 +3243,7 @@ function _attackerLeftField(atk, slotIdx) {
 }
 function _evolvedAttacker(atk, slotIdx) {
   const cur = bs.player.battleArea[slotIdx];
-  if (cur && cur !== atk && Array.isArray(cur.stack) && cur.stack.indexOf(atk) >= 0) return cur;
+  if (cur && cur !== atk && _isSameDigimon(cur, atk)) return cur;
   return atk;
 }
 
@@ -3714,8 +3727,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
     // battleArea[atkIdx] が atk の進化先（stack に atk を含む）ならアタッカーを
     // 引き継ぎ、アタックを最後まで継続する。
     const _curAtk = bs.player.battleArea[atkIdx];
-    if (_curAtk && _curAtk !== atk && Array.isArray(_curAtk.stack) && _curAtk.stack.indexOf(atk) >= 0) {
-      addLog('⬆ アタッカー「' + atk.name + '」が「' + _curAtk.name + '」に進化（アタック継続）');
+    if (_curAtk && _curAtk !== atk && _isSameDigimon(_curAtk, atk)) {
+      addLog('⬆ アタッカー「' + atk.name + '」が「' + _curAtk.name + '」になった（同じデジモンなのでアタック継続）');
       atk = _curAtk;
     }
     // アタッカーが場を離れた / 退化等で別カードに置換された → アタック終了
@@ -4991,7 +5004,7 @@ export function aiAttackPhase(callback) {
       // アタック中のデジモンがバトルエリアを離れていれば、アタックは成立しない（公式ルール 11-2-7-4 / 11-5-1-4）
       const _aiCur = bs.ai.battleArea[atkIdx];
       const _aiEnded = !!bs._attackEndRequested;
-      if (_aiEnded || !(_aiCur && (_aiCur === atk || (Array.isArray(_aiCur.stack) && _aiCur.stack.indexOf(atk) >= 0)))) {
+      if (_aiEnded || !_isSameDigimon(_aiCur, atk)) {
         bs._attackEndRequested = false;
         addLog(_aiEnded ? '✋ 「' + atk.name + '」のアタックは効果で終了した' : '⚔ アタック中の「' + atk.name + '」がバトルエリアにいないので、アタックは成立しない');
         bs._redirectedAttack = null;

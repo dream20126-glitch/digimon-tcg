@@ -2999,7 +2999,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               const _shown = (_avail || tgt.stack.slice()).filter(c => !(edTrash || []).includes(c));
               console.log('[evo_discard_select] 「' + tgt.name + '」の進化元: ' + tgt.stack.map(c => c && c.name).join(',') + ' / 選べる: ' + _shown.map(c => c && c.name).join(','));
               if (_shown.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
-              showEvoSourceSelection(tgt, _shown, null, takeCard);
+              showEvoSourceSelection(tgt, _shown, null, takeCard, _edCanCancel(action, ctx));
             }
           };
           pickNext(n);
@@ -3075,7 +3075,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (q.length === 0) { _nextS(); return; }
           if (!_selS) { _takeFrom(tgt, _topS ? q[0] : q[q.length - 1]); return; }
           if (effectiveSide === 'ai') { _takeFrom(tgt, q[0]); return; }
-          showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen));
+          showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen), _edCanCancel(action, ctx));
         };
         const _nextS = () => {
           if (_left <= 0) { _finish(); return; }
@@ -11784,6 +11784,14 @@ function _markConfirmedStep(ctx, step) {
 function _isConfirmedStep(ctx, step) {
   const h = ctx && ctx._confirmedHead;
   return !!(h && step && step.action === h.action && (step.display_text || '') === h.text);
+}
+// 進化元を破棄する選択画面で「キャンセル」を出してよいか: 任意の効果（〜できる）で、まだ「はい」を選んでいないときだけ。
+// 強制の効果・確認済みの効果・確認済みのコストの支払い中は出さない
+function _edCanCancel(action, ctx) {
+  if (_confirmedCostDepth > 0 || _curStepConfirmed || (ctx && ctx._effectConfirmed)) return false;
+  const st = _curStepForLabel;
+  if (action && action._isCost) return true;
+  return !!(st && st.optional === true && !_isConfirmedStep(ctx, st));
 }
 function _pickOptional(ctx, step, opt) {
   if (!opt) return false;
@@ -25646,7 +25654,9 @@ function _showBoardMultiSourcePicker(sources, want, title, optional, done) {
   refresh();
 }
 
-function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
+// allowCancel: false なら「キャンセル」を出さない（強制の効果・「はい」を選んだ後の効果。ヴァイクモン LM-040「進化元を4枚破棄する」で
+// 途中でキャンセルして3枚で終えられていた）。省略時は従来どおり出す
+function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCancel) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';
 
@@ -25694,6 +25704,7 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
   overlay.appendChild(row);
 
   // キャンセルボタン
+  if (allowCancel === false) { document.body.appendChild(overlay); return; }
   const cancelBtn = document.createElement('button');
   cancelBtn.style.cssText = 'margin-top:16px;background:#333;color:#fff;border:1px solid #666;padding:8px 20px;border-radius:8px;font-size:12px;cursor:pointer;';
   cancelBtn.innerText = 'キャンセル';

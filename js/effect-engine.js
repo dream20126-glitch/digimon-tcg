@@ -1430,7 +1430,8 @@ function executeQueueEntry(entry, context, callback0) {
     ? _recipeStepsForLookup[0]._inheritedFrom : null;
   const _dispRaw = _inhFrom ? (_inhFrom.effect || block.raw) : block.raw;
   const displayEffText = (_inhFrom ? '（継承：「' + _inhFrom.name + '」の効果）\n' : '')
-    + _withKeywordRuleText(extractTriggerSectionText(_dispRaw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup), _recipeStepsForLookup);
+    + _withKeywordRuleText(_announceTextByMemoryGate(_recipeStepsForLookup,
+      extractTriggerSectionText(_dispRaw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup), card, ctx.bs, actualSide), _recipeStepsForLookup);
 
   // レシピ/アクションを実行（アナウンス演出は挟まない）
   function runEffectNow(cb) {
@@ -13388,7 +13389,8 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
     : (card.effect || '');
   const effectText = reaction.effectText != null ? reaction.effectText
     : extractTriggerSectionText(_reactFullText, reaction.triggerCode || null, recipe);
-  const effectTextWithKw = _withKeywordRuleText(effectText, recipe);
+  const effectTextWithKw = _withKeywordRuleText(reaction.effectText != null ? effectText
+    : _announceTextByMemoryGate(recipe, effectText, card, ctx.bs, side), recipe);
   const evoSourceArg = isEvo ? sourceCard : undefined;
   const alwaysConfirm = !!(opts && opts.alwaysConfirm);
   const logActivated = () => {
@@ -16424,6 +16426,38 @@ const _COST_STEP_SET = new WeakSet();
 //   - それ以外: 陣営 subject 付きの属性条件（"cond_name_contains:X@own_tamer"）だけを
 //     ゲートとして抜き出し、残りは condition/when/extra_conditions に詰め直して各 case へ渡す
 //     （destroy 等が対象フィルタとして誤用しないように）。condition_op:'or' のときは全体がゲート
+// 発動ポップアップ／確認に出す効果文から、メモリーの条件（cond_memory_*）を今満たさないため発動しない手順の文を外す
+// （レガレクスモン LM-041「メモリーが1以上なら〜。その後、メモリーが1以下なら〜」で、相手側のメモリーのときも
+// 「メモリーが1以上なら」の文まで出ていた）。メモリーの条件だけで決まる手順に限り、その手順より前でメモリーを
+// 動かす手順（アクション・コスト）があれば以降は判定しない（前の手順の結果で変わる条件は先に判定できないため）
+function _announceTextByMemoryGate(steps, text, card, bs, side) {
+  try {
+    if (!Array.isArray(steps) || steps.length < 2 || !bs || !side) return text;
+    if (!steps.every(st => st && typeof st.display_text === 'string' && st.display_text.trim())) return text;
+    const isMemOnly = (st) => {
+      if (Array.isArray(st.condition_chain) && st.condition_chain.length > 0) return false;
+      const strs = [st.condition, st.when, ...(Array.isArray(st.extra_conditions) ? st.extra_conditions : [])].filter(Boolean).map(String);
+      if (strs.length === 0) return false;
+      return strs.every(s => { const cs = parseRecipeCondition(s); return cs.length > 0 && cs.every(c => c && !c.subject && /^cond_memory_/.test(String(c.code || ''))); });
+    };
+    const movesMemory = (st) => /memory/.test(String(st.action || '')) || (Array.isArray(st.cost) && /memory/.test(JSON.stringify(st.cost)));
+    const keep = [];
+    let memMoved = false;
+    steps.forEach((st) => {
+      keep.push(memMoved || !isMemOnly(st) || _evalStepConditionGate(st, card, bs, side));
+      if (movesMemory(st)) memMoved = true;
+    });
+    if (keep.every(Boolean) || !keep.some(Boolean)) return text;
+    const prefixM = /^((?:【[^】]+】)+)/.exec(steps[0].display_text.trim());
+    const kept = steps.filter((_, i) => keep[i]).map(st => st.display_text.trim());
+    if (!keep[0]) {
+      kept[0] = kept[0].replace(/^その後、/, '');
+      if (prefixM && !kept[0].startsWith('【')) kept[0] = prefixM[1] + kept[0];
+    }
+    return kept.join('');
+  } catch (e) { console.error('[announceTextByMemoryGate]', e); return text; }
+}
+
 function _resolveStepConditionGate(step) {
   if (!_stepHasGateConditions(step)) return null;
   // 【ターンに1回】の使用回数キーは元のステップのものを引き継ぐ（条件を外したコピーで数えると、

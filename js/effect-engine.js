@@ -16519,6 +16519,10 @@ function _resolveStepConditionGate(step) {
   // その候補の絞り込み。各 case が when を対象フィルタとして誤用しないよう、全体をゲートとして先に評価する
   // （ヴァイクモン LM-040 condition:"cond_not_exists@opp" + when:"cond_has_evo:self" の active）
   if (all.some(c => c && c.code === 'cond_not_exists')) return { gateSrc: step, stripped: strip(step) };
+  // 「このデジモンの進化元に『アンゴラモン』があるなら」（cond_evo_exists / cond_evo_match_*）も、兄弟条件（when の cond_name 等）は
+  // 進化元の絞り込みで、効果の対象の性質ではない。全体を発動条件として先に判定する（ディルビットモン P-090「自分のデジモン1体を
+  // アクティブにする」で、cond_name:アンゴラモン が対象の絞り込みに残り、名前がアンゴラモンのデジモンしか選べず何も起きなかった）
+  if (all.some(c => c && (c.code === 'cond_evo_exists' || /^cond_evo_match_/.test(String(c.code || ''))))) return { gateSrc: step, stripped: strip(step) };
   if (STEP_GATE_ACTIONS.has(step.action)) {
     if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
       const t = String(step.target || '');

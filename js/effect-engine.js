@@ -21311,6 +21311,20 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'not_active':
     case 'prevent_unsuspend': {
       const tStr = String(step.target || 'opponent:all');
+      // 「そのデジモン/テイマー」（same_target / picked）: 直前の手順で選んだカードに付ける（ラジエルモン LM-042「…の【進化時】効果は
+      // 発揮せず、アクティブにならない」。以前は same_target を読まず、自分側の別のカードに付いていた）
+      if (tStr === 'same_target' || tStr === 'picked') {
+        const _naSc = ctx.bs && ctx.bs._lastPickedCard;
+        const _inP = (p) => !!_naSc && (((p.battleArea || []).includes(_naSc)) || ((p.tamerArea || []).includes(_naSc)));
+        const _naScOpp = _inP(opponent), _naScOwn = _inP(player);
+        if (!_naScOpp && !_naScOwn) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+        const _naScDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        if (addBuffDirect(_naSc, 'prevent_unsuspend', 0, _naScDur, ctx) !== false) ctx.addLog('🔒 「' + _naSc.name + '」はアクティブにならない');
+        if (_naScOpp) _sendRemotePreventUnsuspend(ctx, opponent, _naSc, _naScDur);
+        ctx.renderAll && ctx.renderAll();
+        callback();
+        break;
+      }
       const _naIsOpp = tStr.startsWith('opp');
       const all = tStr.endsWith(':all') || tStr === 'opponent' || tStr === 'own';
       if (!all) {
@@ -25120,9 +25134,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _ngIsOpponent = !_ngTgtStr.startsWith('own');
       const _ngPool = _ngIsOpponent ? opponent : player;
       const _ngFilter = step.filter || null;
-      const _ngCands = [];
-      (_ngPool.battleArea || []).forEach((c, i) => { if (c && (!_ngFilter || cardMatchesFilter(c, _ngFilter))) _ngCands.push(i); });
-      if (_ngCands.length === 0) {
+      // 候補: デジモン。「デジモン/テイマー」（opponent_card / own_card、または種類の条件にテイマー）ならテイマーも
+      // （ラジエルモン LM-042「相手のデジモン/テイマー1体の【進化時】効果は発揮せず」。以前はデジモンだけだった）
+      const _ngWantTamer = /_card(:|$)/.test(_ngTgtStr) || _filterWantsTamer(_ngFilter);
+      const _ngEntries = [];
+      (_ngPool.battleArea || []).forEach((c, i) => { if (c && (!_ngFilter || cardMatchesFilter(c, _ngFilter))) _ngEntries.push({ card: c, own: !_ngIsOpponent, zone: 'battleArea', idx: i }); });
+      if (_ngWantTamer) (_ngPool.tamerArea || []).forEach((c, i) => { if (c && (!_ngFilter || cardMatchesFilter(c, _ngFilter))) _ngEntries.push({ card: c, own: !_ngIsOpponent, zone: 'tamerArea', idx: i }); });
+      if (_ngEntries.length === 0) {
         ctx.addLog('⚠ 対象がいません');
         showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
@@ -25130,37 +25148,34 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _ngDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
       const _ngTriggerKey = step.target_trigger || 'on_evolve';
       const _ngLabel = _ngTriggerKey === 'on_evolve' ? '【進化時】' : _ngTriggerKey;
-      const _ngApply = (idx) => {
-        const c = _ngPool.battleArea[idx];
+      const _ngApplyCard = (c) => {
         if (!c) return;
         addBuffDirect(c, 'negate_trigger', _ngTriggerKey, _ngDur, ctx);
-        // オンラインで相手のデジモンなら、持ち主の端末にも付与する（state_sync は相手のカードを上書きしないため個別に送る）
+        // オンラインで相手のカードなら、持ち主の端末にも付与する（state_sync は相手のカードを上書きしないため個別に送る）
         if (_ngIsOpponent && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-          try { window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: c.name, buffType: 'negate_trigger', value: _ngTriggerKey, duration: _ngDur, appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }); } catch (_) {}
+          const bi = (_ngPool.battleArea || []).indexOf(c), ti = bi === -1 ? (_ngPool.tamerArea || []).indexOf(c) : -1;
+          if (bi !== -1 || ti !== -1) {
+            try { window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: bi !== -1 ? bi : ti, zone: bi !== -1 ? 'battle' : 'tamer', targetName: c.name, buffType: 'negate_trigger', value: _ngTriggerKey, duration: _ngDur, appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }); } catch (_) {}
+          }
         }
-        // same_target（alt_actionsのdp_minus等が同一対象を再利用する）用に保存
+        // same_target（alt_actions の not_active / dp_minus 等が同じ対象を使う）用に保存
         if (ctx.bs) ctx.bs._lastPickedCard = c;
         ctx.addLog('🚫 「' + c.name + '」の' + _ngLabel + '効果は発揮しない');
       };
-      const _ngRowId = _ngIsOpponent ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
+      const _ngDone = () => { ctx.renderAll(); callback(); };
       // 対象が決まっている（「そのデジモンの【進化時】効果は発揮しない」same_target → _forceTargetIdx）ならそのカード
       // （無効化プラグインP P-095。以前は先頭のデジモンに付いていた）
       if (ctx._forceTargetIdx !== undefined) {
-        if (_ngCands.includes(ctx._forceTargetIdx)) _ngApply(ctx._forceTargetIdx);
-        ctx.renderAll();
-        callback();
+        const _fe = _ngEntries.find(e => e.zone === 'battleArea' && e.idx === ctx._forceTargetIdx);
+        if (_fe) _ngApplyCard(_fe.card);
+        _ngDone();
         break;
       }
-      if (effectiveSide === 'ai' || _ngCands.length === 1) {
-        _ngApply(_ngCands[0]);
-        ctx.renderAll();
-        callback();
-        break;
-      }
-      showTargetSelection(_ngRowId, _ngCands, null, '#ff4444', (selectedIdx) => {
-        if (selectedIdx != null) _ngApply(selectedIdx);
-        ctx.renderAll();
-        callback();
+      if (effectiveSide === 'ai' || _ngEntries.length === 1) { _ngApplyCard(_ngEntries[0].card); _ngDone(); break; }
+      _pickSideTargets(_ngEntries, 1, ctx, effectiveSide, !_ngIsOpponent, '🚫 ' + _ngLabel + '効果を発揮しなくする対象を選んでください', (list) => {
+        const e = list && list[0];
+        if (e) _ngApplyCard(e.card);
+        _ngDone();
       });
       break;
     }

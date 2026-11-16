@@ -740,11 +740,13 @@ export function onEndTurn() {
     // ターンを相手に渡した印（「相手のターン」表示が終わって isPlayerTurn が false になるまでの間に、メモリーが相手側の
     // ままなのを見た自動ターン終了の見張り等が、もう一度ターン終了時の効果を始めないように）
     bs._turnPassed = true;
-    if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
     // オンライン: 相手のターンが始まるので、自分のカードの【相手のターン開始時】をここで発揮する（相手の端末は
-    // 相手のカードの【自分のターン開始時】だけを発揮する。クオンタモン LM-020）
-    if (_onlineMode && window._fireOppTurnStart) window._fireOppTurnStart('player', () => {});
+    // 相手のカードの【自分のターン開始時】だけを発揮する。クオンタモン LM-020）。
+    // 発揮し終えてから相手にターンを渡す（以前は先に渡していたので、カテゴリーを選んでいる間に相手の端末でアクティブフェイズ・
+    // 育成フェイズ…と進んでいた）
+    let _endSent = false; const _sendEndTurn = () => { if (_endSent) return; _endSent = true; if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory }); };
+    if (_onlineMode && window._fireOppTurnStart) window._fireOppTurnStart('player', _sendEndTurn); else _sendEndTurn();
     // プレイヤーのターン終了 → endingSide='player'
     _hooks.expireBuffs('dur_this_turn', null, 'player');
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
@@ -989,11 +991,10 @@ export function checkAutoTurnEnd() {
     if (_onlineMode) {
       applyTurnEndMemoryShift();
       bs._turnPassed = true;
-      if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
-      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
-        // 自分のカードの【相手のターン開始時】（手動ターン終了と同じ。クオンタモン LM-020）
-        if (window._fireOppTurnStart) window._fireOppTurnStart('player', () => {});
-      });
+      // 自分のカードの【相手のターン開始時】を発揮し終えてから相手にターンを渡す（手動ターン終了と同じ。クオンタモン LM-020）
+      let _endSent2 = false; const _sendEndTurn2 = () => { if (_endSent2) return; _endSent2 = true; if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory }); };
+      let _afterDone = false; const _afterOppStart = () => { if (_afterDone) return; _afterDone = true; _sendEndTurn2(); showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {}); };
+      if (window._fireOppTurnStart) window._fireOppTurnStart('player', _afterOppStart); else _afterOppStart();
     } else {
       // CPU のカードの「相手のターン終了時」効果（onEndTurn の AI対戦分岐と同じ）
       if (!(window._tutorialRunner && window._tutorialRunner.active)) {

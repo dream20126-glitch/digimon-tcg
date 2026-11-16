@@ -20446,6 +20446,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
         const c = tgtPlayer.battleArea[i];
         // cant_discard: 重ねられているカードは破棄されない（退化は破棄先がトラッシュ固定のため対象外）
+        // 一番上が Lv.3 以下のデジモンは退化しても何も破棄されない（公式ルール: Lv.3 未満にはならない）ので選べない
+        // （サイバードラモンACE LM-025 の【退化1】で、Lv.2 を進化元に持つ Lv.3 も選べていた）
+        const _dvLv = c ? parseInt(c.level, 10) : NaN;
+        if (c && Number.isFinite(_dvLv) && _dvLv > 0 && _dvLv <= 3) continue;
         if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard')) && !_isImmuneToEffect(c, ctx) && !_isImmuneToEffect(c, ctx, 'dedigivolve')) valid.push(i);
       }
       if (valid.length === 0) {
@@ -25442,6 +25446,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('opponent:')) target = { code: 'target_opponent', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('other_own:') || t.startsWith('target_other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
+        // 自分・相手どちらでも＋カードの種類（both_tamer:1「テイマー1体をレストさせる」シャンブルモン LM-010 / both_card / both_digimon）:
+        // 「両方」（target_both）として扱い、種類は filter で絞る。以前は target_both_tamer のままで、レスト等が「両方」と
+        // 見なさず、デジモンから選ばせていた
+        else if (/^both_(tamer|card|digimon)(:d+)?$/.test(t)) {
+          const _bk = /^both_(tamer|card|digimon)(?::(d+))?$/.exec(t);
+          target = { code: 'target_both', count: parseInt(_bk[2], 10) || 1, _bothKind: _bk[1] };
+        }
         else {
           // 汎用フォールバック: "own_tamer_stack:1" のような "<コード>:<N>" 形式は
           // 末尾の":N"を数量として分離してからtarget_接頭辞を付ける（evo_discard系が
@@ -25454,6 +25465,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // step.filter（色/タイプ/名前等）を target に引き継ぐ（target_all_own 等の絞り込みに使用）
       if (target && step.filter) target.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
+      if (target && target._bothKind && target._bothKind !== 'digimon') {
+        const _bf = Object.assign({}, target.filter || {});
+        if (!_bf.type && !Array.isArray(_bf.type_in)) {
+          if (target._bothKind === 'tamer') _bf.type = 'テイマー'; else _bf.type_in = ['デジモン', 'テイマー'];
+        }
+        target.filter = _bf;
+      }
       // 「このデジモン/テイマー」（or_self）: 対象の候補にこのカードも入れる（マグナガルルモン P-153）
       if (target && step.or_self) target.orSelf = true;
       // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）

@@ -2945,7 +2945,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (idx === tgt.stack.length - 1) _edInfo.bottomCards.push(card);
         if (idx === 0) _edInfo.topCards.push(card);
       };
-      const discardFromTarget = (tgt0, onDone) => {
+      const discardFromTarget = (tgt0, onDone, onBack) => {
         // 選んだ本体を今の盤面のカードに取り直す（効果の途中で相手からの同期で盤面のカードが作り直されると、
         // 古いカードの進化元を見てしまい、さっき破棄した進化元がまた選べた。アンフィモンACE LM-005）
         let tgt = tgt0;
@@ -2999,7 +2999,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               const _shown = (_avail || tgt.stack.slice()).filter(c => !(edTrash || []).includes(c));
               console.log('[evo_discard_select] 「' + tgt.name + '」の進化元: ' + tgt.stack.map(c => c && c.name).join(',') + ' / 選べる: ' + _shown.map(c => c && c.name).join(','));
               if (_shown.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
-              showEvoSourceSelection(tgt, _shown, null, takeCard, _edCanCancel(action, ctx));
+              showEvoSourceSelection(tgt, _shown, null, takeCard, _edCanCancel(action, ctx),
+                (typeof onBack === 'function' && discarded.length === 0) ? onBack : undefined);
             }
           };
           pickNext(n);
@@ -3075,7 +3076,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (q.length === 0) { _nextS(); return; }
           if (!_selS) { _takeFrom(tgt, _topS ? q[0] : q[q.length - 1]); return; }
           if (effectiveSide === 'ai') { _takeFrom(tgt, q[0]); return; }
-          showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen), _edCanCancel(action, ctx));
+          showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen), _edCanCancel(action, ctx),
+            _qualIdx().length > 1 ? () => _nextS() : undefined);
         };
         const _nextS = () => {
           if (_left <= 0) { _finish(); return; }
@@ -3180,16 +3182,17 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
-      showTargetSelection(edRowSide, evoTargets, null, uiColor, (selectedIdx) => {
+      const _edPickHolder = () => showTargetSelection(edRowSide, evoTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
           discardFromTarget(edArea[selectedIdx], (didDiscard) => {
             afterDiscard(didDiscard, callback);
-          });
+          }, evoTargets.length > 1 ? _edPickHolder : undefined);
         } else {
           // コストとして実行中にキャンセルされたら不成立（本体を実行しない）
           callback(action._isCost ? false : undefined);
         }
       }, undefined, action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select' ? { noConfirm: true } : undefined);
+      _edPickHolder();
       break;
     }
     case 'cant_attack_block': {
@@ -25659,7 +25662,8 @@ function _showBoardMultiSourcePicker(sources, want, title, optional, done) {
 
 // allowCancel: false なら「キャンセル」を出さない（強制の効果・「はい」を選んだ後の効果。ヴァイクモン LM-040「進化元を4枚破棄する」で
 // 途中でキャンセルして3枚で終えられていた）。省略時は従来どおり出す
-function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCancel) {
+// onBack: 指定すると「戻る」ボタンを出す（進化元を見て、別のデジモンから破棄したいとき。デジモンを選ぶ画面へ戻る）
+function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCancel, onBack) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';
 
@@ -25706,6 +25710,13 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback, allowCan
 
   overlay.appendChild(row);
 
+  if (typeof onBack === 'function') {
+    const _edBackBtn = document.createElement('button');
+    _edBackBtn.style.cssText = 'margin-top:16px;background:#111;color:#00fbff;border:1px solid #00fbff;padding:8px 20px;border-radius:8px;font-size:12px;font-weight:bold;cursor:pointer;';
+    _edBackBtn.innerText = '← 戻る（デジモンを選び直す）';
+    _edBackBtn.onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onBack(); };
+    overlay.appendChild(_edBackBtn);
+  }
   // キャンセルボタン
   if (allowCancel === false) { document.body.appendChild(overlay); return; }
   const cancelBtn = document.createElement('button');

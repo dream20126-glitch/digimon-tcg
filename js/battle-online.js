@@ -2926,17 +2926,15 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             // ので、ここで 'ai' を発火すると「相手の効果」が自機側にもポップアップ表示されて
             // 「P1 と P2 で popup が逆」状態になるため発火しない。
             const fire = window._fireOnlineDestroyChain;
-            const finishAfterOwn = () => {
-              // 相手(atk所有者)側の消滅時チェーンが解決するまで待つ（fx_ownDestroyReady済み）。
-              // これが無いと相手側の効果でメモリーが動いてもターン終了判定を取りこぼす
-              if (typeof window._waitForOwnDestroyDone === 'function') {
-                window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); });
-              } else {
-                window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone();
-              }
-            };
-            if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
-            else finishAfterOwn();
+            const finishPlain = () => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); };
+            // 両者消滅で同時に誘発した効果は、ターンプレイヤー（攻撃側）から発揮する（公式ルール 15-4-3-5）:
+            // 攻撃側の【消滅時】（攻撃側の端末で発揮。fx_ownDestroyReady 済み）が解決するのを待ってから、
+            // 「デジモンが消滅したとき」系 → ブロッカーの【消滅時】。以前は両方の端末で同時に始まり、ブロッカー側が先に進むことがあった
+            const waitOwn = (cb) => (typeof window._waitForOwnDestroyDone === 'function' ? window._waitForOwnDestroyDone(cb) : cb());
+            waitOwn(() => _fireBlockBattleSubjectReactions(() => {
+              if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishPlain));
+              else finishPlain();
+            }));
           }); });
         });
       } else if (blkDies) {
@@ -3012,8 +3010,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               _sendBlockBattleDone(atkHasPenetrate ? { penetrate: true } : null);
               if (atkHasPenetrate) sendCommand({ type: 'penetrate_security_check', atkIdx: cmd.atkIdx });
             };
-            if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finish));
-            else finish();
+            // ターンプレイヤー（攻撃側）の「バトルで相手のデジモンを消滅させたとき」等（攻撃側の端末に委譲）を先に、
+            // そのあとブロッカーの【消滅時】（公式ルール 15-4-3-5。以前はブロッカーの【消滅時】が先だった）
+            _fireBlockBattleSubjectReactions(() => {
+              if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finish));
+              else finish();
+            });
           });
         });
       } else {

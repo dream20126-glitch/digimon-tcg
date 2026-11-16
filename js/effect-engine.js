@@ -13362,8 +13362,8 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   // 発揮する時点で「〜なら」の条件（step.condition）を満たすステップが1つも無ければ、確認も出さずに終える
   // （誘発の判定 _fireSidedReactionTriggers と同じ基準。プロットモン BT26-066【自分のメインフェイズ開始時】
   // 「手札が5枚以下なら」を、発揮する時点で手札が6枚以上でも確認していた）
-  if (bs && Array.isArray(recipe) && recipe.length > 0 && recipe.every(st => st && st.condition && !_isEvoSourceSummonStep(st)
-      && !checkConditions(parseRecipeCondition(st.condition), card, bs, side))) {
+  if (bs && Array.isArray(recipe) && recipe.length > 0 && recipe.every(st => st && !_isEvoSourceSummonStep(st)
+      && !_stepCondsPassNow(st, { card, bs, side }))) {
     ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + (sourceCard && sourceCard.name || card.name) + '」の効果は条件を満たさないため発揮しない');
     finish();
     return;
@@ -13540,10 +13540,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       if (eventCards && !pickEventCard(step)) return false;
       // 手札から破棄されたカード自身の効果は、破棄された時点の判定（_snapshotHandDiscardConds）を使う
       const _condAtDiscard = _stepZone(step) === 'hand' && carrier && carrier._handDiscardCond === 'ok';
-      if (step.condition && !_condAtDiscard) {
-        const conds = parseRecipeCondition(step.condition);
-        if (!checkConditions(conds, carrier, bs, reactSide)) return false;
-      }
+      if (!_condAtDiscard && !_stepCondsPassNow(step, { card: carrier, bs, side: reactSide })) return false;
       // 原因チェック（バトルで/効果で + 原因の対象）。on_destroy専用だった
       // _destroyCauseMatches を、when_opp_rest/when_evo_discard等この関数を使う
       // 全トリガー共通で使えるようにする（step.cause未指定なら常にtrue）
@@ -13705,7 +13702,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     if (!_reactionCanStillRun(r, reactSide, bs, recipeKey)) return false;
     if (r.zone === 'hand' && r.card && r.card._handDiscardCond === 'ok') return true;
     const rc = Array.isArray(r.recipe) ? r.recipe : [];
-    return !(rc.length > 0 && rc.every(st => st && st.condition && !_isEvoSourceSummonStep(st) && !checkConditions(parseRecipeCondition(st.condition), r.card, bs, reactSide)));
+    return !(rc.length > 0 && rc.every(st => st && !_isEvoSourceSummonStep(st) && !_stepCondsPassNow(st, { card: r.card, bs, side: reactSide })));
   };
   function nextReaction() {
     if (remaining.length === 0) { _hudSetSource(_hudKey, []); finish(); return; }
@@ -16789,6 +16786,56 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
     return false;
   });
 }
+// ステップの「〜なら」（condition / when / extra_conditions / condition_op / condition_chain）を今満たすか。
+// 効果発動の判定（recipeWillExecuteAnything）と、反応の誘発・発揮直前・「その後」のポップアップの判定を同じ基準にそろえる
+// （以前は反応・「その後」側が condition だけを効果を持つカード自身で判定していて、when 等を見落としたり、
+// 対象の絞り込みの条件をこのカードで判定したりしていた）。強制の効果は対象がいなくても true（「対象がいません」を出す）
+function _stepCondsPassNow(step, ctx) {
+  if (!step || !ctx || !ctx.bs) return true;
+  const _allConds = [];
+  _collectStepCondGroups(step).forEach(g => _allConds.push(...g));
+  const _hasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
+  const _gateInfo = _resolveStepConditionGate(step);
+  const _useFullGate = !!_gateInfo || _allConds.some(c => c && _EXISTS_META_CODES.has(c.code));
+  if (_useFullGate ? !_stepHasGateConditions(step) : !step.condition) {
+    return true;
+  }
+  // 条件あり → 評価
+  const conds = _useFullGate ? _allConds : parseRecipeCondition(step.condition);
+  if (_useFullGate && step.condition_op === 'or') conds._op = 'or';
+  const _hasChainOrSubj = _hasChain || conds.some(_isSubjectAttrCond);
+  // destroy / rest / bounce / cant_* / dp_plus / dp_minus で target が opponent/own の場合、
+  // condition が「対象カードごとの性質（色/タイプ/Lv/DP/キーワード等）を絞り込むフィルタ」
+  // であれば、盤面に実際にその条件を満たすカードが1体でもいるかを確認する。
+  // 例: グラウモン「DP2000以下の相手のデジモン1体を消滅させる」で対象0体なら不発
+  //     扱いにし、演出ポップアップも出さない。
+  // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
+  // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
+  // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
+  if (!_hasChainOrSubj
+      // 対象を選ぶ盤面の処理（_NC_BOARD_ACTIONS: デッキに戻す・セキュリティに置く等も含む）は、条件を対象の絞り込みとして見る
+      // （テラーズクラスター BT2-102「レスト状態の相手のデジモン1体をデッキの下に戻す」が、cond_rest を使ったオプション自身の
+      // 状態として判定され、発動しなかった）
+      && (_NC_BOARD_ACTIONS.has(step.action) || ['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action))
+      && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
+      && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
+    const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));
+    const _tgtSide = _isOwnTarget ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+    const _tgtArea = (ctx.bs[_tgtSide] && ctx.bs[_tgtSide].battleArea) || [];
+    const _hasTarget = _tgtArea.some(c => c && checkConditions(conds, c, ctx.bs, _tgtSide));
+    if (_hasTarget) return true;
+    // 強制の効果は対象がいなくても発動して「対象がいません」を出す（_stepNothingToDo と同じ）
+    if (!step.optional && !(Array.isArray(step.cost) && step.cost.length > 0)) return true;
+    return false;
+  }
+  // 陣営 subject 付き属性条件が対象フィルタと混在する場合は、実行時（executeRecipeStep）と
+  // 同じく subject 付きの部分だけをゲートとして評価する
+  const result = _useFullGate
+    ? _evalStepConditionGate(_gateInfo ? _gateInfo.gateSrc : step, ctx.card, ctx.bs, ctx.side)
+    : checkConditions(conds, ctx.card, ctx.bs, ctx.side);
+  return !!result;
+}
+
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
@@ -16862,51 +16909,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // それ以外（evo_cost_minus の「緑のLv.5がLv.6に進化するとき」等、when をアクション固有の
     // 意味で使うもの）は従来通り condition だけを評価する
     // （ソーサリモン BT26-022 の condition:"cond_exists@own"+when:"cond_color:赤,紫" 等）
-    const _allConds = [];
-    _collectStepCondGroups(step).forEach(g => _allConds.push(...g));
-    const _hasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
-    const _gateInfo = _resolveStepConditionGate(step);
-    const _useFullGate = !!_gateInfo || _allConds.some(c => c && _EXISTS_META_CODES.has(c.code));
-    if (_useFullGate ? !_stepHasGateConditions(step) : !step.condition) {
-      console.log('[recipeWillExecute] reactor=' + _reactor + ' step has no condition → true', 'action=' + step.action);
-      return true;
-    }
-    // 条件あり → 評価
-    const conds = _useFullGate ? _allConds : parseRecipeCondition(step.condition);
-    if (_useFullGate && step.condition_op === 'or') conds._op = 'or';
-    const _hasChainOrSubj = _hasChain || conds.some(_isSubjectAttrCond);
-    // destroy / rest / bounce / cant_* / dp_plus / dp_minus で target が opponent/own の場合、
-    // condition が「対象カードごとの性質（色/タイプ/Lv/DP/キーワード等）を絞り込むフィルタ」
-    // であれば、盤面に実際にその条件を満たすカードが1体でもいるかを確認する。
-    // 例: グラウモン「DP2000以下の相手のデジモン1体を消滅させる」で対象0体なら不発
-    //     扱いにし、演出ポップアップも出さない。
-    // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
-    // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
-    // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
-    if (!_hasChainOrSubj
-        // 対象を選ぶ盤面の処理（_NC_BOARD_ACTIONS: デッキに戻す・セキュリティに置く等も含む）は、条件を対象の絞り込みとして見る
-        // （テラーズクラスター BT2-102「レスト状態の相手のデジモン1体をデッキの下に戻す」が、cond_rest を使ったオプション自身の
-        // 状態として判定され、発動しなかった）
-        && (_NC_BOARD_ACTIONS.has(step.action) || ['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action))
-        && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
-        && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
-      const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));
-      const _tgtSide = _isOwnTarget ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
-      const _tgtArea = (ctx.bs[_tgtSide] && ctx.bs[_tgtSide].battleArea) || [];
-      const _hasTarget = _tgtArea.some(c => c && checkConditions(conds, c, ctx.bs, _tgtSide));
-      if (_hasTarget) return true;
-      // 強制の効果は対象がいなくても発動して「対象がいません」を出す（_stepNothingToDo と同じ）
-      if (!step.optional && !(Array.isArray(step.cost) && step.cost.length > 0)) return true;
-      console.log('[recipeWillExecute] reactor=' + _reactor + ' target filter has no candidate → skip', 'action=' + step.action);
-      continue;
-    }
-    // 陣営 subject 付き属性条件が対象フィルタと混在する場合は、実行時（executeRecipeStep）と
-    // 同じく subject 付きの部分だけをゲートとして評価する
-    const result = _useFullGate
-      ? _evalStepConditionGate(_gateInfo ? _gateInfo.gateSrc : step, ctx.card, ctx.bs, ctx.side)
-      : checkConditions(conds, ctx.card, ctx.bs, ctx.side);
-    console.log('[recipeWillExecute] reactor=' + _reactor, 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
-    if (result) return true;
+    if (_stepCondsPassNow(step, ctx)) return true;
+    console.log('[recipeWillExecute] reactor=' + _reactor + ' condition not met → skip', 'action=' + step.action);
   }
   console.log('[recipeWillExecute] reactor=' + _reactor + ' all steps blocked → false');
   return false;
@@ -17712,8 +17716,7 @@ function runRecipe(steps, ctx, callback) {
       const _afterText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text, ctx._inlineCostConfirm.evoSourceCard || ctx.card);
       // 残りのステップがどれも「〜なら」（step.condition）を満たさないなら、何も起きないのでアナウンスは出さない
       // （レオルモン BT26-025「その後、自分のセキュリティが0枚なら【リカバリー+1】」がセキュリティが残っていても出ていた）
-      const _afterNoop = steps.slice(idx - 1).every(st => st && st.condition
-        && !checkConditions(parseRecipeCondition(st.condition), ctx.card, ctx.bs, ctx.side));
+      const _afterNoop = steps.slice(idx - 1).every(st => st && !_stepCondsPassNow(st, ctx));
       if (!hasNoAnnounceOverride(steps) && !_afterNoop) {
         showEffectAnnounce(ctx.card, _afterText, ctx.side, () => _execStep(step, nextStep), ctx._inlineCostConfirm.evoSourceCard);
         return;
@@ -17739,7 +17742,7 @@ function runRecipe(steps, ctx, callback) {
     // 2つ目以降の効果（その後の効果等）に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す
     // （効果1と効果2で表示を分けたい。「〜なら」を満たさず何も起きない効果では出さない）
     if (idx > 1 && step && typeof step.display_text === 'string' && step.display_text.trim() && !step.no_announce
-        && !(step.condition && !checkConditions(parseRecipeCondition(step.condition), ctx.card, ctx.bs, ctx.side))) {
+        && _stepCondsPassNow(step, ctx)) {
       const _evoSrc = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
       showEffectAnnounce(ctx.card, step.display_text.trim(), ctx.side, () => _execStep(step, nextStep), _evoSrc);
       return;

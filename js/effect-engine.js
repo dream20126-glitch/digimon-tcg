@@ -25449,8 +25449,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 自分・相手どちらでも＋カードの種類（both_tamer:1「テイマー1体をレストさせる」シャンブルモン LM-010 / both_card / both_digimon）:
         // 「両方」（target_both）として扱い、種類は filter で絞る。以前は target_both_tamer のままで、レスト等が「両方」と
         // 見なさず、デジモンから選ばせていた
-        else if (/^both_(tamer|card|digimon)(:d+)?$/.test(t)) {
-          const _bk = /^both_(tamer|card|digimon)(?::(d+))?$/.exec(t);
+        else if (/^both_(tamer|card|digimon)(:\d+)?$/.test(t)) {
+          const _bk = /^both_(tamer|card|digimon)(?::(\d+))?$/.exec(t);
           target = { code: 'target_both', count: parseInt(_bk[2], 10) || 1, _bothKind: _bk[1] };
         }
         else {

@@ -2949,43 +2949,50 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           || (Array.isArray(blocker.buffs) && blocker.buffs.some(b => b && b.type === 'keyword_michizure'))
         );
         if (blockerHasMichizure && bs.ai.battleArea[cmd.atkIdx] === atk) {
-          addLog('💀 【道連れ】「' + blocker.name + '」が「' + atk.name + '」を巻き込んで消滅！');
-          bs.ai.battleArea[cmd.atkIdx] = null;
-          bs.ai.trash.push(atk);
-          if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
-          // 相手機にも atk 消滅を通知
-          // 送信側 (防御側) で観測している atk のフルカード情報を含める。
-        // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
-        // この cardData から on_destroy 用の stack/recipe を取得できる
-        sendCommand({
-          type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
-          cardData: serializeCardForCmd(atk),
-        });
-          armOwnDestroyDone();
-          sendCommand({ type: 'fx_ownDestroyReady' });
-          renderAll();
-          sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
-          showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
+          // 【道連れ】はこちら（ブロッカー側＝非ターンプレイヤー）の効果。ターンプレイヤー（攻撃側）の同時誘発
+          // （「バトルで相手のデジモンだけを消滅させたとき」ディルビットモン P-090 等。攻撃側の端末に委譲）を先に全て解決し、
+          // 次にブロッカーの【消滅時】、最後に【道連れ】（公式ルール 15-4-3-5。【消滅時】→【道連れ】は非ターンプレイヤーが
+          // 選べる順番の1つ）。以前は【道連れ】で先にアタッカーを消滅させていたので、P-090 の効果が発揮できなかった
+          sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
+          sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
+          showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
             showDE(blocker, () => {
-              // 巻き込まれた atk の消滅前に「道連れ」演出（自他両画面）
-              sendCommand({ type: 'fx_michizure' });
-              const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
-              showMichi(() => {
-                showDE(atk, () => {
-                  addLog('💥 両者消滅（道連れ）！');
-                  // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
-                  const fire = window._fireOnlineDestroyChain;
-                  const finishAfterOwn = () => {
-                    if (typeof window._waitForOwnDestroyDone === 'function') {
-                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); });
-                    } else {
-                      window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone();
-                    }
-                  };
-                  if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
-                  else finishAfterOwn();
+              addLog('💥 「' + blocker.name + '」が撃破された');
+              const fire = window._fireOnlineDestroyChain;
+              const finishPlain = () => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); };
+              // 3) 【道連れ】: アタッカーがまだ場にいれば消滅させる（状態の同期で作り直されていることがあるので同じカードでも探す）
+              const doMichizure = () => {
+                const cur = bs.ai.battleArea[cmd.atkIdx];
+                const same = !!cur && (cur === atk || (cur.cardNo === atk.cardNo && cur.name === atk.name));
+                if (!same) { finishPlain(); return; }
+                addLog('💀 【道連れ】「' + blocker.name + '」が「' + cur.name + '」を巻き込んで消滅！');
+                bs.ai.battleArea[cmd.atkIdx] = null;
+                bs.ai.trash.push(cur);
+                if (cur.stack) cur.stack.forEach(s => bs.ai.trash.push(s));
+                if (cur.linkedCards) cur.linkedCards.forEach(s => bs.ai.trash.push(s));
+                // 相手機（atk の持ち主）に消滅を通知 → 持ち主の端末で【消滅時】等を発火
+                sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy', cardData: serializeCardForCmd(cur) });
+                armOwnDestroyDone();
+                renderAll();
+                // 巻き込まれた atk の消滅前に「道連れ」演出（自他両画面）
+                sendCommand({ type: 'fx_michizure' });
+                sendCommand({ type: 'fx_destroy', cardName: cur.name, cardImg: cardImg(cur) });
+                sendCommand({ type: 'fx_ownDestroyReady' });
+                const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
+                showMichi(() => {
+                  showDE(cur, () => {
+                    addLog('💥 「' + cur.name + '」が【道連れ】で消滅');
+                    // アタッカーの消滅への「デジモンが消滅したとき」等は block_battle_done を送る前に発揮する
+                    _blkBattleCards = { atk: cur, blocker: null };
+                    if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(finishPlain);
+                    else finishPlain();
+                  });
                 });
+              };
+              // 1) ターンプレイヤー（攻撃側）の「消滅したとき」系 → 2) ブロッカーの【消滅時】 → 3) 【道連れ】
+              _fireBlockBattleSubjectReactions(() => {
+                if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, doMichizure));
+                else doMichizure();
               });
             });
           });

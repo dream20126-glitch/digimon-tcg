@@ -4426,20 +4426,28 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               afterDone();
             });
           };
-          // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、DPで上回っていても
-          // 撃破した側(atk)も巻き込んで消滅する。道連れが優先されるため≪貫通≫の
-          // ボーナスチェックは発揮せず、on_battle_winも発火しない（両者消滅と同じ扱い）
+          // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、撃破した側(atk)も消滅させる。
+          // 【道連れ】は非ターンプレイヤー（def側）の誘発効果なので、ターンプレイヤー（atk側）の同時誘発
+          // （バトルに勝ったとき・「バトルで相手のデジモンだけを消滅させたとき」ディルビットモン P-090 等）を先に
+          // 全て解決してから発揮する（公式ルール 15-4-3-5）。def の【消滅時】の後に発揮する（非ターンプレイヤーが
+          // 選べる順番の1つ）。以前は【道連れ】を先に処理し、atk 側の効果が発揮できなかった
           if (hasMichizure(def)) {
-            addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
-            bs.player.battleArea[atkIdx] = null;
-            bs.player.trash.push(atk);
-            if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-            _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
-            renderAll();
-            showMichizureAnnounce(() => {
-              showDestroyEffect(atk, function() {
-                _fireDestroyChain(['ai', 'player'], function() { checkPendingTurnEnd(); }, { ai: def, player: atk }, { ai: atk, player: def });
-              });
+            fireOnBattleWin(() => {
+              _fireDestroyChain(['ai'], () => {
+                const _mzIdx = bs.player.battleArea.indexOf(atk);
+                if (_mzIdx < 0) { checkPendingTurnEnd(); return; } // 先に別の効果で場を離れていた
+                addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+                bs.player.battleArea[_mzIdx] = null;
+                bs.player.trash.push(atk);
+                if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+                _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
+                renderAll();
+                showMichizureAnnounce(() => {
+                  showDestroyEffect(atk, function() {
+                    _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk }, { player: def });
+                  });
+                });
+              }, { ai: def }, { ai: atk });
             });
             return;
           }
@@ -4627,20 +4635,26 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
             // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、DPで上回っていても
             // 撃破した側(atk)も巻き込んで消滅する。道連れが優先されるため≪貫通≫の
             // ボーナスチェックは発揮せず、on_battle_winも発火しない（両者消滅と同じ扱い）
+            // 【道連れ】は非ターンプレイヤー（def=player側）の効果なので、ターンプレイヤー（atk=ai側）の効果を先に解決してから
+            // （公式ルール 15-4-3-5。プレイヤー側のアタックと同じ）
             if (hasMichizure(def)) {
-              addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
-              bs.ai.battleArea[atkIdx] = null;
-              bs.ai.trash.push(atk);
-              if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
-              _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-              renderAll();
-              showMichizureAnnounce(() => {
-                showDestroyEffect(atk, function() {
-                  _fireDestroyChain(['player', 'ai'], function() {
-                    showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
-                  }, { player: def, ai: atk }, { player: atk, ai: def });
-                });
-              });
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); fireOnBattleWin(() => {
+                _fireDestroyChain(['player'], () => {
+                  const _mzIdx = bs.ai.battleArea.indexOf(atk);
+                  if (_mzIdx < 0) { callback(); return; }
+                  addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+                  bs.ai.battleArea[_mzIdx] = null;
+                  bs.ai.trash.push(atk);
+                  if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
+                  _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
+                  renderAll();
+                  showMichizureAnnounce(() => {
+                    showDestroyEffect(atk, function() {
+                      _fireDestroyChain(['ai'], function() { renderAll(); callback(); }, { ai: atk }, { ai: def });
+                    });
+                  });
+                }, { player: def }, { player: atk });
+              }); }, 'Win!!', '#00ff88');
               return;
             }
             // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック

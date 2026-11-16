@@ -1056,6 +1056,42 @@ function showMichizureAnnounce(callback) {
 // window から呼べるように公開（battle-online.js のオンラインブロック処理で使う）
 if (typeof window !== 'undefined') window._showMichizureAnnounce = showMichizureAnnounce;
 
+// 【消滅時】と【道連れ】の両方を持つデジモンがバトルで消滅したとき、どちらから発揮するかを持ち主が選ぶ
+// （同時に誘発した自分の効果は、発揮する順を自分で選ぶ。公式ルール 15-4-3-4）。
+// 【消滅時】（本体・進化元）を持たないなら聞かずに 'michizure'。cb('destroy' | 'michizure')
+function askMichizureOrder(card, cb) {
+  let hasOnDestroy = false;
+  try { hasOnDestroy = !!card && (_hasRecipeTrigger(card, 'on_destroy') || _hasEvoStackTrigger(card, 'on_destroy')); } catch (_) {}
+  if (!hasOnDestroy) { cb('michizure'); return; }
+  const overlay = document.createElement('div');
+  overlay.id = '_michizure-order';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:65000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);padding:16px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#0a0a14;border:2px solid #ff5577;border-radius:12px;padding:18px;max-width:420px;width:100%;text-align:center;color:#fff;box-shadow:0 0 24px rgba(255,85,119,0.45);';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:15px;font-weight:bold;color:#ff8899;margin-bottom:8px;';
+  title.innerText = '「' + (card.name || '') + '」の効果を発揮する順番';
+  const sub = document.createElement('div');
+  sub.style.cssText = 'font-size:12px;color:#ccc;line-height:1.6;margin-bottom:14px;';
+  sub.innerText = '【消滅時】と【道連れ】が同時に誘発しました。どちらから発揮しますか？';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
+  const mk = (label, val, color) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = 'flex:1 1 140px;padding:10px 14px;border-radius:8px;border:2px solid ' + color + ';background:#111;color:' + color + ';font-size:14px;font-weight:bold;cursor:pointer;';
+    b.innerText = label;
+    b.onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); addLog('↕ 「' + (card.name || '') + '」は' + (val === 'destroy' ? '【消滅時】' : '【道連れ】') + 'から発揮'); cb(val); };
+    return b;
+  };
+  row.appendChild(mk('【消滅時】から', 'destroy', '#00fbff'));
+  row.appendChild(mk('【道連れ】から', 'michizure', '#ff5577'));
+  box.appendChild(title); box.appendChild(sub); box.appendChild(row);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+if (typeof window !== 'undefined') window._askMichizureOrder = askMichizureOrder;
+
 // 貫通アナウンス: combat-backdrop(46999) の上に出すため独立z-indexで実装
 function showPenetrateAnnounce(callback) {
   // オンライン: 相手画面にも演出を送る
@@ -4212,7 +4248,9 @@ export function removeBattleBuffs(applied) {
 // causerCardsBySide: { player: card, ai: card } - 各sideの消滅を実際に引き起こしたカード
 // （バトルなら勝った側のカード）。省略時は「原因の対象=このデジモン」判定が「自分側」への
 // 近似にフォールバックする（_destroyCauseMatches参照）
-function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide) {
+// opts.beforeOnDestroy[side](go): その側の「デジモンが消滅したとき」等の反応の後、消滅したカード自身の【消滅時】の前に
+// 挟む処理（【道連れ】を【消滅時】より先に発揮すると持ち主が選んだとき）。go() で続きへ
+function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide, opts) {
   // 両者消滅（相打ち）で同時に誘発した消滅時効果は、ターンプレイヤー側から発揮する（公式ルール 15-4-3-5。
   // P1 のターンにレイヴモンとミレニアモンが相打ちになったとき、非ターンプレイヤーのミレニアモンから発揮していた）
   if (Array.isArray(sides) && sides.length >= 2) {
@@ -4285,15 +4323,20 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide)
         // subjectを持たないため影響なし）
         const _battleCause = bs._lastDestroyCause;
         _fireOnDestroySubjectReactions(s, bs, ctxBase, () => {
-          // 消滅したカード自身の【消滅時】（進化元効果を含む）も原因＝バトルのまま判定する（ファルコモン P-142 の進化元
-          // 「【消滅時】バトル以外で消滅していたなら」が、バトルで消滅したのに発揮していた。以前はここで原因を消していた）
-          bs._lastDestroyCause = _battleCause;
-          afterOnDestroy(() => {
-            bs._lastDestroyCause = null;
-            try {
-              _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
-            } catch (_) { next(); }
-          });
+          const _goOnDestroy = () => {
+            // 消滅したカード自身の【消滅時】（進化元効果を含む）も原因＝バトルのまま判定する（ファルコモン P-142 の進化元
+            // 「【消滅時】バトル以外で消滅していたなら」が、バトルで消滅したのに発揮していた。以前はここで原因を消していた）
+            bs._lastDestroyCause = _battleCause;
+            afterOnDestroy(() => {
+              bs._lastDestroyCause = null;
+              try {
+                _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
+              } catch (_) { next(); }
+            });
+          };
+          const _hook = opts && opts.beforeOnDestroy && opts.beforeOnDestroy[s];
+          if (typeof _hook === 'function') { try { _hook(_goOnDestroy); } catch (e) { console.error('[beforeOnDestroy]', e); _goOnDestroy(); } }
+          else _goOnDestroy();
         });
       });
     } catch (_) { next(); }
@@ -4499,17 +4542,33 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
               // ≪道連れ≫: バトルで自分だけ消滅 → 相手(def)も消滅させる
               if (hasMichizure(atk) && def && bs.ai.battleArea.indexOf(def) >= 0) {
-                addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
-                const defIdx2 = bs.ai.battleArea.indexOf(def);
-                bs.ai.battleArea[defIdx2] = null;
-                bs.ai.trash.push(def);
-                if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
-      _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
-                renderAll();
-                showMichizureAnnounce(() => {
-                  showDestroyEffect(def, () => {
-                    _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def }, { player: def, ai: atk });
-                  });
+                // 【道連れ】で def を消滅させる。next(消滅させたか)
+                const doMichi = (next) => {
+                  const defIdx2 = bs.ai.battleArea.indexOf(def);
+                  if (defIdx2 < 0) { next(false); return; }
+                  addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
+                  bs.ai.battleArea[defIdx2] = null;
+                  bs.ai.trash.push(def);
+                  if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+                  _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
+                  renderAll();
+                  showMichizureAnnounce(() => { showDestroyEffect(def, () => next(true)); });
+                };
+                // 【消滅時】と【道連れ】の両方があれば、どちらから発揮するかを選ぶ（公式ルール 15-4-3-4）
+                askMichizureOrder(atk, (order) => {
+                  if (order === 'michizure') {
+                    doMichi((r) => {
+                      if (r) _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def }, { player: def, ai: atk });
+                      else _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk }, { player: def });
+                    });
+                  } else {
+                    _fireDestroyChain(['player'], () => {
+                      doMichi((r) => {
+                        if (r) _fireDestroyChain(['ai'], () => checkPendingTurnEnd(), { ai: def }, { ai: atk });
+                        else checkPendingTurnEnd();
+                      });
+                    }, { player: atk }, { player: def });
+                  }
                 });
                 return;
               }
@@ -4639,21 +4698,32 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
             // （公式ルール 15-4-3-5。プレイヤー側のアタックと同じ）
             if (hasMichizure(def)) {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); fireOnBattleWin(() => {
-                _fireDestroyChain(['player'], () => {
+                // 【道連れ】: atk がまだ場にいれば消滅させる。next(消滅させたか)
+                const doMichi = (next) => {
                   const _mzIdx = bs.ai.battleArea.indexOf(atk);
-                  if (_mzIdx < 0) { callback(); return; }
+                  if (_mzIdx < 0) { next(false); return; }
                   addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
                   bs.ai.battleArea[_mzIdx] = null;
                   bs.ai.trash.push(atk);
                   if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
                   _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
                   renderAll();
-                  showMichizureAnnounce(() => {
-                    showDestroyEffect(atk, function() {
-                      _fireDestroyChain(['ai'], function() { renderAll(); callback(); }, { ai: atk }, { ai: def });
-                    });
-                  });
-                }, { player: def }, { player: atk });
+                  showMichizureAnnounce(() => { showDestroyEffect(atk, () => next(true)); });
+                };
+                const finish = (removed) => {
+                  if (removed) _fireDestroyChain(['ai'], function() { renderAll(); callback(); }, { ai: atk }, { ai: def });
+                  else { renderAll(); callback(); }
+                };
+                // 【消滅時】と【道連れ】の両方があれば、どちらから発揮するかを持ち主（プレイヤー）が選ぶ（公式ルール 15-4-3-4）
+                askMichizureOrder(def, (order) => {
+                  if (order === 'michizure') {
+                    let _removed = false;
+                    _fireDestroyChain(['player'], () => finish(_removed), { player: def }, { player: atk },
+                      { beforeOnDestroy: { player: (go) => doMichi((r) => { _removed = r; go(); }) } });
+                  } else {
+                    _fireDestroyChain(['player'], () => doMichi(finish), { player: def }, { player: atk });
+                  }
+                });
               }); }, 'Win!!', '#00ff88');
               return;
             }

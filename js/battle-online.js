@@ -2959,10 +2959,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               const fire = window._fireOnlineDestroyChain;
               const finishPlain = () => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); };
               // 3) 【道連れ】: アタッカーがまだ場にいれば消滅させる（状態の同期で作り直されていることがあるので同じカードでも探す）
-              const doMichizure = () => {
+              const doMichizure = (after) => {
                 const cur = bs.ai.battleArea[cmd.atkIdx];
                 const same = !!cur && (cur === atk || (cur.cardNo === atk.cardNo && cur.name === atk.name));
-                if (!same) { finishPlain(); return; }
+                if (!same) { after(); return; }
                 addLog('💀 【道連れ】「' + blocker.name + '」が「' + cur.name + '」を巻き込んで消滅！');
                 bs.ai.battleArea[cmd.atkIdx] = null;
                 bs.ai.trash.push(cur);
@@ -2982,15 +2982,23 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                     addLog('💥 「' + cur.name + '」が【道連れ】で消滅');
                     // アタッカーの消滅への「デジモンが消滅したとき」等は block_battle_done を送る前に発揮する
                     _blkBattleCards = { atk: cur, blocker: null };
-                    if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(finishPlain);
-                    else finishPlain();
+                    if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(after);
+                    else after();
                   });
                 });
               };
-              // 1) ターンプレイヤー（攻撃側）の「消滅したとき」系 → 2) ブロッカーの【消滅時】 → 3) 【道連れ】
+              const fireBlockerOwn = (after) => {
+                if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, after));
+                else after();
+              };
+              // 1) ターンプレイヤー（攻撃側）の「消滅したとき」系 → 2) ブロッカーの【消滅時】と【道連れ】
+              // （両方あるときは、どちらから発揮するかをブロッカーの持ち主＝こちらが選ぶ。公式ルール 15-4-3-4）
               _fireBlockBattleSubjectReactions(() => {
-                if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, doMichizure));
-                else doMichizure();
+                const ask = window._askMichizureOrder || ((c, cb) => cb('destroy'));
+                ask(blocker, (order) => {
+                  if (order === 'michizure') doMichizure(() => fireBlockerOwn(finishPlain));
+                  else fireBlockerOwn(() => doMichizure(finishPlain));
+                });
               });
             });
           });

@@ -144,7 +144,8 @@ function _hasIceArmor(c) {
 }
 if (typeof window !== 'undefined') window._hasIceArmor = (c) => _hasIceArmor(c);
 // ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方のカード全体を氷で包んで、ひびが入り、ばらばらに砕く
-function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
+function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner, atkSide) {
+  const defSide = atkSide === 'player' ? 'ai' : atkSide === 'ai' ? 'player' : null;
   try {
     if (!document.getElementById('ice-armor-style2')) {
       const st = document.createElement('style'); st.id = 'ice-armor-style2';
@@ -188,11 +189,17 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
         + '@keyframes icMist{0%{opacity:0;transform:translate(0,0) scale(0.6)}40%{opacity:0.55}100%{opacity:0;transform:translate(var(--mx),var(--my)) scale(1.6)}}'
         + '@keyframes icGloss{0%{transform:translateX(-120%) skewX(-20deg)}100%{transform:translateX(220%) skewX(-20deg)}}'
         + '@keyframes icBurst{0%{opacity:0.9;transform:scale(0.4)}100%{opacity:0;transform:scale(1.6)}}'
-        + '@keyframes hxFlashIce{0%{opacity:0}15%{opacity:1}100%{opacity:0}}';
+        + '@keyframes hxFlashIce{0%{opacity:0}15%{opacity:1}100%{opacity:0}}'
+        + '@keyframes icQuake{0%,100%{translate:0 0}15%{translate:-9px 4px}30%{translate:8px -5px}45%{translate:-6px -3px}60%{translate:5px 4px}80%{translate:-2px 1px}}'
+        + '@keyframes icPop{0%{opacity:0;transform:scale(2.4)}45%{opacity:1;transform:scale(0.9)}70%{transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}'
+        + '@keyframes icRing{0%{opacity:1;transform:scale(0.5)}100%{opacity:0;transform:scale(2.4)}}'
+        + '@keyframes icRise{0%{transform:scaleY(0);opacity:0}60%{transform:scaleY(1.2);opacity:1}100%{transform:scaleY(1);opacity:1}}'
+        + '@keyframes icStreak{0%{opacity:0;transform:translateX(0) scaleX(0.3)}30%{opacity:0.9}100%{opacity:0;transform:translateX(var(--sx)) scaleX(1)}}'
+        + '@keyframes icVortex{0%{opacity:0;transform:rotate(0) scale(0.4)}25%{opacity:1}100%{opacity:0;transform:rotate(540deg) scale(1.1)}}';
       document.head.appendChild(st);
     }
     const cleanups = [];
-    const freezeStaged = (area) => {
+    const freezeStaged = (area, loserSide) => {
       if (!area) return;
       const r0 = area.getBoundingClientRect();
       if (!r0.width) return;
@@ -242,15 +249,24 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
       const ice = document.createElement('div');
       ice.style.cssText = 'position:absolute;inset:0;border-radius:10px;overflow:hidden;clip-path:inset(100% 0 0 0);transition:clip-path 0.35s cubic-bezier(.2,.9,.3,1.2);'
         + 'background:linear-gradient(115deg,rgba(255,255,255,0.55) 0%,rgba(255,255,255,0) 18%,rgba(255,255,255,0) 46%,rgba(255,255,255,0.35) 52%,rgba(255,255,255,0) 60%),'
-        + 'linear-gradient(180deg,rgba(225,248,255,0.55),rgba(150,215,255,0.45) 45%,rgba(110,190,245,0.55));'
+        + 'repeating-linear-gradient(60deg,rgba(255,255,255,0.12) 0 2px,rgba(255,255,255,0) 2px 9px),'
+        + 'linear-gradient(180deg,rgba(225,248,255,0.72),rgba(150,215,255,0.62) 45%,rgba(110,190,245,0.72));'
         + 'box-shadow:inset 0 0 0 2px rgba(255,255,255,0.85),inset 4px 4px 10px rgba(255,255,255,0.75),inset -6px -8px 14px rgba(60,140,220,0.55),0 0 22px rgba(155,227,255,0.9);';
       fz.appendChild(ice);
       // 氷の上端の線（凍った境目がはっきり見えるように）
       const edge = document.createElement('div');
-      edge.style.cssText = 'position:absolute;left:0;right:0;height:3px;top:100%;background:linear-gradient(90deg,rgba(255,255,255,0),#ffffff,rgba(255,255,255,0));box-shadow:0 0 10px #bff3ff;transition:top 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.3s;';
+      // 凍った境目: ギザギザの氷のとげの列（境目がひと目でわかるように）
+      edge.style.cssText = 'position:absolute;left:0;right:0;height:16px;margin-top:-15px;top:100%;transition:top 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.3s;filter:drop-shadow(0 0 5px #bff3ff) drop-shadow(0 0 2px #fff);';
+      {
+        let pts = '0,16';
+        const n = 9;
+        for (let q = 0; q <= n; q++) pts += ' ' + (q / n * 100).toFixed(1) + ',' + (q % 2 ? (2 + Math.random() * 5) : (9 + Math.random() * 4)).toFixed(1);
+        pts += ' 100,16';
+        edge.innerHTML = '<svg viewBox="0 0 100 16" preserveAspectRatio="none" style="width:100%;height:100%;display:block;"><polygon points="' + pts + '" fill="rgba(235,250,255,0.95)" stroke="#ffffff" stroke-width="0.8"/></svg>';
+      }
       fz.appendChild(edge);
       const lbl = document.createElement('div');
-      lbl.style.cssText = 'position:absolute;left:0;right:0;top:-22px;text-align:center;font-size:13px;font-weight:900;color:#fff;text-shadow:0 0 8px #3bb6ff,0 0 2px #035;opacity:0;transition:opacity 0.2s;white-space:nowrap;';
+      lbl.style.cssText = 'position:absolute;left:-40px;right:-40px;top:-34px;text-align:center;font-size:20px;font-weight:900;color:#fff;text-shadow:0 0 10px #3bb6ff,0 0 20px #3bb6ff,0 0 2px #035;opacity:0;white-space:nowrap;z-index:3;';
       fz.appendChild(lbl);
       const burst = () => {
         const b = document.createElement('div');
@@ -266,16 +282,58 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
           setTimeout(() => g.remove(), 600);
         }
       };
+      // ぶつかった瞬間の派手な演出: 画面のフラッシュ・揺れ・氷の衝撃波・大きな欠片・境目に結晶がせり上がる・冷気の筋
+      const stageImpact = (k, pct) => {
+        const R = fz.getBoundingClientRect();
+        const cx = R.left + R.width / 2, cy = R.top + R.height * (k === 3 ? 0.5 : pct / 100);
+        const fl = document.createElement('div');
+        fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + cx + 'px ' + cy + 'px,rgba(255,255,255,' + (0.55 + k * 0.12) + ') 0%,rgba(155,227,255,0.45) ' + (10 + k * 5) + '%,rgba(120,200,255,0.12) 45%,rgba(0,0,0,0) 70%);animation:hxFlashIce ' + (0.4 + k * 0.08) + 's ease-out forwards;';
+        box.appendChild(fl); setTimeout(() => fl.remove(), 800);
+        { const qe = overlay || document.body; qe.style.animation = 'none'; void qe.offsetWidth; qe.style.animation = 'icQuake ' + (0.25 + k * 0.08) + 's linear'; setTimeout(() => { qe.style.animation = ''; }, 800); }
+        for (let q = 0; q < 2; q++) {
+          const rg = document.createElement('div');
+          const sz = Math.max(R.width, R.height) * (0.7 + k * 0.15);
+          rg.style.cssText = 'position:absolute;left:' + (cx - sz / 2) + 'px;top:' + (cy - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;border:' + (5 - q * 2) + 'px solid rgba(225,248,255,0.95);box-shadow:0 0 24px #9be3ff,inset 0 0 18px #9be3ff;opacity:0;animation:icRing ' + (0.55 + q * 0.15) + 's ease-out ' + (q * 0.12) + 's forwards;';
+          box.appendChild(rg); setTimeout(() => rg.remove(), 1100);
+        }
+        for (let q = 0; q < 10 + k * 4; q++) {
+          const g = document.createElement('div');
+          const gs = 7 + Math.random() * 9;
+          g.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + gs + 'px;height:' + (gs * 1.6) + 'px;background:linear-gradient(135deg,#ffffff,#9fdcff);clip-path:polygon(50% 0,100% 40%,60% 100%,0 60%);filter:drop-shadow(0 0 5px #9be3ff);transition:transform 0.7s cubic-bezier(.15,.8,.3,1),opacity 0.7s;';
+          box.appendChild(g);
+          const an = Math.random() * Math.PI * 2, dd = 60 + Math.random() * (90 + k * 30);
+          requestAnimationFrame(() => { g.style.transform = 'translate(' + Math.cos(an) * dd + 'px,' + Math.sin(an) * dd + 'px) rotate(' + (Math.random() * 720 - 360) + 'deg)'; g.style.opacity = '0'; });
+          setTimeout(() => g.remove(), 800);
+        }
+        for (let q = 0; q < 8; q++) {
+          const sk = document.createElement('div');
+          const dir = q % 2 ? 1 : -1;
+          sk.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + (cy + (Math.random() - 0.5) * R.height * 0.8) + 'px;width:' + (60 + Math.random() * 80) + 'px;height:2px;margin-left:' + (dir < 0 ? '-140px' : '0') + ';background:linear-gradient(90deg,rgba(255,255,255,0),#e6f8ff,rgba(255,255,255,0));--sx:' + (dir * (80 + Math.random() * 80)) + 'px;opacity:0;animation:icStreak 0.5s ease-out ' + (Math.random() * 0.12).toFixed(2) + 's forwards;';
+          box.appendChild(sk); setTimeout(() => sk.remove(), 800);
+        }
+        if (k < 3) {
+          for (let q = 0; q < 5; q++) {
+            const cr = document.createElement('div');
+            const ch = 16 + Math.random() * 18 + k * 4, cw = 8 + Math.random() * 6;
+            cr.style.cssText = 'position:absolute;left:' + (10 + q * 20 + (Math.random() - 0.5) * 8) + '%;top:' + pct + '%;width:' + cw + 'px;height:' + ch + 'px;margin-left:' + (-cw / 2) + 'px;margin-top:' + (-ch + 4) + 'px;transform-origin:50% 100%;clip-path:polygon(50% 0,100% 30%,80% 100%,20% 100%,0 30%);background:linear-gradient(180deg,#ffffff,rgba(160,220,255,0.9));filter:drop-shadow(0 0 4px #bff3ff);opacity:0;animation:icRise 0.35s cubic-bezier(.2,.9,.3,1.4) ' + (q * 0.03).toFixed(2) + 's forwards;z-index:2;';
+            fz.appendChild(cr);
+            setTimeout(() => { cr.style.transition = 'opacity 0.3s'; cr.style.opacity = '0'; }, 520);
+            setTimeout(() => cr.remove(), 900);
+          }
+        }
+      };
       const setLevel = (k) => {
         const pct = k === 1 ? 66.7 : k === 2 ? 33.3 : 0;
         ice.style.clipPath = 'inset(' + pct + '% 0 0 0)';
         edge.style.top = pct + '%';
         if (k === 3) edge.style.opacity = '0';
         if (imgEl) imgEl.style.filter = k === 1 ? 'saturate(0.75) brightness(1.05) hue-rotate(20deg)' : k === 2 ? 'saturate(0.5) brightness(1.12) hue-rotate(110deg)' : 'saturate(0.25) brightness(1.2) contrast(1.05) sepia(0.2) hue-rotate(165deg)';
-        lbl.textContent = k === 3 ? '❄ 凍結 ❄' : '❄ ' + k + '/3';
-        lbl.style.opacity = '1';
+        lbl.textContent = k === 3 ? '❄ 完全凍結 ❄' : '❄ 凍結 ' + k + '/3';
+        lbl.style.fontSize = k === 3 ? '26px' : '20px';
+        lbl.style.animation = 'none'; void lbl.offsetWidth; lbl.style.animation = 'icPop 0.45s cubic-bezier(.2,.9,.3,1.3) forwards';
         frostStage(k);
         burst();
+        stageImpact(k, pct);
       };
       setTimeout(() => setLevel(1), HITS[0]);
       setTimeout(() => setLevel(2), HITS[1]);
@@ -343,6 +401,14 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
         const L = r.left - pad, T = r.top - pad, Wd = r.width + pad * 2, Ht = r.height + pad * 2;
         hidden.push({ el: area, v: area.style.visibility });
         area.style.visibility = 'hidden';
+        // 吸い寄せる先: 負けた側のトラッシュ（見つからなければ画面の下）
+        let tx = window.innerWidth / 2, ty = window.innerHeight + 40;
+        try {
+          const cnt = loserSide ? document.getElementById(loserSide === 'player' ? 'pl-trash-count' : 'ai-trash-count') : null;
+          const tEl = cnt ? (cnt.parentElement || cnt) : null;
+          const tr = tEl ? tEl.getBoundingClientRect() : null;
+          if (tr && tr.width) { tx = tr.left + tr.width / 2; ty = tr.top + tr.height / 2; }
+        } catch (_) {}
         const cols = 4, rows = 5;
         for (let k = 0; k < cols * rows; k++) {
           const cx0 = k % cols, cy0 = Math.floor(k / cols);
@@ -354,31 +420,53 @@ function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner) {
             + 'clip-path:polygon(' + (Math.random() * 25) + '% 0,100% ' + (Math.random() * 25) + '%,' + (75 + Math.random() * 25) + '% 100%,0 ' + (75 + Math.random() * 25) + '%);'
             + 'box-shadow:inset 0 0 0 1px rgba(255,255,255,0.9),inset 0 0 8px #fff;filter:drop-shadow(0 0 4px #9be3ff) saturate(0.4) hue-rotate(165deg);transition:transform 1s cubic-bezier(.2,.7,.4,1),opacity 1s;';
           box.appendChild(sh);
+          // 粉々に割れて少し浮き上がり → 一瞬止まって → 持ち主のトラッシュへ吸い寄せられる
           const a3 = Math.atan2(py + ph / 2 - (T + Ht / 2), px + pw / 2 - (L + Wd / 2)) + (Math.random() - 0.5) * 0.8;
-          const dist = 70 + Math.random() * 130;
-          requestAnimationFrame(() => {
-            sh.style.transform = 'translate(' + Math.cos(a3) * dist + 'px,' + (Math.sin(a3) * dist + 50 + Math.random() * 70) + 'px) rotate(' + (Math.random() * 540 - 270) + 'deg) scale(' + (0.4 + Math.random() * 0.5) + ')';
-            sh.style.opacity = '0';
-          });
+          const dist = 14 + Math.random() * 26;
+          const rot0 = Math.random() * 60 - 30;
+          sh.style.transition = 'transform 0.35s cubic-bezier(.2,.8,.3,1)';
+          requestAnimationFrame(() => { sh.style.transform = 'translate(' + Math.cos(a3) * dist + 'px,' + Math.sin(a3) * dist + 'px) rotate(' + rot0 + 'deg) scale(0.92)'; });
+          const dly = 480 + Math.random() * 260;
+          setTimeout(() => {
+            const dx = tx - (px + pw / 2), dy = ty - (py + ph / 2);
+            sh.style.transition = 'transform 0.75s cubic-bezier(.55,0,.85,.35),opacity 0.75s cubic-bezier(.7,0,1,.5),filter 0.75s';
+            sh.style.transform = 'translate(' + dx + 'px,' + dy + 'px) rotate(' + (rot0 + (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 360)) + 'deg) scale(0.08)';
+            sh.style.opacity = '0.15';
+          }, dly);
+          setTimeout(() => sh.remove(), dly + 800);
         }
         for (let q = 0; q < 24; q++) {
           const g = document.createElement('div');
           const gx = L + Wd / 2, gy = T + Ht / 2;
           g.style.cssText = 'position:absolute;left:' + gx + 'px;top:' + gy + 'px;width:' + (3 + Math.random() * 4) + 'px;height:' + (3 + Math.random() * 4) + 'px;background:#fff;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);box-shadow:0 0 8px #9be3ff;transition:transform 0.9s ease-out,opacity 0.9s;';
           box.appendChild(g);
-          const an = Math.random() * Math.PI * 2, dd = 50 + Math.random() * 130;
-          requestAnimationFrame(() => { g.style.transform = 'translate(' + Math.cos(an) * dd + 'px,' + Math.sin(an) * dd + 'px) rotate(' + (Math.random() * 360) + 'deg)'; g.style.opacity = '0'; });
+          const an = Math.random() * Math.PI * 2, dd = 25 + Math.random() * 45;
+          requestAnimationFrame(() => { g.style.transform = 'translate(' + Math.cos(an) * dd + 'px,' + Math.sin(an) * dd + 'px) rotate(' + (Math.random() * 360) + 'deg)'; });
+          const gd = 520 + Math.random() * 300;
+          setTimeout(() => { g.style.transition = 'transform 0.7s cubic-bezier(.55,0,.85,.35),opacity 0.7s'; g.style.transform = 'translate(' + (tx - gx) + 'px,' + (ty - gy) + 'px) scale(0.3)'; g.style.opacity = '0'; }, gd);
+          setTimeout(() => g.remove(), gd + 750);
         }
+        // トラッシュに渦（吸い込み口）→ 欠片が吸い込まれたら光る
+        const vs = 90;
+        const vx = document.createElement('div');
+        vx.style.cssText = 'position:absolute;left:' + (tx - vs / 2) + 'px;top:' + (ty - vs / 2) + 'px;width:' + vs + 'px;height:' + vs + 'px;border-radius:50%;background:conic-gradient(from 0deg,rgba(155,227,255,0),rgba(220,248,255,0.9),rgba(155,227,255,0),rgba(220,248,255,0.9),rgba(155,227,255,0));-webkit-mask:radial-gradient(circle,transparent 22%,#000 24%,#000 62%,transparent 64%);mask:radial-gradient(circle,transparent 22%,#000 24%,#000 62%,transparent 64%);filter:drop-shadow(0 0 8px #9be3ff);opacity:0;animation:icVortex 1.5s ease-in-out 0.35s forwards;';
+        box.appendChild(vx);
+        setTimeout(() => {
+          const tf = document.createElement('div');
+          tf.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + tx + 'px ' + ty + 'px,rgba(255,255,255,0.95) 0%,rgba(155,227,255,0.6) 5%,rgba(0,0,0,0) 16%);animation:hxFlashIce 0.5s ease-out forwards;';
+          box.appendChild(tf);
+        }, 1250);
         const fl = document.createElement('div');
-        fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + (L + Wd / 2) + 'px ' + (T + Ht / 2) + 'px,rgba(255,255,255,0.85) 0%,rgba(155,227,255,0.4) 12%,rgba(0,0,0,0) 30%);animation:hxFlashIce 0.5s ease-out forwards;';
+        fl.style.cssText = 'position:absolute;inset:0;background:radial-gradient(circle at ' + (L + Wd / 2) + 'px ' + (T + Ht / 2) + 'px,rgba(255,255,255,0.95) 0%,rgba(155,227,255,0.55) 18%,rgba(120,200,255,0.15) 45%,rgba(0,0,0,0) 65%);animation:hxFlashIce 0.6s ease-out forwards;';
         box.appendChild(fl);
+        { const qe = overlay || document.body; qe.style.animation = 'none'; void qe.offsetWidth; qe.style.animation = 'icQuake ' + 0.45 + 's linear'; setTimeout(() => { qe.style.animation = ''; }, 800); }
         try { fz.remove(); } catch (_) {}
       }, HITS[2] + 1250);
     };
-    if (winner === 'atk' || winner === 'tie') freezeStaged(defArea);
-    if (winner === 'def' || winner === 'tie') freezeStaged(atkArea);
-    setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 4900);
-    setTimeout(() => box.remove(), 5400);
+    if (winner === 'atk' || winner === 'tie') freezeStaged(defArea, defSide);
+    if (winner === 'def' || winner === 'tie') freezeStaged(atkArea, atkSide);
+    setTimeout(() => { box.style.transition = 'opacity 0.4s'; box.style.opacity = '0'; }, 4800);
+    setTimeout(() => box.remove(), 5300);
     // 隠したVS画面のカードは、VS画面が閉じたら（念のため最長12秒で）元に戻す
     const t0 = Date.now();
     const restore = () => {
@@ -6027,7 +6115,8 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     const _a = _ice ? _cnt(atkCard, _iA) : (parseInt(atkCard.dp) || 0);
     const _d = _ice ? _cnt(secCard, _iD) : (parseInt(secCard.dp) || 0);
     const _winner = _a > _d ? 'atk' : _a < _d ? 'def' : 'tie';
-    if (_ice) setTimeout(() => _iceArmorVsFx(overlay, _vsAtkArea, _vsDefArea, _a, _d, _winner), 1350);
+    const _iceAtkSide = (bs.player.battleArea || []).includes(_iA) ? 'player' : (bs.ai.battleArea || []).includes(_iA) ? 'ai' : null;
+    if (_ice) setTimeout(() => _iceArmorVsFx(overlay, _vsAtkArea, _vsDefArea, _a, _d, _winner, _iceAtkSide), 1350);
     // 3回目の押し合いに入ったら callback（勝敗・消滅回避の判定）へ進む。VS画面は決着（_clashFinish）まで出したまま
     if (_clashPending) _clashForceClose();
     window._fxMoveHold = (window._fxMoveHold || 0) + 1;

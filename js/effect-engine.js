@@ -3086,7 +3086,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           showTargetSelection(edRowSide, cands, null, uiColor, (idx) => {
             if (idx === null || idx === undefined) { _finish(); return; }
             _pickCardOf(_area()[idx]);
-          }, '（進化元を破棄するデジモン・' + (_done + 1) + '/' + n + '枚目）');
+          }, '（進化元を破棄するデジモン・' + (_done + 1) + '/' + n + '枚目）', _selS ? { noConfirm: true } : undefined);
         };
         _nextS();
         break;
@@ -3189,7 +3189,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           // コストとして実行中にキャンセルされたら不成立（本体を実行しない）
           callback(action._isCost ? false : undefined);
         }
-      });
+      }, undefined, action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select' ? { noConfirm: true } : undefined);
       break;
     }
     case 'cant_attack_block': {
@@ -5145,6 +5145,9 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
           });
         } catch (_) {}
       }
+      // opts.noConfirm: 選んだ後にもう一度カードを選ぶ画面が続く（進化元を破棄するデジモン→進化元のカード）ときは、
+      // ここでは「このカードでいいですか？」を出さない（確認は最後のカードを選ぶ画面の1回だけ）
+      if (opts && opts.noConfirm) { cleanup(); callback(selectedIdx); return; }
       // 確認ダイアログ表示
       showTargetConfirm(card, selectedIdx, color, (confirmed) => {
         if (confirmed) {

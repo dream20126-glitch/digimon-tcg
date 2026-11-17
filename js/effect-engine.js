@@ -2399,6 +2399,20 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : destroyTargets[0];
         const card = tgtPlayer.battleArea[di];
         if (ctx.bs) ctx.bs._lastActionCount = 1;
+        // バトル演出の黒背景（_combat-backdrop）が残っていると盤面の消滅演出が見えず、画面が真っ黒のままになる（メガドラモン
+        // EX12-064【アタック終了時】）。対象の選択画面と同じく消滅させる間は隠し、終わったらバトルの演出中のときだけ戻す
+        if (_dAuto && typeof document !== 'undefined') {
+          const _dBd = document.getElementById('_combat-backdrop');
+          if (_dBd && _dBd.style.display !== 'none') {
+            _dBd.style.display = 'none';
+            console.log('[destroy auto] バトルの黒背景を隠して消滅させる');
+            const _cbOrig = callback;
+            callback = (...a) => {
+              if (typeof window !== 'undefined' && typeof window._isCombatAnimating === 'function' && window._isCombatAnimating()) _dBd.style.display = 'block';
+              _cbOrig && _cbOrig(...a);
+            };
+          }
+        }
         // doDestroy（離れなかったら演出なし）→ 消滅演出 → callback
         void card;
         // 「この効果で消滅しなかったなら」（メガドラモン EX12-064）: 実際に消滅したかで処理した数を決める

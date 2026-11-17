@@ -2395,6 +2395,24 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
           area.style.transition = 'transform 0.3s cubic-bezier(.2,.9,.3,1.3)';
           area.style.transform = 'translateX(' + (dir * 8) + 'px)';
         }, 350);
+        // ② 'peel'（ハイアンドロモン BT26-058「〜を上から1枚このデジモンの進化元の下に置く」）: はがれたカードはトラッシュではなく
+        //    進化元の一番下へ。カードの真下に回り込み、下のカードの後ろへ潜り込んで（下端だけ見える）から薄く消える
+        if (kind === 'peel') {
+          setTimeout(() => {
+            peel.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
+            peel.style.transform = 'translate(0,' + Math.round(rr.height * 0.3) + 'px) scale(0.92)';
+          }, 950);
+          setTimeout(() => {
+            // 下のカードと重なる部分を隠して「後ろに入った」ように見せる（進化元のように下端だけはみ出る）
+            peel.style.transition = 'clip-path 0.45s ease-in, transform 0.45s ease-in';
+            peel.style.clipPath = 'inset(72% 0 0 0 round 10px)';
+            peel.style.transform = 'translate(0,' + Math.round(rr.height * 0.18) + 'px) scale(0.92)';
+            const tag = el('position:absolute;left:' + (rr.left + rr.width / 2) + 'px;top:' + (rr.bottom + 8) + 'px;transform:translateX(-50%);font-size:12px;font-weight:bold;color:#a8ff4a;text-shadow:0 0 6px #000,0 0 10px #a8ff4a;white-space:nowrap;', '↓ 進化元の下へ');
+            setTimeout(() => { tag.style.transition = 'opacity 0.4s'; tag.style.opacity = '0'; }, 1000);
+          }, 1500);
+          setTimeout(() => { peel.style.transition = 'opacity 0.5s'; peel.style.opacity = '0'; }, 2300);
+          return 2900;
+        }
         // ② はがれたカードが吹き飛ばされてトラッシュへ
         setTimeout(() => { peel.style.transition = ''; blowTo(peel, dir, 'trash'); }, 950);
         return 950 + 2000;

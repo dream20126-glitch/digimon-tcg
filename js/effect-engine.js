@@ -27446,9 +27446,26 @@ export function checkOverflow(bs, ctxBase) {
   ['player', 'ai'].forEach((side) => _overflowCardsInArea(bs, side).forEach((c) => now.set(c, side)));
   bs._ovfInArea = now;
   if (!prev) return; // 初回は記録だけ
+  // 見えなくなったカードは、少し待ってからもう一度確かめる。処理の途中で一瞬だけエリアにも下のカードにも居ない
+  // （「離れるとき」で他のデジモンの下に入る途中等）ことがあり、そのときに処理すると、カードの下に置かれただけなのに
+  // 《オーバーフロー》が起きていた（メギドラモンACE LM-026 がバトルで負けてギルモンの下に入ったとき。4-19-4 では処理しない）
+  if (!bs._ovfPending) bs._ovfPending = new Map();
   prev.forEach((side, card) => {
-    if (now.has(card)) return; // まだエリアか下のカードに居る
+    if (now.has(card)) return;
     if (online && side !== 'player') return; // 相手のカードは相手の端末で処理
+    if (bs._ovfPending.has(card)) return;
+    bs._ovfPending.set(card, side);
+    setTimeout(() => {
+      bs._ovfPending.delete(card);
+      const again = new Set();
+      ['player', 'ai'].forEach((sd) => _overflowCardsInArea(bs, sd).forEach((c) => again.add(c)));
+      if (again.has(card)) { console.log('[overflow] 「' + (card.name || '?') + '」はカードの下/エリアに居るので処理しない'); return; }
+      _applyOverflow(bs, ctxBase, card, side, online);
+    }, 400);
+  });
+}
+function _applyOverflow(bs, ctxBase, card, side, online) {
+  {
     const n = _overflowValueOf(card);
     if (n <= 0) return;
     if (side === 'player') bs.memory -= n; else bs.memory += n;
@@ -27464,7 +27481,9 @@ export function checkOverflow(bs, ctxBase) {
     if (online && side === 'player') {
       try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_overflowNotice', cardName: card.name || '', n }); } catch (_) {}
     }
-  });
+    // 少し後で処理するので、メモリーゲージを描き直す（描画の中ではなくなった）
+    try { if (ctxBase && typeof ctxBase.updateMemGauge === 'function') ctxBase.updateMemGauge(); } catch (_) {}
+  }
 }
 // 《オーバーフロー》でメモリーが動いたことを知らせるポップアップ（描画中に呼ばれるので待たない。2.5秒で消える）
 // delta: この画面のプレイヤーから見たメモリーの増減（-4＝自分のメモリー-4 / +4＝自分のメモリー+4）

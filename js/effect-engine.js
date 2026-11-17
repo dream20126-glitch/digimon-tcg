@@ -12954,7 +12954,10 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
   // オプションの【メイン】【ディレイ】（巨大肉 EX12-073 / コンロンの勅令 EX12-075）: 【メイン】の並びのディレイは、
   // バトルエリアに置かれた後に【メイン】として使う別の効果。使用したとき（手札から）はディレイを除き、
   // バトルエリアに置かれているときの【メイン】はディレイだけにする
-  if (triggerCode === 'main' && Array.isArray(result) && card && card.type === 'オプション' && result.some(s => s && s.action === 'delay')) {
+  // バトルエリアに置かれたオプションは、【メイン】の並びにディレイが無くても（ディレイが「〜とき」の誘発側にあるカード）
+  // 使用時の【メイン】を「⚡ 効果」から使えてはいけない → 置かれている間の【メイン】はディレイだけ
+  if (triggerCode === 'main' && Array.isArray(result) && card && card.type === 'オプション'
+      && (card._placedInBattleArea || result.some(s => s && s.action === 'delay'))) {
     result = card._placedInBattleArea ? result.filter(s => s && s.action === 'delay') : result.filter(s => !(s && s.action === 'delay'));
     if (result.length === 0) result = null;
   }

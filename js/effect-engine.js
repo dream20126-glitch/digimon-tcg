@@ -4879,9 +4879,12 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
     bounced.linkedCards = [];
     ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
     // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
-    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+    // （自分のデジモンを戻した（「このデジモンを手札に戻す」）なら、自分の盤面は state_sync で相手に伝わる）
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && targetSideName === 'ai') {
       window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
       if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+    } else if (window._isOnlineMode && window._isOnlineMode() && targetSideName === 'player' && window._onlineSendStateSync) {
+      try { window._onlineSendStateSync(); } catch (_) {}
     }
     ctx.renderAll();
     // 緑の渦に吸い込まれて手札へ（両方の画面）
@@ -16950,6 +16953,15 @@ function recipeWillExecuteAnything(recipe, ctx) {
         && (!_esF || cardMatchesFilter(c, _esF, ctx.bs, ctx.side, ctx.card))
         && _evalStepConditionGate(step, c, ctx.bs, ctx.side));
       if (_esOk) return true;
+      // 「進化元か自分のトラッシュから」（from に trash/hand も入っている）なら、そちらの候補も見る
+      // （メギドラモンACE LM-026: 進化元にギルモンが無く、トラッシュにあるのに「離れるとき」が発動しなかった）
+      const _esZones = Array.isArray(step.from) ? step.from : [step.from];
+      const _esMe = ctx.bs && ctx.bs[ctx.side];
+      if (_esMe && _esZones.some(z => z === 'trash' || z === 'hand')) {
+        const _esF2 = _withImpliedTargetType(step, _esF || {});
+        const _esPool = [...(_esZones.includes('hand') ? (_esMe.hand || []) : []), ...(_esZones.includes('trash') ? (_esMe.trash || []) : [])];
+        if (_esPool.some(c => c && cardMatchesFilter(c, _esF2, ctx.bs, ctx.side, ctx.card) && _evalStepConditionGate(step, c, ctx.bs, ctx.side))) return true;
+      }
       continue;
     }
     // 「このデジモンでアタックできる」（≪ヴォルテクス≫≪急襲≫等）で、アタックできない（レスト中・アタックできない状態、
@@ -20662,6 +20674,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         _moveBatchIntro(ctx, _rhoPicked, '相手のトラッシュ', '相手の手札', _rhoMoveNext, { remoteFrom: 'トラッシュ', remoteTo: '手札' });
         break;
       }
+      // target:"self"（このデジモンを手札に戻す）: 選ばずにこのデジモン自身を持ち主の手札へ
+      // （ディルビットモンACE LM-013 が与える「次の相手のターン終了時、そのデジモンを手札に戻す」。以前は対象の
+      // 指定が無い扱いになり、相手のデジモンを選ぶ画面が出ていた）
+      if (/^self(_card)?(:|$)/.test(String(step.target || '')) && !step.from) {
+        const _rsCard = ctx.card;
+        const _rsIdx = _rsCard ? (player.battleArea || []).indexOf(_rsCard) : -1;
+        if (_rsIdx === -1) { ctx.addLog && ctx.addLog('💨 「' + ((_rsCard && _rsCard.name) || '') + '」はバトルエリアにいないので手札に戻せない'); callback(); break; }
+        if (_rsCard.buffs && _rsCard.buffs.some(b => b && b.type === 'cant_return_hand')) { ctx.addLog && ctx.addLog('🛡 「' + _rsCard.name + '」は手札に戻らない'); callback(); break; }
+        doBounce(player, _rsIdx, ctx, () => callback());
+        break;
+      }
       const _rhFromTrash = step.from === 'trash'
         || (Array.isArray(step.from) && step.from.indexOf('trash') >= 0)
         || (!step.from && String(step.target || '').startsWith('own'));
@@ -21480,7 +21503,16 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _gTexts = ctx.card ? [ctx._sourceCard && ctx._sourceCard !== ctx.card ? ctx._sourceCard.evoSourceEffect : null, ctx.card.effect, ctx.card.evoSourceEffect, ctx.card.securityEffect].filter(t => t && t !== 'なし') : [];
         const _gAllQ = [];
         _gTexts.forEach((t) => { const re = /[「『]([^」』]+)[」』]/g; let m; while ((m = re.exec(t))) _gAllQ.push(m[1]); });
-        const _gQ = _gAllQ.find(q => /^【/.test(q)) || _gAllQ[0] || null;
+        // 「」が名称（「アンゴラモン」の記述がある…）だけのときは使わない（ディルビットモンACE LM-013 の効果付与が
+        // 「アンゴラモン」と表示されていた）。効果の「」が無ければ、「そのデジモンを〜」の文（付与される効果）を出す
+        const _gEffQ = [];
+        _gTexts.forEach((t) => { const re = /[「『]([^」』]+)[」』](?=の効果)/g; let m; while ((m = re.exec(t))) _gEffQ.push(m[1]); });
+        let _gQ = _gAllQ.find(q => /^【/.test(q)) || _gEffQ[0] || null;
+        if (!_gQ) {
+          const _gSent = [];
+          _gTexts.forEach((t) => String(t).split(/[。\n]/).forEach((s) => { if (/そのデジモン/.test(s)) _gSent.push(s.trim()); }));
+          if (_gSent.length) _gQ = _gSent[0] + '。';
+        }
         const _gQuoted = _gQ ? [null, _gQ] : null;
         c._grantedRecipes.push({
           recipe: granted, duration: dur, side: ctx.side, kwFlag: step._grantKw || null,
@@ -22774,12 +22806,37 @@ function executeRecipeStep(step, ctx, store, callback) {
       if ((_pudSelf || !step.target || step.evo_source_owner === 'self') && step.from === 'stacked_cards' && ctx.card) {
         const src = ctx.card;
         if (!Array.isArray(src.stack)) src.stack = [];
-        const n = Math.min(Math.max(1, step.value || 1), src.stack.length);
+        // 「重ねられているカード」は一番上のカード（このデジモン自身）＋進化元。上から1枚＝このカード自身
+        // （以前は進化元の一番上を動かしていた。BT26-058 台帳）。本体を下に回したら、残りの一番上が新しい姿になる（同じ1体）
+        const seq = [src].concat(src.stack);
+        const n = Math.min(Math.max(1, step.value || 1), seq.length - 1); // 全部を動かすと置き先（進化元の下）が無い
         if (n <= 0) { callback(); break; }
-        const moved = src.stack.splice(0, n); // 上からn枚（stack[0]が直前進化形＝最上位）
+        const moved = seq.slice(0, n);
+        const remainder = seq.slice(n);
         if (_pudFaceDown) moved.forEach(c => { c._faceDown = true; });
-        if (_pudBottom) src.stack.push(...moved); else src.stack.unshift(...moved);
-        ctx.addLog('🃏 「' + src.name + '」に重ねられているカードを上から' + moved.length + '枚、進化元の' + (_pudBottom ? '下' : '上') + 'に置き直す');
+        const order = _pudBottom ? remainder.concat(moved) : seq;
+        const newCarrier = order[0];
+        const _pudIdx = player.battleArea.indexOf(src);
+        if (newCarrier !== src) {
+          newCarrier.stack = order.slice(1);
+          src.stack = [];
+          newCarrier.suspended = !!src.suspended;
+          newCarrier._permEffects = {};
+          newCarrier._usedEffects = Array.isArray(src._usedEffects) ? src._usedEffects.slice() : [];
+          newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+          newCarrier.dp = newCarrier.baseDp;
+          newCarrier.dpModifier = 0;
+          delete newCarrier._faceDown;
+          _carryDedigiState(src, newCarrier);
+          if (_pudIdx !== -1) player.battleArea[_pudIdx] = newCarrier;
+          // ctx.card は src のまま（「離れない」の印 _stayedInBattleArea は反応したカード＝src で読まれる）
+        } else {
+          src.stack = order.slice(1);
+        }
+        ctx.addLog('🃏 「' + src.name + '」に重ねられているカードを上から' + moved.length + '枚、進化元の' + (_pudBottom ? '下' : '上') + 'に置く'
+          + (newCarrier !== src ? '（新しい姿: ' + newCarrier.name + '）' : ''));
+        if (newCarrier !== src && _pudIdx !== -1 && window._markEvoModified) { try { window._markEvoModified(ctx.side, _pudIdx); } catch (_) {} }
+        try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
         callback();

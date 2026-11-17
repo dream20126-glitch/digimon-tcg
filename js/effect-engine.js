@@ -22803,14 +22803,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       // target省略時もこの from が来たら自分自身の操作として扱う（他に解釈のしようがないため）。
       // evo_source_owner:"self"（エディタの「重ねられているカードの対象」選択、コスト欄等で
       // 使われる）も同じく自分自身を指す
-      if ((_pudSelf || !step.target || step.evo_source_owner === 'self') && step.from === 'stacked_cards' && ctx.card) {
-        const src = ctx.card;
+      if (step.from === 'stacked_cards' && ctx.card) {
+        // 「（自分のデジモン1体に）重ねられているカードを上から1枚、そのデジモンの進化元の下に置く」（デジラボ P-225）も同じ並べ替え。
+        // このデジモン自身でなければ、条件（evo_holder_filter）に合う自分のデジモンから選ぶ
+        const _skSelf = _pudSelf || !step.target || step.evo_source_owner === 'self';
+        const _skRun = (src) => {
+        if (!src) { ctx.addLog('💨 重ねられているカードを置けるデジモンがいません'); callback(false); return; }
         if (!Array.isArray(src.stack)) src.stack = [];
         // 「重ねられているカード」は一番上のカード（このデジモン自身）＋進化元。上から1枚＝このカード自身
         // （以前は進化元の一番上を動かしていた。BT26-058 台帳）。本体を下に回したら、残りの一番上が新しい姿になる（同じ1体）
         const seq = [src].concat(src.stack);
         const n = Math.min(Math.max(1, step.value || 1), seq.length - 1); // 全部を動かすと置き先（進化元の下）が無い
-        if (n <= 0) { callback(); break; }
+        if (n <= 0) { callback(false); return; }
         const moved = seq.slice(0, n);
         const remainder = seq.slice(n);
         if (_pudFaceDown) moved.forEach(c => { c._faceDown = true; });
@@ -22839,7 +22843,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+        if (!_skSelf && ctx.bs) ctx.bs._lastPickedCard = player.battleArea[_pudIdx] || src;
         callback();
+        };
+        if (_skSelf) { _skRun(ctx.card); break; }
+        if (ctx._forceTargetIdx !== undefined) { _skRun(player.battleArea[ctx._forceTargetIdx] || null); break; }
+        const _skNeed = Math.max(1, step.value || 1);
+        const _skValid = [];
+        player.battleArea.forEach((c, i) => {
+          if (!c || (c.type && c.type !== 'デジモン' && c.type !== 'デュアル')) return;
+          if ((Array.isArray(c.stack) ? c.stack.length : 0) < _skNeed) return;
+          if (step.evo_holder_filter && typeof step.evo_holder_filter === 'object' && !cardMatchesFilter(c, step.evo_holder_filter, ctx.bs, ctx.side, ctx.card)) return;
+          _skValid.push(i);
+        });
+        if (_skValid.length === 0) { _skRun(null); break; }
+        if (_skValid.length === 1 || effectiveSide === 'ai') { _skRun(player.battleArea[_skValid[0]]); break; }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _skValid, '重ねられているカードを上から' + _skNeed + '枚、進化元の下に置くデジモンを選んでください', '#00ff88', (sel) => {
+          _skRun(sel == null ? null : player.battleArea[sel]);
+        });
         break;
       }
 

@@ -6256,6 +6256,11 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       atkReal: _realOf(atkCard), defReal: _realOf(secCard),
       close: () => { overlay.style.display = 'none'; _removeCountLabel(); if (_held) { _held = false; window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1); } } };
+    // VS画面より先に決まっていた「はがれる」「下へ潜り込む」（守備側の端末で、VS画面が出る前に離れるときの効果を処理したとき）を反映
+    if (Array.isArray(_clashEarlyNotes) && _clashEarlyNotes.length) {
+      const _now = Date.now();
+      _clashEarlyNotes.splice(0).forEach((n) => { if (_now - n.at < 20000) _clashNote(n.card, n.kind, n.subImgs, n.swapImg, n.swapInfo); });
+    }
     setTimeout(() => {
       try {
         _p.ctrl = fxBattleClashBegin(document.getElementById('sec-vs-cards') || overlay, _vsAtkArea, _vsDefArea, _vsLabel, _winner, !!bs.isPlayerTurn, () => { callback && callback(); });
@@ -6282,7 +6287,13 @@ function _clashSideOf(card) {
   if (n === p.def.name) return 'def';
   return null;
 }
+let _clashEarlyNotes = [];
 function _clashNote(card, kind, subImgs, swapImg, swapInfo) {
+  // VS画面がまだ始まっていない（守備側の端末で先に処理した）「はがれる」等は、始まったときに反映する
+  if (!_clashPending && (kind === 'peel' || kind === 'under') && card) {
+    _clashEarlyNotes.push({ card, kind, subImgs, swapImg, swapInfo, at: Date.now() });
+    return false;
+  }
   const side = _clashSideOf(card);
   // 持ち主の端末から届いた「はがれる」（'peel'）は、こちらの前後の差（進化元が減った＝フラグメント）で上書きしない
   if (side && kind && kind !== 'peel' && kind !== 'under' && (_clashPending.notes[side] === 'peel' || _clashPending.notes[side] === 'under')) return true;

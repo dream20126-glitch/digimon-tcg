@@ -2755,7 +2755,9 @@ function _fireBlockBattleSubjectReactions(cb) {
   const next = () => {
     if (i >= sides.length) { bs._lastDestroyCause = null; sendMemoryUpdate(); sendStateSync(); cb(); return; }
     const s = sides[i++];
-    bs._lastDestroyCause = { type: 'battle', causerSide: s === 'player' ? 'ai' : 'player', causerCard: null, grp };
+    // 消滅させた側のデジモン（バトルの相手）。「〇〇な自分のデジモンがバトルで消滅させたとき」の条件で使う（LM-012）
+    const _causer = s === 'player' ? bc.atk : bc.blocker;
+    bs._lastDestroyCause = { type: 'battle', causerSide: s === 'player' ? 'ai' : 'player', causerCard: _causer || null, grp };
     try { window._fireOnDestroySubjectReactions(s, bs, ctxBase, next); } catch (e) { console.error('[_fireBlockBattleSubjectReactions]', e); next(); }
   };
   next();

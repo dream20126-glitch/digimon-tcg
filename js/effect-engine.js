@@ -647,6 +647,15 @@ function _stackReturnMax(c) {
 // 効果で受けていた状態（DP+・付与効果・「〜できない」等。永続効果由来＝duration:'permanent' は
 // applyPermanentEffects が付け直すので除く）を新しい一番上へ引き継ぐ。同じデジモンのままなので
 // 効果は消えない（ドリモゲモンで受けた「相手のターン終了までDP+1000」が、ブルムロードモンの退化で消えていた）
+// バトルのVS画面の途中なら、決着の演出（'peel'＝はがれて進化元の下へ／'under'＝はがれて置き先の下へ）をこの端末の
+// VS画面に記録する。残るカード（toCard）の画像・名前・DPに差し替える
+function _noteClashSwapLocal(card, kind, toCard, inBattle) {
+  try {
+    if (typeof window === 'undefined' || typeof window._clashIsPending !== 'function' || !(window._clashIsPending() || inBattle) || typeof window._clashNote !== 'function') return;
+    const img = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+    window._clashNote(card, kind, [img(card) || ('name:' + (card.name || ''))], img(toCard), { name: toCard.name || '', dp: String(toCard.dp != null ? toCard.dp : '') });
+  } catch (_) {}
+}
 function _carryDedigiState(oldTop, nc) {
   if (!oldTop || !nc || oldTop === nc) return;
   // 退化しても同じデジモン（公式ルール）。退化前の姿を覚えておき、アタック中のデジモンか等の判定で同じデジモンとして扱う
@@ -13856,7 +13865,14 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     // 相手の端末で消滅したデジモンに、こちらのカード（発動主体が自分/相手/両方の消滅時）が反応した
     const fn = cmd.matcher === 'own' ? _isOwnSubjectDestroyStep : cmd.matcher === 'both' ? _isBothSubjectDestroyStep : _isOppSubjectDestroyStep;
     const prev = bs._lastDestroyCause;
-    bs._lastDestroyCause = cmd.cause || null;
+    bs._lastDestroyCause = cmd.cause ? Object.assign({}, cmd.cause) : null;
+    // 消滅させた側のカード: こちらの盤面の同じカードを優先し、無ければ届いた写し
+    if (bs._lastDestroyCause && cmd.cause.causer) {
+      const cs = cmd.cause.causer, sd = cmd.cause.causerSide;
+      const onBoard = (sd && bs[sd] ? (bs[sd].battleArea || []) : []).find(c => c && c.cardNo === cs.cardNo && c.name === cs.name);
+      bs._lastDestroyCause.causerCard = onBoard || cs;
+      delete bs._lastDestroyCause.causer;
+    }
     return _fireDestroyTriggersImpl(cmd.destroyedSide, bs, ctxBase, () => { bs._lastDestroyCause = prev; _drainAfterReaction(bs, ctxBase, done); }, recipeKey || 'on_destroy', 'player', fn);
   }
   if (kind === 'on_attack_opp') {
@@ -15676,7 +15692,7 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
   const matches = (type) => {
     if (!dc || dc.type !== type) return false;
     if (!cs || cs === 'both') return true;
-    if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
+    if (cs === 'self') return dc.causerCard ? (dc.causerCard === carrier || (!!carrier && dc.causerCard.cardNo === carrier.cardNo && dc.causerCard.name === carrier.name && dc.causerSide === carrierSide)) : dc.causerSide === carrierSide;
     if (cs === 'own') return dc.causerSide === carrierSide;
     if (cs === 'opp') return dc.causerSide !== carrierSide;
     return true;
@@ -16009,6 +16025,12 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     const matcher = subjectMatcher === _isOwnSubjectDestroyStep ? 'own' : subjectMatcher === _isBothSubjectDestroyStep ? 'both' : 'opp';
     const dc = bs._lastDestroyCause;
     const cause = dc ? { type: dc.type, causerSide: _flipSide(dc.causerSide) } : null;
+    // 消滅させた側のカード（「〇〇な自分のデジモンがバトルで消滅させたとき」の判定用。LM-012）。受け手の盤面で探し、無ければこの写しを使う
+    if (cause && dc.causerCard) {
+      const cc = dc.causerCard;
+      cause.causer = { name: cc.name, cardNo: cc.cardNo, feature: cc.feature, color: cc.color, level: cc.level, dp: cc.dp, type: cc.type,
+        effect: cc.effect, evoSourceEffect: cc.evoSourceEffect, securityEffect: cc.securityEffect, evolveCond: cc.evolveCond, linkCond: cc.linkCond };
+    }
     // 同じ消滅（同じ原因の記録）の依頼は1回だけ送り、相手の端末も同じ番号（evt）の依頼は1回だけ処理する
     // （1回の消滅で相手の画面に久遠寺マコト BT26-095「デジモンが消滅したとき」の確認が3回出た）
     const evt = dc ? (dc.grp || dc._evtId || (dc._evtId = newDestroyGroup('ev'))) : null;
@@ -16330,6 +16352,20 @@ function checkStepTriggerConditions(step, ctx) {
   if (!eventCard) {
     console.log('[trigger_conditions] reactor=' + reactingName + ' no event source card → fail');
     return false;
+  }
+  // 「〇〇な自分のデジモンがバトルで相手のデジモンを消滅させたとき」（消滅時＋原因:バトル・原因の主体:自分）の「@own」の条件は、
+  // 消滅させた側＝バトルに勝った自分のデジモン（bs._lastDestroyCause.causerCard）で判定する（ラモールモン LM-012 の進化元効果
+  // 「『アンゴラモン』の記述がある自分のデジモンが〜」が、記述の無い LM-066 が消滅させても発動していた）
+  const _dc = ctx && ctx.bs && ctx.bs._lastDestroyCause;
+  if (step.cause === 'battle' && (!step.cause_subject || step.cause_subject === 'own') && _dc && _dc.type === 'battle' && _dc.causerCard
+      && step.trigger_conditions.some(cs => /@own$/.test(String(cs)))) {
+    const _causerConds = step.trigger_conditions.filter(cs => /@own$/.test(String(cs))).map(cs => String(cs).replace(/@own$/, ''));
+    const _restConds = step.trigger_conditions.filter(cs => !/@own$/.test(String(cs)));
+    const _cOk = _evalTriggerConditionsArray(_causerConds, step.trigger_conditions_op, _dc.causerCard, ctx.bs, ctx.side, null);
+    const _rOk = _restConds.length === 0 || _evalTriggerConditionsArray(_restConds, step.trigger_conditions_op, eventCard, ctx.bs, ctx.side, step.trigger_conditions_chain);
+    const _ok2 = step.trigger_conditions_op === 'or' ? (_cOk || (_restConds.length > 0 && _rOk)) : (_cOk && _rOk);
+    console.log('[trigger_conditions] reactor=' + reactingName + ' causer=' + (_dc.causerCard.name || '?') + (_ok2 ? ' pass' : ' FAIL'));
+    return _ok2;
   }
   const ok = _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, eventCard, ctx.bs, ctx.side, step.trigger_conditions_chain);
   console.log('[trigger_conditions] reactor=' + reactingName + (ok ? ' all pass' : ' FAIL (op=' + (step.trigger_conditions_op || 'and') + ')'));
@@ -22857,6 +22893,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           // バトルのVS画面の決着の演出: 一番上のカードがはがれて下のカード（新しい姿）が見える（battle-combat.js の 'peel'）
           src._stackPeeledTo = newCarrier; src._stackPeeledAt = Date.now(); src._stackPeelKind = 'peel';
           delete newCarrier._stackPeeledTo;
+          // この端末のVS画面にも記録する（持ち主の端末が相手から任された「離れるとき」で処理したとき、こちらの画面は差し替わらず
+          // ハイアンドロモンのままだった。BT26-058 台帳）
+          _noteClashSwapLocal(src, 'peel', newCarrier, !!(ctx.bs && ctx.bs._leaveByBattle));
           if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             const _pImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
             try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: src.name || '', kind: 'peel', subImgs: [_pImg(src) || ('name:' + (src.name || ''))], swapImg: _pImg(newCarrier), swapName: newCarrier.name || '', swapDp: String(newCarrier.dp != null ? newCarrier.dp : '') }); } catch (_) {}
@@ -23021,6 +23060,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             // バトルのVS画面の決着の演出: このカードがはがれ、置き先のデジモン（ギルモン）が現れて、このカードがその下へ潜り込む
             // （battle-combat.js の 'under'。メギドラモンACE LM-026 台帳）
             _scCard._stackPeeledTo = digi; _scCard._stackPeeledAt = Date.now(); _scCard._stackPeelKind = 'under';
+            _noteClashSwapLocal(_scCard, 'under', digi, !!(ctx.bs && ctx.bs._leaveByBattle));
             if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
               const _uImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
               try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: _scCard.name || '', kind: 'under', subImgs: [_uImg(_scCard) || ('name:' + (_scCard.name || ''))], swapImg: _uImg(digi), swapName: digi.name || '', swapDp: String(digi.dp != null ? digi.dp : '') }); } catch (_) {}

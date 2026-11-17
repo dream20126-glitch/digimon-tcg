@@ -3724,6 +3724,10 @@ function checkAttackEnd(atk, atkIdx) {
     const _cur = _evolvedAttacker(atk, atkIdx);
     if (_cur && bs.player.battleArea[atkIdx] === _cur) {
       if (_cur !== atk && atk && atk._executeAttacking) _cur._executeAttacking = true;
+      // バトルの演出（セキュリティチェック・VS画面）は終わっているので、バトル用の黒い背景を外してから【アタック終了時】を発揮する
+      // （背景が残ったままだと、盤面の演出がその裏になり、効果の処理中ずっと画面が真っ黒だった。メガドラモン EX12-064 の進化元効果）
+      hideCombatBackdrop();
+      renderAll();
       _hooks.checkAndTriggerEffect(_cur, '【アタック終了時】', () => checkPendingTurnEnd());
     } else { checkPendingTurnEnd(); }
   });

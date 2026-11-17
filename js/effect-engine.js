@@ -22045,6 +22045,36 @@ function executeRecipeStep(step, ctx, store, callback) {
         }, !!_cmM[2]);
         break;
       }
+      // 1体を選ぶ（opponent:1 / own:1）: 複数体と同じく _applyCantState で付ける（オンラインで持ち主の端末へ送り、選んだカードを
+      // 「そのデジモン」として記録する）。以前は古い処理（runOneAction）に任せていて、持ち主の端末に届かず同期で消え、
+      // 続く「そのデジモンはプレイヤーにアタックできない」も別のカードを指していた（ジャスティモン：アクセルアーム P-203）
+      if (_cmM && parseInt(_cmM[3], 10) === 1 && !_cmM[2]) {
+        const _c1Own = _cmM[1] === 'own';
+        const _c1Pool = _c1Own ? player : opponent;
+        const _c1SideTag = _c1Own ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+        const _c1Conds = step.condition ? parseRecipeCondition(step.condition) : [];
+        if (step.condition_op === 'or') _c1Conds._op = 'or';
+        const _c1Filter = step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null;
+        const _c1Idx = [];
+        (_c1Pool.battleArea || []).forEach((c, i) => {
+          if (!c) return;
+          if (_c1Filter && !cardMatchesFilter(c, _c1Filter, ctx.bs, ctx.side, ctx.card)) return;
+          if (_c1Conds.length > 0 && !checkConditions(_c1Conds, c, ctx.bs, _c1SideTag)) return;
+          _c1Idx.push(i);
+        });
+        if (_c1Idx.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(); break; }
+        const _c1Do = (i) => {
+          const c = i == null ? null : _c1Pool.battleArea[i];
+          if (c) { _applyCantState(c, !_c1Own); if (ctx.bs) ctx.bs._lastPickedCard = c; }
+          ctx.renderAll(); _syncStateAfterCant(); callback();
+        };
+        if (ctx._forceTargetIdx !== undefined && _c1Idx.includes(ctx._forceTargetIdx)) { _c1Do(ctx._forceTargetIdx); break; }
+        if (effectiveSide === 'ai') { _c1Do(_c1Idx[0]); break; }
+        const _c1Lbl = step.action === 'cant_attack_block' ? 'アタック・ブロック不可' : step.action === 'cant_attack' ? 'アタック不可' : step.action === 'cant_block' ? 'ブロック不可' : '進化不可';
+        ctx.addLog('🎯 ' + _c1Lbl + 'にする対象を選んでください');
+        showTargetSelection(_c1Own ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl'), _c1Idx, null, getUIColor(step.action, '#9933ff', step.frame_color), (sel) => _c1Do(sel));
+        break;
+      }
       // 単体選択など → 既存エンジンに委譲（対象の条件 step.filter も渡す。シェルモン EX12-026「進化元が1枚以下の相手のデジモン」）
       const action = { code: step.action, value: step.value || null, filter: step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null };
       if (!ctx.block) ctx.block = {};

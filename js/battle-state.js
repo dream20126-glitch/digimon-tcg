@@ -33,6 +33,21 @@ export const bs = {
   _turnEndDelayed: [], // 「このターン終了時、〜する」（at_turn_end）の予約
 };
 
+// メモリーは -10〜10（自分側10・相手側10）より外には行かない。コストの支払い（《オーバーフロー》等）で
+// 10を超えて相手側へ行っても、相手側の10で止まる。どこから書き込んでもここで収める（書き込む箇所が多いため）
+{
+  let _mem = bs.memory;
+  Object.defineProperty(bs, 'memory', {
+    enumerable: true,
+    configurable: true,
+    get() { return _mem; },
+    set(v) {
+      const n = Number(v);
+      _mem = Number.isFinite(n) ? Math.max(-10, Math.min(10, n)) : v;
+    },
+  });
+}
+
 // デバッグ用 window 公開（コンソールから bs を直接インスペクト可能に）
 if (typeof window !== 'undefined') window.bs = bs;
 

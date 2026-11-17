@@ -22859,7 +22859,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           delete newCarrier._stackPeeledTo;
           if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             const _pImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
-            try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: src.name || '', kind: 'peel', subImgs: [_pImg(src) || ('name:' + (src.name || ''))], swapImg: _pImg(newCarrier) }); } catch (_) {}
+            try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: src.name || '', kind: 'peel', subImgs: [_pImg(src) || ('name:' + (src.name || ''))], swapImg: _pImg(newCarrier), swapName: newCarrier.name || '', swapDp: String(newCarrier.dp != null ? newCarrier.dp : '') }); } catch (_) {}
           }
           // ctx.card は src のまま（「離れない」の印 _stayedInBattleArea は反応したカード＝src で読まれる）
         } else {
@@ -22923,7 +22923,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 「進化元に効果でカードが置かれたとき」(when_deck_increase + zone_increase:"evo_source")
         // をそのデジモン自身の視点で発火（アンドロモン BT26-054等）
         const _pudCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        _pudAnim(digi, [cardToPlace], [_pudFrom], () => {
+        // バトルのVS画面の途中で、このデジモン自身を他のデジモンの下に置いた（メギドラモンACE LM-026）なら、盤面の移動演出は出さない
+        // （VS画面の決着で「下へ潜り込む」演出を出す。両方出ていた）
+        const _pudInClash = cardToPlace === ctx.card && typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending();
+        (_pudInClash ? (d, cs, fl, next) => next() : _pudAnim)(digi, [cardToPlace], [_pudFrom], () => {
           fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback, [cardToPlace], { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
         });
       };
@@ -23020,7 +23023,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             _scCard._stackPeeledTo = digi; _scCard._stackPeeledAt = Date.now(); _scCard._stackPeelKind = 'under';
             if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
               const _uImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
-              try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: _scCard.name || '', kind: 'under', subImgs: [_uImg(_scCard) || ('name:' + (_scCard.name || ''))], swapImg: _uImg(digi) }); } catch (_) {}
+              try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: _scCard.name || '', kind: 'under', subImgs: [_uImg(_scCard) || ('name:' + (_scCard.name || ''))], swapImg: _uImg(digi), swapName: digi.name || '', swapDp: String(digi.dp != null ? digi.dp : '') }); } catch (_) {}
             }
           });
         }, _scCard);

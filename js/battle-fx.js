@@ -2324,11 +2324,16 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     img ? '' : '<div style="position:absolute;inset:6px;border:1px solid ' + border + '88;border-radius:3px;"></div>');
   const imgOf = (area) => { const i = area.querySelector('img'); return i ? i.src : ''; };
 
-  let curSubs = {}, curSwap = {};
+  let curSubs = {}, curSwap = {}, curSwapInfo = {};
   const playOne = (side, kind, area, dir) => {
     const subs = curSubs[side] || [];
     // 【アーマー解除】: VS画面のカードを、下から出てくるカード（残るデジモン）の画像に差し替える（庇うカード＝破棄した一番上のカード）
     if (curSwap[side]) { const _ci = area.querySelector('[id$="card-img"] img'); if (_ci) _ci.src = curSwap[side]; }
+    // 名前・DPも残るカードに差し替える（画像だけギルモンで名前がメギドラモンACEのままだった。LM-026）
+    if (curSwapInfo[side] && curSwapInfo[side].name) {
+      const _ne = area.querySelector('[id$="-name"]'); if (_ne) _ne.innerText = curSwapInfo[side].name;
+      const _de = area.querySelector('[id$="-dp"], [id$="-type"]'); if (_de && curSwapInfo[side].dp) _de.innerText = 'DP: ' + curSwapInfo[side].dp;
+    }
     const [cx, cy] = centerOf(area);
     const hitX = cx - dir * 30; // 衝撃が来る側
     const lbl = (t, c) => label(cx, cy - 110, t, c);
@@ -2573,6 +2578,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     if (finished) { cb && cb(); return; }
     curSubs = (outcomes && outcomes._subs) || {};
     curSwap = (outcomes && outcomes._swap) || {};
+    curSwapInfo = (outcomes && outcomes._swapInfo) || {};
     finished = true;
     const doFinish = () => {
       clearInterval(jitterTimer); holdSpark = false;

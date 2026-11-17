@@ -697,7 +697,7 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
           const _to = card._stackPeeledTo;
           delete card._stackPeeledTo;
           const _pk = card._stackPeelKind || 'peel'; delete card._stackPeelKind;
-          _clashNoteAndSend(card, _pk, [cardImg(card) || ('name:' + (card.name || ''))], cardImg(_to) || '');
+          _clashNoteAndSend(card, _pk, [cardImg(card) || ('name:' + (card.name || ''))], cardImg(_to) || '', { name: _to.name || '', dp: (typeof formatDpDisplay === 'function' ? formatDpDisplay(_to) : String(_to.dp || '')) });
           _cb0(r);
           return;
         }
@@ -6282,7 +6282,7 @@ function _clashSideOf(card) {
   if (n === p.def.name) return 'def';
   return null;
 }
-function _clashNote(card, kind, subImgs, swapImg) {
+function _clashNote(card, kind, subImgs, swapImg, swapInfo) {
   const side = _clashSideOf(card);
   // 持ち主の端末から届いた「はがれる」（'peel'）は、こちらの前後の差（進化元が減った＝フラグメント）で上書きしない
   if (side && kind && kind !== 'peel' && kind !== 'under' && (_clashPending.notes[side] === 'peel' || _clashPending.notes[side] === 'under')) return true;
@@ -6290,6 +6290,8 @@ function _clashNote(card, kind, subImgs, swapImg) {
     _clashPending.notes[side] = kind;
     // 残るカード（【アーマー解除】で下から出てくるカード）の画像。決着の演出でVS画面のカードを差し替える
     if (swapImg) { if (!_clashPending.swap) _clashPending.swap = {}; _clashPending.swap[side] = swapImg; }
+    // 残るカードの名前・DP（画像だけ差し替えて名前が元のカードのままだった。メギドラモンACE LM-026 → ギルモン）
+    if (swapInfo && swapInfo.name) { if (!_clashPending.swapInfo) _clashPending.swapInfo = {}; _clashPending.swapInfo[side] = swapInfo; }
     // 代わりにトラッシュへ送られたカードの画像（演出に出す）
     const imgs = subImgs || (card && card._clashSubImgs) || null;
     if (Array.isArray(imgs) && imgs.length) { if (!_clashPending.subs) _clashPending.subs = {}; _clashPending.subs[side] = imgs; }
@@ -6297,10 +6299,10 @@ function _clashNote(card, kind, subImgs, swapImg) {
   return !!side;
 }
 // 回避の仕方と代わりのカードの画像を、こちらのVS画面に記録し、相手の画面にも送る（相手の画面の決着の演出用）
-function _clashNoteAndSend(card, kind, imgs, swapImg) {
-  _clashNote(card, kind, imgs, swapImg);
+function _clashNoteAndSend(card, kind, imgs, swapImg, swapInfo) {
+  _clashNote(card, kind, imgs, swapImg, swapInfo);
   if (_onlineMode && _sendCommand && card) {
-    try { _sendCommand({ type: 'fx_clashNote', cardName: card.name || '', kind, subImgs: Array.isArray(imgs) ? imgs : [], swapImg: swapImg || '' }); } catch (_) {}
+    try { _sendCommand({ type: 'fx_clashNote', cardName: card.name || '', kind, subImgs: Array.isArray(imgs) ? imgs : [], swapImg: swapImg || '', swapName: (swapInfo && swapInfo.name) || '', swapDp: (swapInfo && swapInfo.dp) || '' }); } catch (_) {}
   }
 }
 // 回避の前後の差から決める演出の種類（リンクカードが減った＝分離／進化元が減った＝フラグメント／場所が移った／それ以外は「消滅しない」）
@@ -6354,7 +6356,7 @@ function _clashForceClose() {
   try { p.ctrl && p.ctrl.close(); } catch (_) {}
   try { p.close(); } catch (_) {}
 }
-if (typeof window !== 'undefined') window._clashNote = (card, kind, imgs, swapImg) => _clashNote(card, kind, imgs, swapImg);
+if (typeof window !== 'undefined') window._clashNote = (card, kind, imgs, swapImg, swapInfo) => _clashNote(card, kind, imgs, swapImg, swapInfo);
 if (typeof window !== 'undefined') window._clashIsPending = () => !!_clashPending;
 function _closeRemoteConfirm() {
   // 決着の時点で、相手の確認（【防壁】等）の「相手が効果を発動中…」が残っていれば閉じる
@@ -6402,6 +6404,7 @@ function _clashFinish(textHint, cb, remoteInfo) {
   ['atk', 'def'].forEach((side) => { if (['trash', 'indomitable', 'recoil'].includes(out[side])) registerClashLoser(p[side]); });
   if (p.subs) out._subs = p.subs;
   if (p.swap) out._swap = p.swap;
+  if (p.swapInfo) out._swapInfo = p.swapInfo;
   const end = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
   if (!p.ctrl) { end(); return; }
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }

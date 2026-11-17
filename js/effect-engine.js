@@ -18913,7 +18913,10 @@ function executeRecipeStep(step, ctx, store, callback) {
   // 「〜を置くことで、置いたカードの【進化時】効果を発揮する」（negate の deny 無し＝発揮。パル P-147）の「そのカード」も
   // コストで置いたカードなので、ここでは解決しない（negate 側でコストのカード→直前のカードの順に見る）
   const _deferSameForCost = (step.action === 'attack' && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)
-    || (step.action === 'negate' && !step.deny);
+    || (step.action === 'negate' && !step.deny)
+    // 「アクティブにならない」は自分の処理で直前に選んだカード（テイマーも）に付ける。ここで opponent:1 に置き換えると、
+    // 対象を選び直して別のデジモンに付いていた（ラジエルモン LM-042「【進化時】効果は発揮せず、アクティブにならない」）
+    || step.action === 'not_active' || step.action === 'prevent_unsuspend';
   if ((step.target === 'same_target' || step.target === 'picked') && !_deferSameForCost) {
     const picked = ctx.bs && ctx.bs._lastPickedCard;
     if (!picked) {
@@ -21471,6 +21474,11 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           callback();
         };
+        // 対象が先に決まっている（_forceTargetIdx）ならそのカード（選び直さない）
+        if (ctx._forceTargetIdx !== undefined) {
+          const _naF = (_naPool.battleArea || [])[ctx._forceTargetIdx];
+          if (_naF && _naCands.includes(_naF)) { _naApply([_naF]); break; }
+        }
         if (effectiveSide === 'ai' || _naCands.length <= _naCount) { _naApply(_naCands.slice(0, _naCount)); break; }
         // 盤面（デジモン・テイマー）から選ぶ（以前はカード一覧から選ぶ画面だった）
         const _naEntries = _naCands.map((c) => {

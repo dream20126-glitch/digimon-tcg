@@ -2057,8 +2057,16 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_cantAttackBlock': {
       // 相手から状態付与コマンドを受信 → 自分のカードに状態を付与
-      const myCard = bs.player.battleArea[cmd.targetIdx];
+      let myCard = bs.player.battleArea[cmd.targetIdx];
+      // 位置の名前が違う（両方の画面で場の並びがずれている）なら、同じ名前のカードを探す（1枚だけのとき）
+      if (cmd.targetName && (!myCard || myCard.name !== cmd.targetName)) {
+        const _same = (bs.player.battleArea || []).filter(c => c && c.name === cmd.targetName);
+        if (_same.length === 1) myCard = _same[0];
+      }
+      // 調査用（P-203: 相手から付けられた「進化不可」等が、こちらのターンになると消えていた）
+      console.log('[fx_cantAttackBlock recv]', cmd.action, cmd.duration, 'idx=' + cmd.targetIdx, 'want=' + cmd.targetName, 'have=' + (myCard && myCard.name));
       if (myCard) {
+        if (cmd.action === 'cant_evolve') myCard.cantEvolve = true;
         if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_attack') myCard.cantAttack = true;
         if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_block') myCard.cantBlock = true;
         if (!myCard.buffs) myCard.buffs = [];

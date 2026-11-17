@@ -18940,7 +18940,10 @@ function executeRecipeStep(step, ctx, store, callback) {
     || (step.action === 'negate' && !step.deny)
     // 「アクティブにならない」は自分の処理で直前に選んだカード（テイマーも）に付ける。ここで opponent:1 に置き換えると、
     // 対象を選び直して別のデジモンに付いていた（ラジエルモン LM-042「【進化時】効果は発揮せず、アクティブにならない」）
-    || step.action === 'not_active' || step.action === 'prevent_unsuspend';
+    || step.action === 'not_active' || step.action === 'prevent_unsuspend'
+    // 「そのデジモンはプレイヤーにアタックできない」（cant_attack ＋ player_only / digimon_only）も自分の処理で直前に選んだカードに付ける
+    // （ジャスティモン：アクセルアーム P-203: 進化不可はラモールモン、アタック不可はゼファーガモンと別々に付いていた）
+    || ((step.action === 'cant_attack') && Array.isArray(step.options) && (step.options.includes('player_only') || step.options.includes('digimon_only')));
   if ((step.target === 'same_target' || step.target === 'picked') && !_deferSameForCost) {
     const picked = ctx.bs && ctx.bs._lastPickedCard;
     if (!picked) {
@@ -21956,6 +21959,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (_caT === 'same_target' || _caT === 'picked') _caList = [ctx.bs && ctx.bs._lastPickedCard];
         else if (!_caT || _caT === 'self' || _caT === 'self_card') _caList = [ctx.card];
         else if (/:all$/.test(_caT)) _caList = ((/^own/.test(_caT) ? player : opponent).battleArea || []).filter((c) => c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)));
+        // 対象が先に決まっている（_forceTargetIdx）ならそのデジモン
+        else if (ctx._forceTargetIdx !== undefined && /^(opponent|own):1$/.test(_caT)) _caList = [((/^own/.test(_caT) ? player : opponent).battleArea || [])[ctx._forceTargetIdx]];
         if (_caList) { _caList.filter(Boolean).forEach(_caApply); ctx.renderAll(); callback(); break; }
         const _caOwn = /^own/.test(_caT);
         const _caCands = _collectSideTargets(ctx, { own: _caOwn, opp: !_caOwn, filter: step.filter || { type: 'デジモン' } });

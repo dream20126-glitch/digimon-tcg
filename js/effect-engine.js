@@ -22855,7 +22855,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           _carryDedigiState(src, newCarrier);
           if (_pudIdx !== -1) player.battleArea[_pudIdx] = newCarrier;
           // バトルのVS画面の決着の演出: 一番上のカードがはがれて下のカード（新しい姿）が見える（battle-combat.js の 'peel'）
-          src._stackPeeledTo = newCarrier; src._stackPeeledAt = Date.now();
+          src._stackPeeledTo = newCarrier; src._stackPeeledAt = Date.now(); src._stackPeelKind = 'peel';
           delete newCarrier._stackPeeledTo;
           if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             const _pImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
@@ -23015,6 +23015,13 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (_scCard.baseDp != null) _scCard.dp = _scCard.baseDp;
             if (Array.isArray(_scCard._grantedRecipes)) _scCard._grantedRecipes = [];
             _scCard._stayedInBattleArea = true;
+            // バトルのVS画面の決着の演出: このカードがはがれ、置き先のデジモン（ギルモン）が現れて、このカードがその下へ潜り込む
+            // （battle-combat.js の 'under'。メギドラモンACE LM-026 台帳）
+            _scCard._stackPeeledTo = digi; _scCard._stackPeeledAt = Date.now(); _scCard._stackPeelKind = 'under';
+            if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+              const _uImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+              try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: _scCard.name || '', kind: 'under', subImgs: [_uImg(_scCard) || ('name:' + (_scCard.name || ''))], swapImg: _uImg(digi) }); } catch (_) {}
+            }
           });
         }, _scCard);
         break;

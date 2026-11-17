@@ -2378,8 +2378,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       }
       // 'peel': 「重ねられているカードを上から1枚〜に置くことで離れない」（ハイアンドロモン BT26-058）。【アーマー解除】と同じく
       // 一番上のカードがはがれて下のカードが見える（ラベルは「消滅しない！」）
-      case 'armor_break': case 'peel': {
-        lbl(kind === 'peel' ? _CLASH_KW_LABEL.shield : _CLASH_KW_LABEL.armor_break, '#a8ff4a');
+      case 'armor_break': case 'peel': case 'under': {
+        lbl(kind === 'under' ? '進化元へ！' : kind === 'peel' ? _CLASH_KW_LABEL.shield : _CLASH_KW_LABEL.armor_break, '#a8ff4a');
         // 一番上のカード（このカード自身）がはがれ、下のカード（残るデジモン。VS画面の画像は差し替え済み）が見えた状態で、
         // はがれたカードがトラッシュへ飛ぶ
         const im0 = area.querySelector('[id$="card-img"]');
@@ -2397,7 +2397,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         }, 350);
         // ② 'peel'（ハイアンドロモン BT26-058「〜を上から1枚このデジモンの進化元の下に置く」）: はがれたカードはトラッシュではなく
         //    進化元の一番下へ。カードの真下に回り込み、下のカードの後ろへ潜り込んで（下端だけ見える）から薄く消える
-        if (kind === 'peel') {
+        if (kind === 'peel' || kind === 'under') {
           setTimeout(() => {
             peel.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
             peel.style.transform = 'translate(0,' + Math.round(rr.height * 0.3) + 'px) scale(0.92)';

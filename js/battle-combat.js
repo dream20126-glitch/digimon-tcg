@@ -696,7 +696,8 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
         if (card && card._stackPeeledTo && Date.now() - (card._stackPeeledAt || 0) < 15000) {
           const _to = card._stackPeeledTo;
           delete card._stackPeeledTo;
-          _clashNoteAndSend(card, 'peel', [cardImg(card) || ('name:' + (card.name || ''))], cardImg(_to) || '');
+          const _pk = card._stackPeelKind || 'peel'; delete card._stackPeelKind;
+          _clashNoteAndSend(card, _pk, [cardImg(card) || ('name:' + (card.name || ''))], cardImg(_to) || '');
           _cb0(r);
           return;
         }
@@ -6284,7 +6285,7 @@ function _clashSideOf(card) {
 function _clashNote(card, kind, subImgs, swapImg) {
   const side = _clashSideOf(card);
   // 持ち主の端末から届いた「はがれる」（'peel'）は、こちらの前後の差（進化元が減った＝フラグメント）で上書きしない
-  if (side && kind && kind !== 'peel' && _clashPending.notes[side] === 'peel') return true;
+  if (side && kind && kind !== 'peel' && kind !== 'under' && (_clashPending.notes[side] === 'peel' || _clashPending.notes[side] === 'under')) return true;
   if (side && kind) {
     _clashPending.notes[side] = kind;
     // 残るカード（【アーマー解除】で下から出てくるカード）の画像。決着の演出でVS画面のカードを差し替える

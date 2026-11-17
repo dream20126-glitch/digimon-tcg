@@ -857,16 +857,26 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
   const _wbRestore = () => { bs._lastDestroyCause = _wbPrevCause; };
   { const _od = onDestroy, _oc = onCancel; onDestroy = (...a) => { _wbRestore(); return _od(...a); }; onCancel = (...a) => { _wbRestore(); return _oc(...a); }; }
   // VS画面の決着の演出用: 消滅しなかったら、前後の差から回避の仕方と代わりにトラッシュへ送ったカードを記録する（相手の画面にも）
-  if (_clashPending) {
+  // オンラインで相手から任されて（fx_leaveBattleDelegate withWBD）こちらで確認するときは、こちらのVS画面がまだ始まっていない
+  // ことがある。そのときも記録しておき（VS画面が始まったら反映）、相手の画面へも送る（ダークドラモンACE LM-043 の【スケープゴート】の
+  // 演出が出ず、普通の勝敗の演出になっていた）
+  {
     const _owner = side === 'ai' ? bs.ai : bs.player;
     const _snapW = _clashSnapshot(card, _owner);
     const _oc2 = onCancel;
     onCancel = (...a) => {
       try {
-        if (_clashSideOf(card)) {
+        if (!_clashPending || _clashSideOf(card)) {
           const _purged = card._armorPurgedTo;
           const _imgs = _purged ? [cardImg(card) || ('name:' + (card.name || ''))] : _clashSubCards(_snapW, card, _owner).map(c => cardImg(c) || ('name:' + (c.name || ''))).filter(Boolean);
-          _clashNoteAndSend(card, _clashKindByDiff(_snapW, card), _imgs, _purged ? cardImg(_purged) : '');
+          const _kind = _clashKindByDiff(_snapW, card);
+          const _swap = _purged ? cardImg(_purged) : '';
+          console.log('[clash note wbd]', card.name, _kind, 'pending=' + !!_clashPending, 'subs=' + _imgs.length);
+          if (_clashPending) _clashNoteAndSend(card, _kind, _imgs, _swap);
+          else {
+            _clashEarlyNotes.push({ card, kind: _kind, subImgs: _imgs, swapImg: _swap, swapInfo: null, at: Date.now() });
+            if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_clashNote', cardName: card.name || '', kind: _kind, subImgs: _imgs, swapImg: _swap || '' }); } catch (_) {} }
+          }
         }
       } catch (e) { console.error('[clash note wbd]', e); }
       return _oc2(...a);

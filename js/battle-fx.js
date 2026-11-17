@@ -2323,8 +2323,41 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   const miniCard = (x, y, img, border) => el('position:absolute;left:' + (x - 30) + 'px;top:' + (y - 42) + 'px;width:60px;height:84px;border-radius:5px;border:2px solid ' + border + ';box-shadow:0 0 14px ' + border + ';background:' + (img ? 'url(' + img + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:2;transition:transform 0.5s cubic-bezier(.15,.8,.35,1),opacity 0.5s;',
     img ? '' : '<div style="position:absolute;inset:6px;border:1px solid ' + border + '88;border-radius:3px;"></div>');
   const imgOf = (area) => { const i = area.querySelector('img'); return i ? i.src : ''; };
+  // 身代わりのカード（gEl）が、登場したデジモン（info.to の画像）の進化元の下へ入る演出
+  const _subGoUnder = (gEl, info, dir) => {
+    const r = gEl.getBoundingClientRect();
+    const W0 = r.width, H0 = r.height;
+    // ① 身代わりが一撃で横へ押し出される
+    gEl.style.transition = 'transform 0.35s cubic-bezier(.2,.9,.3,1)';
+    gEl.style.transform = 'translate(' + (-dir * W0 * 0.9) + 'px,20px) rotate(' + (-dir * 8) + 'deg) scale(0.9)';
+    const nx = r.left + r.width / 2 - dir * W0 * 0.9, ny = r.top + r.height / 2 - 10;
+    // ② その場所に光の柱と一緒に登場したデジモンが現れる
+    setTimeout(() => {
+      const pillar = el('position:absolute;left:' + nx + 'px;top:0;height:' + H + 'px;width:' + (W0 * 1.1) + 'px;transform:translateX(-50%);background:linear-gradient(to right,rgba(255,200,80,0) 0%,rgba(255,240,170,0.85) 45%,#fff 50%,rgba(255,240,170,0.85) 55%,rgba(255,200,80,0) 100%);opacity:0.9;transition:opacity 0.6s;z-index:2;');
+      setTimeout(() => { pillar.style.opacity = '0'; }, 450);
+      setTimeout(() => pillar.remove(), 1100);
+      const nm = info.name ? '<div style="position:absolute;left:0;right:0;bottom:-20px;text-align:center;font-size:12px;font-weight:bold;color:#fff;text-shadow:0 0 4px #000;">' + info.name + '</div>' : '';
+      const nd = el('position:absolute;left:' + (nx - W0 / 2) + 'px;top:' + (ny - H0 / 2 - 24) + 'px;width:' + W0 + 'px;height:' + H0 + 'px;border-radius:10px;border:2px solid #ffd84a;box-shadow:0 0 22px #ffd84a;background:url(' + info.to + ') center/cover;z-index:5;opacity:0;transform:scale(0.6);transition:transform 0.4s cubic-bezier(.2,.9,.3,1.3),opacity 0.3s;', nm);
+      requestAnimationFrame(() => { nd.style.opacity = '1'; nd.style.transform = 'scale(1)'; });
+      sparksAt(nx, ny, 40, 1, ['#ffd84a', '#ffffff']);
+      // ③ 身代わりがそのデジモンの真下へ回り込み、後ろへ潜り込む（下端だけ見える）
+      setTimeout(() => {
+        gEl.style.zIndex = '4';
+        gEl.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
+        gEl.style.transform = 'translate(' + (-dir * W0 * 0.9) + 'px,' + Math.round(H0 * 0.32 - 24) + 'px) scale(0.92)';
+      }, 650);
+      setTimeout(() => {
+        gEl.style.transition = 'clip-path 0.45s ease-in, transform 0.45s ease-in';
+        gEl.style.clipPath = 'inset(74% 0 0 0 round 10px)';
+        const tag = el('position:absolute;left:' + nx + 'px;top:' + (ny + H0 / 2 + 4) + 'px;transform:translateX(-50%);font-size:12px;font-weight:bold;color:#ffd84a;text-shadow:0 0 6px #000,0 0 10px #ffd84a;white-space:nowrap;z-index:6;', '↓ ' + (info.name ? '「' + info.name + '」の' : '') + '進化元へ');
+        setTimeout(() => { tag.style.transition = 'opacity 0.4s'; tag.style.opacity = '0'; }, 1000);
+      }, 1200);
+      setTimeout(() => { [nd, gEl].forEach(e => { e.style.transition = 'opacity 0.5s'; e.style.opacity = '0'; }); }, 2300);
+      setTimeout(() => { nd.remove(); gEl.remove(); }, 2900);
+    }, 380);
+  };
 
-  let curSubs = {}, curSwap = {}, curSwapInfo = {};
+  let curSubs = {}, curSwap = {}, curSwapInfo = {}, curSubUnder = null;
   const playOne = (side, kind, area, dir) => {
     const subs = curSubs[side] || [];
     // 【アーマー解除】: VS画面のカードを、下から出てくるカード（残るデジモン）の画像に差し替える（庇うカード＝破棄した一番上のカード）
@@ -2451,9 +2484,14 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
           // 守られたカードは少し押されて踏みとどまる
           area.style.transition = 'transform 0.3s cubic-bezier(.2,.9,.3,1.3)';
           area.style.transform = 'translateX(' + (dir * 10) + 'px)';
-          guards.forEach((gEl, i) => setTimeout(() => { gEl.style.transition = ''; blowTo(gEl, dir, 'trash'); }, i * 220));
+          guards.forEach((gEl, i) => setTimeout(() => {
+            // 身代わりがトラッシュではなく、別のデジモン（その身代わりの「離れるとき」で登場したギルモン等）の進化元に入った:
+            // そのデジモンが光の中から現れ、身代わりがその下へ潜り込む（ダークドラモンACE LM-043 → メギドラモンACE → ギルモン）
+            if (curSubUnder && curSubUnder.to && (kind === 'scapegoat' || kind === 'substitute') && i === 0) { _subGoUnder(gEl, curSubUnder, dir); return; }
+            gEl.style.transition = ''; blowTo(gEl, dir, 'trash');
+          }, i * 220));
         }, hitAt);
-        return hitAt + 2000 + (imgs.length - 1) * 220;
+        return hitAt + ((curSubUnder && curSubUnder.to && (kind === 'scapegoat' || kind === 'substitute')) ? 3000 : 2000) + (imgs.length - 1) * 220;
       }
       case 'jamming':
       case 'shield': {
@@ -2579,6 +2617,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     curSubs = (outcomes && outcomes._subs) || {};
     curSwap = (outcomes && outcomes._swap) || {};
     curSwapInfo = (outcomes && outcomes._swapInfo) || {};
+    curSubUnder = (outcomes && outcomes._subUnder) || null;
     finished = true;
     const doFinish = () => {
       clearInterval(jitterTimer); holdSpark = false;

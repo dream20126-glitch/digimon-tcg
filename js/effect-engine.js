@@ -23149,8 +23149,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             // バトルのVS画面の決着の演出: このカードがはがれ、置き先のデジモン（ギルモン）が現れて、このカードがその下へ潜り込む
             // （battle-combat.js の 'under'。メギドラモンACE LM-026 台帳）
             _scCard._stackPeeledTo = digi; _scCard._stackPeeledAt = Date.now(); _scCard._stackPeelKind = 'under';
-            _noteClashSwapLocal(_scCard, 'under', digi, !!(ctx.bs && ctx.bs._leaveByBattle));
-            if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            _noteClashSwapLocal(_scCard, 'under', digi, (!!(ctx.bs && ctx.bs._leaveByBattle) || (typeof window._clashIsPending === 'function' && window._clashIsPending())));
+            if ((!!(ctx.bs && ctx.bs._leaveByBattle) || (typeof window._clashIsPending === 'function' && window._clashIsPending())) && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
               const _uImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
               try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: _scCard.name || '', kind: 'under', subImgs: [_uImg(_scCard) || ('name:' + (_scCard.name || ''))], swapImg: _uImg(digi), swapName: digi.name || '', swapDp: String(digi.dp != null ? digi.dp : '') }); } catch (_) {}
             }

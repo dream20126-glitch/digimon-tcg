@@ -6295,8 +6295,16 @@ function _clashNote(card, kind, subImgs, swapImg, swapInfo) {
     return false;
   }
   const side = _clashSideOf(card);
-  // 持ち主の端末から届いた「はがれる」（'peel'）は、こちらの前後の差（進化元が減った＝フラグメント）で上書きしない
-  if (side && kind && kind !== 'peel' && kind !== 'under' && (_clashPending.notes[side] === 'peel' || _clashPending.notes[side] === 'under')) return true;
+  // VS画面のカードではないカード（身代わりにしたメギドラモンACE 等）が、別のデジモンの下に入った（'under'）: 身代わりの行き先として
+  // 記録し、決着の演出で「身代わり → そのデジモン（ギルモン）の進化元へ」と順に見せる（ダークドラモンACE LM-043 台帳）
+  if (!side && kind === 'under' && _clashPending) {
+    _clashPending.subUnder = { from: (Array.isArray(subImgs) && subImgs[0]) || '', to: swapImg || '', name: (swapInfo && swapInfo.name) || '' };
+    return true;
+  }
+  // 持ち主の端末から届いた「はがれる」（'peel'）・身代わり（'scapegoat'）は、こちらの前後の差で上書きしない
+  // （相手のカードは同期で作り直されるので、こちらの差では場のカードが全部入れ替わったように見える）
+  const _STICKY = ['peel', 'under', 'scapegoat'];
+  if (side && kind && !_STICKY.includes(kind) && _STICKY.includes(_clashPending.notes[side])) return true;
   if (side && kind) {
     _clashPending.notes[side] = kind;
     // 残るカード（【アーマー解除】で下から出てくるカード）の画像。決着の演出でVS画面のカードを差し替える
@@ -6416,6 +6424,7 @@ function _clashFinish(textHint, cb, remoteInfo) {
   if (p.subs) out._subs = p.subs;
   if (p.swap) out._swap = p.swap;
   if (p.swapInfo) out._swapInfo = p.swapInfo;
+  if (p.subUnder) out._subUnder = p.subUnder;
   const end = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
   if (!p.ctrl) { end(); return; }
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }

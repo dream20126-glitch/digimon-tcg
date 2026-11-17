@@ -2389,7 +2389,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 相手のデジモンの候補が1体だけ・対象が先に決まっている（same_target 等）なら、選ばずにそのデジモンを消滅させる
       // （メガドラモン EX12-064 の進化元効果「最も登場コストの低い相手のデジモン1体」で1体しかいないのに選ぶ画面が出ていた）。
       // 自分のデジモン（コストで選ぶ等）は従来どおり選ぶ
-      const _dAuto = !isOwn && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length === 1);
+      // ただしバトルのVS画面が残っている間（【アタック終了時】等）は、従来どおり一覧で選ぶ（自動で消滅させたら効果を使った側の
+      // 画面が真っ黒のままになった。メガドラモン EX12-064 台帳）
+      const _dVsOv = typeof document !== 'undefined' ? document.getElementById('security-check-overlay') : null;
+      const _dVsOpen = !!(_dVsOv && _dVsOv.style.display !== 'none') || (typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending());
+      const _dAuto = !isOwn && !_dVsOpen && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length === 1);
+      console.log('[destroy auto]', 'cands=' + destroyTargets.length, 'vsOpen=' + _dVsOpen, 'auto=' + _dAuto);
       if(effectiveSide === 'ai' || _dAuto) {
         const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : destroyTargets[0];
         const card = tgtPlayer.battleArea[di];

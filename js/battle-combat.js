@@ -3728,19 +3728,6 @@ function checkAttackEnd(atk, atkIdx) {
       // （背景が残ったままだと、盤面の演出がその裏になり、効果の処理中ずっと画面が真っ黒だった。メガドラモン EX12-064 の進化元効果）
       hideCombatBackdrop();
       renderAll();
-      // 調査用（EX12-064: 【アタック終了時】の処理中に画面が真っ黒になる）: 8秒間、画面全体を覆っている要素を0.5秒ごとに記録する
-      try {
-        let _dgN = 0, _dgLast = '';
-        const _dgT = setInterval(() => {
-          if (++_dgN > 16) { clearInterval(_dgT); return; }
-          const list = [...document.querySelectorAll('body *')].filter((e) => {
-            const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden' || s.position !== 'fixed') return false;
-            const r = e.getBoundingClientRect(); return r.width > innerWidth * 0.8 && r.height > innerHeight * 0.6;
-          }).map((e) => { const s = getComputedStyle(e); return (e.id || ('.' + String(e.className || e.tagName).slice(0, 30))) + '[z=' + s.zIndex + ' bg=' + s.backgroundColor + ' op=' + s.opacity + ']'; });
-          const line = list.join(' | ');
-          if (line !== _dgLast) { _dgLast = line; console.log('[黒画面調査] ' + (_dgN * 0.5) + '秒 ' + (line || '(全画面の要素なし)')); }
-        }, 500);
-      } catch (_) {}
       _hooks.checkAndTriggerEffect(_cur, '【アタック終了時】', () => checkPendingTurnEnd());
     } else { checkPendingTurnEnd(); }
   });

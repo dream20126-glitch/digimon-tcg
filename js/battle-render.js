@@ -1480,6 +1480,39 @@ function highlightDropZones(on) {
 }
 
 // ===== メモリーゲージ描画 =====
+// 効果でメモリーが増減したときの演出: 動かした先のマス（今のメモリーの位置）を光らせ（+ は青・- は赤）、
+// 「メモリー+N」を表示する。全カードのメモリー増減（memory_plus / memory_minus）で共通。相手の画面にも出す（fx_memoryChange）
+// delta: 効果の持ち主から見た増減（+2 / -1）。remote: 相手の効果（「相手のメモリー+N」と表示）
+export function fxMemoryChange(delta, remote) {
+  try {
+    const n = parseInt(delta, 10) || 0;
+    if (!n) return;
+    const row = document.getElementById('memory-gauge-row');
+    const cell = row && row.querySelector('.m-cell.m-active');
+    if (!cell) return;
+    if (!document.getElementById('fx-memchg-style')) {
+      const st = document.createElement('style');
+      st.id = 'fx-memchg-style';
+      st.textContent = '@keyframes memGlow{0%{opacity:0;transform:translate(-50%,-50%) scale(0.6)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.5)}70%{opacity:1;transform:translate(-50%,-50%) scale(1.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.8)}}'
+        + '@keyframes memLbl{0%{opacity:0;transform:translate(-50%,6px) scale(0.7)}20%{opacity:1;transform:translate(-50%,0) scale(1.15)}75%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-8px) scale(1)}}';
+      document.head.appendChild(st);
+    }
+    const col = n > 0 ? '#3d8bff' : '#ff3b3b';
+    const r = cell.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const glow = document.createElement('div');
+    glow.style.cssText = 'position:fixed;left:' + cx + 'px;top:' + cy + 'px;width:' + Math.max(26, r.width * 1.6) + 'px;height:' + Math.max(26, r.height * 1.6) + 'px;border-radius:6px;'
+      + 'border:2px solid ' + col + ';background:' + col + '55;box-shadow:0 0 14px ' + col + ',0 0 28px ' + col + ';pointer-events:none;z-index:60000;animation:memGlow 1.6s ease-out forwards;';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'position:fixed;left:' + cx + 'px;top:' + (r.bottom + 6) + 'px;white-space:nowrap;font-size:15px;font-weight:900;color:#fff;'
+      + 'padding:3px 10px;border-radius:8px;background:' + col + 'dd;box-shadow:0 0 12px ' + col + ';text-shadow:0 0 4px #000;pointer-events:none;z-index:60001;animation:memLbl 1.8s ease-out forwards;';
+    lbl.innerText = (remote ? '相手の' : '') + 'メモリー' + (n > 0 ? '+' : '-') + Math.abs(n);
+    document.body.appendChild(glow); document.body.appendChild(lbl);
+    setTimeout(() => { glow.remove(); lbl.remove(); }, 1900);
+  } catch (e) { console.error('[fxMemoryChange]', e); }
+}
+if (typeof window !== 'undefined') window._fxMemoryChange = fxMemoryChange;
+
 export function updateMemGauge() {
   const row = document.getElementById('memory-gauge-row');
   if (!row) return;

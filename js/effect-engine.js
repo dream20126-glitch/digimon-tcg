@@ -656,6 +656,16 @@ function _noteClashSwapLocal(card, kind, toCard, inBattle) {
     window._clashNote(card, kind, [img(card) || ('name:' + (card.name || ''))], img(toCard), { name: toCard.name || '', dp: String(toCard.dp != null ? toCard.dp : '') });
   } catch (_) {}
 }
+// 効果でメモリーが増減したときの演出（ゲージの移動先が光り「メモリー±N」）。ゲージを描き直した後に出す。相手の画面にも送る
+function _memChangeFx(ctx, delta) {
+  if (typeof window === 'undefined') return;
+  setTimeout(() => {
+    try { if (typeof window._fxMemoryChange === 'function') window._fxMemoryChange(delta, !!(ctx && ctx.side === 'ai')); } catch (_) {}
+  }, 30);
+  if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try { window._onlineSendCommand({ type: 'fx_memoryChange', delta }); } catch (_) {}
+  }
+}
 function _carryDedigiState(oldTop, nc) {
   if (!oldTop || !nc || oldTop === nc) return;
   // 退化しても同じデジモン（公式ルール）。退化前の姿を覚えておき、アタック中のデジモンか等の判定で同じデジモンとして扱う
@@ -2244,6 +2254,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       ctx.updateMemGauge();
       if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
+      _memChangeFx(ctx, val);
       // メモリー超過チェック（効果処理は完了させてからターン終了）。
       // ctx.side!=='player'側（相手側）へのmemory_plusはbs.memoryを減算する分岐なので、
       // memory_minusと同じくここで相手側へ超過していないか確認する必要がある
@@ -2267,6 +2278,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.addLog('💎 ' + sideLabel + 'のメモリー-' + val);
       ctx.updateMemGauge();
       if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
+      _memChangeFx(ctx, -val);
       // メモリー超過チェック（効果処理は完了させてからターン終了）。
       // when_opp_rest等の反応系トリガー経由の場合はprocessQueue完了処理を通らないため、
       // bs._pendingTurnEndも直接立てておく

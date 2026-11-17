@@ -1088,48 +1088,119 @@ export function fxMultiLinkEffect(baseCard, linkCards, callback) {
 // 両方のカードを左右に並べ、ぶつかり合ってから勝敗（DPの高い方が勝ち）を出す。
 // result: 'win'（左が勝ち）/ 'lose'（右が勝ち）/ 'draw'（両者消滅）。opts.leftLabel / opts.rightLabel: カードの下の見出し
 export function fxEffectBattle(leftCard, rightCard, leftDp, rightDp, result, callback, opts) {
+  // VS画面（アタックのバトル）に近い形: 左右からカードが滑り込み → 2回ぶつかり合って火花 → 押し勝った側が押し切り、
+  // 負けた側は砕けて暗くなる（ゼファーガモン LM-066 台帳「VSバトルほどではないが、それに近い形で」）
   opts = opts || {};
+  if (!document.getElementById('fx-ebattle-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-ebattle-style';
+    st.textContent = '@keyframes ebInL{0%{transform:translateX(-60vw) rotate(-8deg);opacity:0}70%{transform:translateX(10px) rotate(1deg);opacity:1}100%{transform:translateX(0) rotate(0)}}'
+      + '@keyframes ebInR{0%{transform:translateX(60vw) rotate(8deg);opacity:0}70%{transform:translateX(-10px) rotate(-1deg);opacity:1}100%{transform:translateX(0) rotate(0)}}'
+      + '@keyframes ebTitle{0%{transform:scale(2.2);opacity:0}60%{transform:scale(0.95);opacity:1}100%{transform:scale(1);opacity:1}}'
+      + '@keyframes ebShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-6px,3px)}40%{transform:translate(5px,-4px)}60%{transform:translate(-4px,2px)}80%{transform:translate(3px,-2px)}}'
+      + '@keyframes ebFlash{0%{opacity:0.9;transform:translate(-50%,-50%) scale(0.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}'
+      + '@keyframes ebSpark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(0.3)}}'
+      + '@keyframes ebShard{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}}'
+      + '@keyframes ebRes{0%{transform:scale(1.8);opacity:0}60%{transform:scale(0.95);opacity:1}100%{transform:scale(1);opacity:1}}';
+    document.head.appendChild(st);
+  }
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+  overlay.style.cssText = 'position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(60,20,0,0.88),rgba(0,0,0,0.92));z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;overflow:hidden;';
   const title = document.createElement('div');
-  title.style.cssText = 'font-size:1.05rem;font-weight:900;color:#ff9900;letter-spacing:3px;text-shadow:0 0 15px #ff9900;margin-bottom:14px;';
+  title.style.cssText = 'font-size:clamp(1.1rem,5vw,1.5rem);font-weight:900;color:#ff9900;letter-spacing:4px;text-shadow:0 0 18px #ff9900,0 0 4px #fff;margin-bottom:16px;animation:ebTitle 0.5s ease-out both;';
   title.innerText = '⚔ 効果でバトル';
   overlay.appendChild(title);
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;gap:26px;';
-  const mk = (c, dp, color, label) => {
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;display:flex;align-items:center;gap:clamp(18px,6vw,40px);';
+  const CW = Math.min(130, window.innerWidth * 0.32), CH = CW * 1.4;
+  const mk = (c, dp, color, label, anim) => {
     const w = document.createElement('div');
-    w.style.cssText = 'text-align:center;transition:transform 0.25s ease, opacity 0.5s, filter 0.5s;';
+    w.style.cssText = 'position:relative;text-align:center;animation:' + anim + ' 0.55s cubic-bezier(.2,.9,.3,1) both;';
+    const inner = document.createElement('div');
+    inner.style.cssText = 'transition:transform 0.18s cubic-bezier(.2,.9,.3,1.3), opacity 0.5s, filter 0.5s;';
     const src = c ? cardImg(c) : '';
-    w.innerHTML = '<div style="width:100px;height:140px;border-radius:8px;border:2px solid ' + color + ';overflow:hidden;box-shadow:0 0 15px ' + color + '66;background:#111;">'
-      + (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:' + color + ';padding:6px;font-size:10px;">' + ((c && c.name) || '?') + '</div>') + '</div>'
-      + '<div style="color:#fff;font-size:11px;font-weight:bold;margin-top:4px;">' + ((c && c.name) || '?') + '</div>'
-      + '<div style="color:' + color + ';font-size:13px;font-weight:900;">DP ' + dp + '</div>'
-      + (label ? '<div style="color:#888;font-size:9px;">' + label + '</div>' : '');
-    return w;
+    inner.innerHTML = '<div class="eb-card" style="position:relative;width:' + CW + 'px;height:' + CH + 'px;border-radius:9px;border:3px solid ' + color + ';overflow:hidden;box-shadow:0 0 22px ' + color + ';background:#111;">'
+      + (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:' + color + ';padding:6px;font-size:11px;">' + ((c && c.name) || '?') + '</div>') + '</div>'
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-top:6px;text-shadow:0 0 4px #000;">' + ((c && c.name) || '?') + '</div>'
+      + '<div style="color:' + color + ';font-size:clamp(1rem,4.5vw,1.3rem);font-weight:900;text-shadow:0 0 10px ' + color + ';">DP ' + dp + '</div>'
+      + (label ? '<div style="color:#aaa;font-size:10px;">' + label + '</div>' : '');
+    w.appendChild(inner);
+    return { w, inner };
   };
-  const L = mk(leftCard, leftDp, '#00fbff', opts.leftLabel);
+  const L = mk(leftCard, leftDp, '#00fbff', opts.leftLabel, 'ebInL');
+  const R = mk(rightCard, rightDp, '#ff00fb', opts.rightLabel, 'ebInR');
   const vs = document.createElement('div');
-  vs.style.cssText = 'font-size:1.6rem;font-weight:900;color:#ff9900;text-shadow:0 0 12px #ff9900;';
-  vs.innerText = '⚔';
-  const Rt = mk(rightCard, rightDp, '#ff00fb', opts.rightLabel);
-  row.appendChild(L); row.appendChild(vs); row.appendChild(Rt);
-  overlay.appendChild(row);
+  vs.style.cssText = 'font-size:clamp(1.6rem,7vw,2.4rem);font-weight:900;color:#ff9900;text-shadow:0 0 16px #ff9900;animation:ebTitle 0.5s 0.3s ease-out both;';
+  vs.innerText = 'VS';
+  stage.appendChild(L.w); stage.appendChild(vs); stage.appendChild(R.w);
+  overlay.appendChild(stage);
   const res = document.createElement('div');
-  res.style.cssText = 'margin-top:14px;font-size:1.2rem;font-weight:900;letter-spacing:2px;opacity:0;transition:opacity 0.3s;min-height:1.4em;';
+  res.style.cssText = 'margin-top:18px;font-size:clamp(1.2rem,5.5vw,1.7rem);font-weight:900;min-height:1.4em;opacity:0;';
   overlay.appendChild(res);
+  const fxLayer = document.createElement('div');
+  fxLayer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:55001;';
+  overlay.appendChild(fxLayer);
   document.body.appendChild(overlay);
-  // ぶつかり合う
-  setTimeout(() => { L.style.transform = 'translateX(18px)'; Rt.style.transform = 'translateX(-18px)'; }, 400);
-  setTimeout(() => { L.style.transform = ''; Rt.style.transform = ''; }, 700);
+  const hitPoint = () => { const r = vs.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  const impact = (power) => {
+    const { x, y } = hitPoint();
+    const fl = document.createElement('div');
+    fl.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + (120 * power) + 'px;height:' + (120 * power) + 'px;border-radius:50%;background:radial-gradient(circle,#fff,#ffcc33 40%,transparent 70%);animation:ebFlash 0.45s ease-out forwards;';
+    fxLayer.appendChild(fl);
+    for (let k = 0; k < Math.round(14 * power); k++) {
+      const sp = document.createElement('div');
+      const a = Math.random() * Math.PI * 2, d = 50 + Math.random() * 90 * power;
+      sp.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:5px;height:5px;border-radius:50%;background:' + (k % 2 ? '#ffdd55' : '#fff') + ';box-shadow:0 0 6px #ffaa00;--dx:' + (Math.cos(a) * d) + 'px;--dy:' + (Math.sin(a) * d) + 'px;animation:ebSpark 0.6s ease-out forwards;';
+      fxLayer.appendChild(sp);
+    }
+    stage.style.animation = 'none'; void stage.offsetWidth; stage.style.animation = 'ebShake 0.3s';
+    setTimeout(() => { fxLayer.innerHTML = ''; }, 700);
+  };
+  const clash = (at, push, power) => {
+    setTimeout(() => { L.inner.style.transform = 'translateX(' + push + 'px)'; R.inner.style.transform = 'translateX(-' + push + 'px)'; }, at);
+    setTimeout(() => impact(power), at + 150);
+    setTimeout(() => { L.inner.style.transform = ''; R.inner.style.transform = ''; }, at + 320);
+  };
+  // 2回ぶつかり合う
+  clash(800, 26, 1);
+  clash(1300, 34, 1.4);
+  // 負けた側のカードが砕ける
+  const shatter = (side) => {
+    const card = side.inner.querySelector('.eb-card');
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    const im = card.querySelector('img');
+    const src = im ? im.src : '';
+    for (let k = 0; k < 12; k++) {
+      const sh = document.createElement('div');
+      const w = r.width / 3, h = r.height / 4;
+      const sx = (k % 3) * w, sy = Math.floor(k / 3) * h;
+      sh.style.cssText = 'position:absolute;left:' + (r.left + sx) + 'px;top:' + (r.top + sy) + 'px;width:' + w + 'px;height:' + h + 'px;'
+        + (src ? 'background:url(' + src + ') -' + sx + 'px -' + sy + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#444;')
+        + 'clip-path:polygon(' + (Math.random() * 30) + '% 0,100% ' + (Math.random() * 30) + '%,' + (70 + Math.random() * 30) + '% 100%,0 ' + (70 + Math.random() * 30) + '%);'
+        + '--dx:' + ((Math.random() - 0.5) * 220) + 'px;--dy:' + (60 + Math.random() * 160) + 'px;--rot:' + ((Math.random() - 0.5) * 540) + 'deg;animation:ebShard 0.9s ease-in forwards;z-index:55002;';
+      overlay.appendChild(sh);
+    }
+    side.inner.style.opacity = '0.25'; side.inner.style.filter = 'grayscale(1) brightness(0.6)';
+  };
+  // 3回目: 押し勝つ側が押し切る
   setTimeout(() => {
     const lName = (leftCard && leftCard.name) || '?', rName = (rightCard && rightCard.name) || '?';
-    if (result === 'draw') { res.style.color = '#ff4444'; res.innerText = '両者消滅！'; L.style.opacity = '0.4'; Rt.style.opacity = '0.4'; }
-    else if (result === 'win') { res.style.color = '#00ff88'; res.innerText = '「' + lName + '」の勝ち！'; Rt.style.opacity = '0.35'; Rt.style.filter = 'grayscale(1)'; }
-    else { res.style.color = '#ff4444'; res.innerText = '「' + rName + '」の勝ち！'; L.style.opacity = '0.35'; L.style.filter = 'grayscale(1)'; }
-    res.style.opacity = '1';
-  }, 1000);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2300);
+    if (result === 'win') { L.inner.style.transform = 'translateX(46px)'; R.inner.style.transform = 'translateX(30px) rotate(6deg)'; }
+    else if (result === 'lose') { R.inner.style.transform = 'translateX(-46px)'; L.inner.style.transform = 'translateX(-30px) rotate(-6deg)'; }
+    else { L.inner.style.transform = 'translateX(30px)'; R.inner.style.transform = 'translateX(-30px)'; }
+    setTimeout(() => {
+      impact(1.9);
+      if (result === 'draw') { shatter(L); shatter(R); res.style.color = '#ff4444'; res.innerText = '両者消滅！'; }
+      else if (result === 'win') { shatter(R); res.style.color = '#00ff88'; res.innerText = '「' + lName + '」の勝ち！'; }
+      else { shatter(L); res.style.color = '#ff4444'; res.innerText = '「' + rName + '」の勝ち！'; }
+      res.style.textShadow = '0 0 14px ' + res.style.color;
+      res.style.animation = 'ebRes 0.45s ease-out forwards';
+    }, 180);
+    setTimeout(() => { L.inner.style.transform = ''; R.inner.style.transform = ''; }, 700);
+  }, 1850);
+  setTimeout(() => { overlay.style.transition = 'opacity 0.3s'; overlay.style.opacity = '0'; }, 3500);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 3800);
 }
 
 // cost: 支払ったリンクコスト（数値なら「〇コストでリンク！」を表示。省略時は表示しない）
@@ -2305,8 +2376,10 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
         setTimeout(() => { area.style.transition = 'transform 0.4s ease-in-out'; area.style.transform = 'translate(0,0)'; }, 700);
         return 1300;
       }
-      case 'armor_break': {
-        lbl(_CLASH_KW_LABEL.armor_break, '#a8ff4a');
+      // 'peel': 「重ねられているカードを上から1枚〜に置くことで離れない」（ハイアンドロモン BT26-058）。【アーマー解除】と同じく
+      // 一番上のカードがはがれて下のカードが見える（ラベルは「消滅しない！」）
+      case 'armor_break': case 'peel': {
+        lbl(kind === 'peel' ? _CLASH_KW_LABEL.shield : _CLASH_KW_LABEL.armor_break, '#a8ff4a');
         // 一番上のカード（このカード自身）がはがれ、下のカード（残るデジモン。VS画面の画像は差し替え済み）が見えた状態で、
         // はがれたカードがトラッシュへ飛ぶ
         const im0 = area.querySelector('[id$="card-img"]');

@@ -17776,6 +17776,10 @@ function runRecipe(steps, ctx, callback) {
   const _origCallback = callback;
   callback = (...a) => { _curEffectCtx = _prevEffectCtx; _origCallback && _origCallback(...a); };
   console.log('[runRecipe]', 'card=' + (ctx.card && ctx.card.name), 'steps.length=' + (steps && steps.length), 'isArray=' + Array.isArray(steps), 'first=', steps && steps[0]);
+  // 効果の始めの時点で「枚数の条件を満たさず飛ばす」手順（最初のポップアップの文を決める _announceTextByMemoryGate と同じ時点）。
+  // 後から判定し直すと、前の手順の結果で条件が変わったもの（デスモンACE LM-044: 手札5枚→破棄して4枚）まで
+  // 「飛ばされた」扱いになり、「その後〜」のポップアップが出なかった
+  const _initGateSkipped = Array.isArray(steps) ? steps.map(st => !!(st && _stateGateFamilies(st) && !_stepCondsPassNow(st, ctx))) : [];
 
   function nextStep(success) {
     // コスト不足等で効果不発: 次ステップに `continue_on_fail` 修飾子があれば継続
@@ -17830,7 +17834,7 @@ function runRecipe(steps, ctx, callback) {
     // （効果1と効果2で表示を分けたい。「〜なら」を満たさず何も起きない効果では出さない）
     // ただし、前の手順が全て「メモリー・セキュリティ・手札の枚数の条件」を満たさず飛ばされた（＝最初の効果発動ポップアップがこの手順の
     // 文になっている。_announceTextByMemoryGate）なら、同じ文を2回出さない（シーヴァモンACE LM-024）
-    const _priorAllSkipped = idx > 1 && steps.slice(0, idx - 1).every(st => st && _stateGateFamilies(st) && !_stepCondsPassNow(st, ctx));
+    const _priorAllSkipped = idx > 1 && _initGateSkipped.slice(0, idx - 1).every(Boolean);
     if (idx > 1 && step && typeof step.display_text === 'string' && step.display_text.trim() && !step.no_announce
         && !_priorAllSkipped && _stepCondsPassNow(step, ctx)) {
       const _evoSrc = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
@@ -18769,6 +18773,23 @@ function executeRecipeStep(step, ctx, store, callback) {
     };
     _rFire(_rN, callback);
     return;
+  }
+
+  // 「〜N体ごとに、相手のデジモン1体を〜」（数値ではなく対象の数が増える。value 無し＋per_count）: 対象の数を
+  // 1体 × floor(参照数 / per_count) にする（ゼファーガモン＆ディバインテンペスト・リヘロ LM-066「レスト状態のデジモン
+  // 2体ごとに、相手のデジモン1体をデッキの下に戻す」で、4体いても1体しか戻せなかった）。消滅は下の destroy 側で繰り返す
+  if (step.per_count && !step.per_count_mode && step.value == null && step.action !== 'destroy'
+      && /^(return_deck|bounce|return_hand|rest|active|not_active|cant_attack|cant_block|cant_attack_block|place_on_security_top)$/.test(String(step.action || ''))
+      && /^(opponent|own|both|opponent_card|own_card|other_own):\d+$/.test(String(step.target || ''))
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    const _pcCount = getRefSourceCountDirect(step.ref || 'evo_source', ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+    const _pcBase = parseInt(String(step.target).split(':')[1], 10) || 1;
+    const _pcN = _pcBase * Math.floor(_pcCount / step.per_count);
+    ctx.addLog && ctx.addLog('🔢 ' + _pcCount + ' ÷ ' + step.per_count + ' → ' + _pcN + '体');
+    if (_pcN <= 0) { callback && callback(); return; }
+    const _pcStep = Object.assign({}, step, { target: String(step.target).replace(/:\d+$/, ':' + _pcN) });
+    ['per_count', 'ref', 'ref_filter', 'ref_state'].forEach((k) => delete _pcStep[k]);
+    step = _pcStep;
   }
 
   // ref_count:'colors'（数え方「色の種類の数」）: 処理したカードの色の種類で数える
@@ -22833,6 +22854,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           delete newCarrier._faceDown;
           _carryDedigiState(src, newCarrier);
           if (_pudIdx !== -1) player.battleArea[_pudIdx] = newCarrier;
+          // バトルのVS画面の決着の演出: 一番上のカードがはがれて下のカード（新しい姿）が見える（battle-combat.js の 'peel'）
+          src._stackPeeledTo = newCarrier; src._stackPeeledAt = Date.now();
+          delete newCarrier._stackPeeledTo;
+          if (ctx.bs && ctx.bs._leaveByBattle && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            const _pImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+            try { window._onlineSendCommand({ type: 'fx_clashNote', cardName: src.name || '', kind: 'peel', subImgs: [_pImg(src) || ('name:' + (src.name || ''))], swapImg: _pImg(newCarrier) }); } catch (_) {}
+          }
           // ctx.card は src のまま（「離れない」の印 _stayedInBattleArea は反応したカード＝src で読まれる）
         } else {
           src.stack = order.slice(1);

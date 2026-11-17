@@ -691,11 +691,21 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
         kind = _clashKindByDiff(_snap, card);
         // キーワードの【スケープゴート】ではない身代わり（ポコモン等）は「身代わり！」
         if (kind === 'scapegoat') kind = 'substitute';
+        // 「重ねられているカードを上から1枚（＝このカード）〜の下に置くことで離れない」（ハイアンドロモン BT26-058）:
+        // 一番上のカードがはがれ、下のカード（新しい姿）が見えた状態で終わる（以前は進化元がトラッシュへ行く演出だった）
+        if (card && card._stackPeeledTo && Date.now() - (card._stackPeeledAt || 0) < 15000) {
+          const _to = card._stackPeeledTo;
+          delete card._stackPeeledTo;
+          _clashNoteAndSend(card, 'peel', [cardImg(card) || ('name:' + (card.name || ''))], cardImg(_to) || '');
+          _cb0(r);
+          return;
+        }
       }
       // キーワード（防壁・回避等）は fx_cancelFlash で相手に伝わる。それ以外（「離れるとき〜離れない」等）はここで送る
       if (_CANCEL_FLASH_LABEL[r.reason]) _clashNote(card, kind, _subImgsNow());
       else _clashNoteAndSend(card, kind, _subImgsNow());
     }
+    if (card) delete card._stackPeeledTo;
     _cb0(r);
   };
   // キーワードで回避したら「【防壁】で回避！」等を大きく出してから続ける
@@ -758,14 +768,20 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   // バトルで負けて離れる（≪デコード≫等「バトル以外でバトルエリアを離れるとき」は発揮しない。effect-engine.js が見る）
   bs._leaveByBattle = true;
+  // オンラインの相手のデジモン: 「バトルで消滅するとき」（【スケープゴート】等）も持ち主の端末で確認してもらう（withWBD）。
+  // こちらで発揮すると、持ち主の画面で身代わりを選べず、こちらで消した身代わりも持ち主の同期で戻っていた（ダークドラモンACE LM-043）
+  const _wbdRemote = side === 'ai' && _onlineMode;
+  const _wbdPrev = bs._wbdDelegate;
+  if (_wbdRemote) bs._wbdDelegate = true;
   try {
     _tryCancelViaLeaveBattle(card, side, bs, ctxBase, (canceled) => {
       bs._leaveByBattle = false;
+      if (_wbdRemote) { bs._wbdDelegate = _wbdPrev; if (card) card._wbdDelegated = true; }
       // 相手の端末で「離れるとき」により進化していれば、相手側に【進化時】の保留が残っている
       if (canceled && side === 'ai' && _onlineMode) bs._oppDeferredEvoPending = true;
       callback(canceled ? { canceled: true, reason: 'protection' } : null);
     });
-  } catch (_) { bs._leaveByBattle = false; callback(null); }
+  } catch (_) { bs._leaveByBattle = false; if (_wbdRemote) bs._wbdDelegate = _wbdPrev; callback(null); }
   }
 }
 
@@ -822,6 +838,10 @@ function _runBattleDestroyAvoid(side, card, onDestroy, onCancel0) {
 // 同様に確認する。原因を指定しないレシピはどちらの消滅経路でも発動する）。
 // onDestroy: 消滅実行コールバック / onCancel: 消滅回避コールバック
 function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
+  // オンラインの相手のデジモンは、直前の _tryCancelDestroyAsync で持ち主の端末が「バトルで消滅するとき」まで確認済み
+  // （withWBD）。こちらでもう一度発揮しない（相手のカードの効果をこちらで発揮して、身代わりを勝手に選んでいた。LM-043）
+  if (side === 'ai' && _onlineMode && card && card._wbdDelegated) { delete card._wbdDelegated; onDestroy(); return; }
+  if (card) delete card._wbdDelegated;
   // 進化元のカードの「このデジモンが（バトルで）消滅するとき」も見る（充填プラグインQ P-146 の進化元効果。以前は
   // このデジモン自身のレシピだけを見ていて、進化元の効果だと確認が出なかった）
   const hasWBD = _hasRecipeTrigger(card, 'when_battle_destroy') || _hasEvoStackTrigger(card, 'when_battle_destroy');
@@ -6263,6 +6283,8 @@ function _clashSideOf(card) {
 }
 function _clashNote(card, kind, subImgs, swapImg) {
   const side = _clashSideOf(card);
+  // 持ち主の端末から届いた「はがれる」（'peel'）は、こちらの前後の差（進化元が減った＝フラグメント）で上書きしない
+  if (side && kind && kind !== 'peel' && _clashPending.notes[side] === 'peel') return true;
   if (side && kind) {
     _clashPending.notes[side] = kind;
     // 残るカード（【アーマー解除】で下から出てくるカード）の画像。決着の演出でVS画面のカードを差し替える

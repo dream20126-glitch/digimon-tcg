@@ -2374,8 +2374,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if(destroyTargets.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
-      if(effectiveSide === 'ai') {
-        const di = ctx._forceTargetIdx ?? destroyTargets[0];
+      // 相手のデジモンの候補が1体だけ・対象が先に決まっている（same_target 等）なら、選ばずにそのデジモンを消滅させる
+      // （メガドラモン EX12-064 の進化元効果「最も登場コストの低い相手のデジモン1体」で1体しかいないのに選ぶ画面が出ていた）。
+      // 自分のデジモン（コストで選ぶ等）は従来どおり選ぶ
+      const _dAuto = !isOwn && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length === 1);
+      if(effectiveSide === 'ai' || _dAuto) {
+        const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : destroyTargets[0];
         const card = tgtPlayer.battleArea[di];
         if (ctx.bs) ctx.bs._lastActionCount = 1;
         // doDestroy（離れなかったら演出なし）→ 消滅演出 → callback
@@ -17460,7 +17464,12 @@ function _isOptionalLeadRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2 || !_isInlineConfirmStep(steps[0])) return false;
   // 「その後、〜できる」（任意のアタック等。ニャロモン EX12-001「その後、ジョグレス進化したそのデジモンでアタックできる」）は
   // 強制の「その後」ではない（任意の効果として扱い、同時誘発の選択画面に「終了する（効果を使わない）」を出す）
-  return steps.slice(1).some(s => s && !_isInlineConfirmStep(s) && s.optional !== true && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
+  return steps.slice(1).some(s => s && !_isInlineConfirmStep(s) && s.optional !== true && Array.isArray(s.options) && s.options.includes('continue_on_fail'))
+    // 「〜できる。その後、〜できる」（任意が2つ続く。ゼファーガモン LM-066「デジモン1体をアクティブにできる。その後、このデジモンと
+    // 相手のデジモン1体でバトルできる」）: それぞれ別に確認する（以前は最初の確認1回で両方を使う扱いになり、レスト状態のデジモンが
+    // 1体だと確認なしでアクティブになっていた）。アタック（ニャロモン EX12-001）は自分で確認するので含めない
+    || steps.slice(1).some(s => s && _isInlineConfirmStep(s) && s.optional === true && !(Array.isArray(s.cost) && s.cost.length > 0)
+      && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
 }
 function _isInlineCostConfirmRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2) return false;

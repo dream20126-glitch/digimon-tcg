@@ -14701,11 +14701,19 @@ export function fireWhenReturnToHandTriggers(returnedSide, bs, ctxBase, done) {
 // どちらの陣営が反応するかをステップごとに指定できる。attackerSideはアタック対象が
 // 変更されたデジモンがいる側を表す基準値で、own=attackerSideと同じ陣営/opp=反対の陣営/
 // both=両陣営が反応する（on_play等の発動主体scanと同じ own/opp/both の規約）。
-// 発動主体が未指定（「なし」）の場合は反応しない（when_opp_restと同様、明示指定が必要）
+// 発動主体が未指定＝エディタの初期値「このカード」は、このデジモン（進化元効果なら、そのカードを進化元に持つデジモン）が
+// アタックしていて、そのアタックの対象が変更されたとき（以前は未指定だと反応せず、エディタの「このカード」が効かなかった）
 function _whenTargetChangedSubjectFilter(attackerSide, scanSide) {
-  return (step) => {
+  return (step, reactSide, carrier) => {
     const subj = _resolveStepSubject(step, 'when_target_changed');
-    if (!subj) return false;
+    if (!subj || subj === 'self') {
+      if (scanSide !== attackerSide || !carrier) return false;
+      const bsN = typeof window !== 'undefined' ? window._lastBattleState : null;
+      const atk = bsN && bsN._attackingCard;
+      if (!atk) return false;
+      return carrier === atk || (Array.isArray(carrier.stack) && carrier.stack.includes(atk))
+        || (!!carrier.cardNo && carrier.cardNo === atk.cardNo && carrier.name === atk.name);
+    }
     switch (subj) {
       case 'own': case 'own_any': case 'other_own': case 'own_digimon': case 'own_tamer': case 'own_card':
         return scanSide === attackerSide;

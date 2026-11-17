@@ -16060,6 +16060,9 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
       }
       // 原因チェック（バトルで/効果で + 原因の対象）
       if (!_destroyCauseMatches(step, bs, reactSide, carrier, triggerKey)) return false;
+      // 発動の条件（trigger_conditions。「『アンゴラモン』の記述がある自分のデジモンが〜消滅させたとき」等）も、実行時と同じ判定で
+      // 満たさないなら確認・発動のポップアップを出さない（ラモールモン LM-012: 発動しないのにポップアップが出ていた）
+      if (!checkStepTriggerConditions(step, { card: carrier, bs, side: reactSide })) return false;
       // 今は支払えないコスト（すでにレスト状態のこのテイマーを「レストさせることで」等）なら確認も出さない
       if (Array.isArray(step.cost) && _costStepsInfeasible(step.cost, carrier, bs, reactSide)) return false;
       // ターンに1回制限チェック
@@ -20683,6 +20686,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         dediNext();
       };
+      // 「相手のデジモン全てを【退化N】」（opponent:all / own:all）: 選ばずに退化できるデジモン全部（カオスドラモン EX12-060。
+      // 以前は「全て」を読まず1体を選ばせていた）
+      if (/:all$/.test(tStr)) { applyDedigi(valid.slice()); break; }
       if (effectiveSide === 'ai') {
         // AI: 先頭から wantCount 件を自動選択
         applyDedigi(valid.slice(0, wantCount));
@@ -22958,6 +22964,20 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
         if (!_skSelf && ctx.bs) ctx.bs._lastPickedCard = player.battleArea[_pudIdx] || src;
+        // 移動演出（一番上のカード → 進化元の下）。バトルのVS画面の途中は決着の演出（はがれて潜り込む）で見せるので出さない
+        // （デジラボ P-225 で移動が見えず、メモリー+2 の理由が分からなかった）
+        const _skInClash = typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending();
+        if (!_skInClash && moved.length > 0) {
+          const _skTo = '「' + (newCarrier.name || '') + '」の進化元の下';
+          let _skK = 0;
+          const _skOne = () => {
+            if (_skK >= moved.length) { callback(); return; }
+            const c = moved[_skK++];
+            _fxMoveSync(ctx, c, '「' + (src.name || '') + '」の一番上', _skTo, _skOne, _pudFaceDown ? (ctx.side === 'player' ? { remoteFaceDown: true } : { faceDown: true }) : {});
+          };
+          _skOne();
+          return;
+        }
         callback();
         };
         if (_skSelf) { _skRun(ctx.card); break; }

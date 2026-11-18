@@ -756,6 +756,18 @@ function startAttackModeUI(slotIdx, opts) {
   });
   const secArea = document.getElementById('ai-sec-area');
   if (secArea && bs.ai.security.length > 0 && !_noSec) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
+  // プレイヤーにアタックできない（cant_attack_player・効果のアタックで「相手のデジモンにアタックできる」）なら、
+  // セキュリティに✖を付けてアタックできないことを示す（ジャスティモン：アクセルアーム P-203 台帳）
+  if (secArea && _noSec) {
+    const ban = document.createElement('div');
+    ban.className = '_atk-ban-mark';
+    ban.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:3;pointer-events:none;'
+      + 'background:rgba(0,0,0,0.45);border-radius:6px;';
+    ban.innerHTML = '<div style="font-size:34px;font-weight:900;color:#ff3b3b;line-height:1;text-shadow:0 0 8px #000,0 0 12px #ff0000;">✖</div>'
+      + '<div style="font-size:8px;font-weight:bold;color:#fff;white-space:nowrap;text-shadow:0 0 4px #000;margin-top:2px;">プレイヤーにアタック不可</div>';
+    if (getComputedStyle(secArea).position === 'static') { secArea.dataset.atkBanPos = '1'; secArea.style.position = 'relative'; }
+    secArea.appendChild(ban);
+  }
 
   // 透明な操作レイヤー（クリック/タッチ/ドラッグを全て受け取る）
   const inputLayer = document.createElement('div');
@@ -801,7 +813,11 @@ function startAttackModeUI(slotIdx, opts) {
     inputLayer.removeEventListener('click', onClick);
     arrowSvg.style.display = 'none';
     if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; s.style.cursor = ''; s.style.transform = ''; s.style.opacity = ''; s.querySelectorAll('._atk-ban-mark').forEach(m => m.remove()); });
-    if (secArea) { secArea.style.boxShadow = ''; secArea.style.cursor = ''; secArea.style.transform = ''; }
+    if (secArea) {
+      secArea.style.boxShadow = ''; secArea.style.cursor = ''; secArea.style.transform = '';
+      secArea.querySelectorAll('._atk-ban-mark').forEach(m => m.remove());
+      if (secArea.dataset.atkBanPos) { secArea.style.position = ''; delete secArea.dataset.atkBanPos; }
+    }
   }
 
   // 効果によるアタック: 選んだ対象を呼び出し元へ返す（宣言は呼び出し元）

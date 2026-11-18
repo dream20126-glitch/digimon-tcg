@@ -723,7 +723,8 @@ function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
   }
   if (idx === -1) { done && done(false); return; }
   const sideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge,
+    _cause: { type: 'effect', causerSide: ctx.side, causerCard: ctx.card } }; // 離れる原因（【守護】「相手の効果で」等）
   tryCancelViaLeaveBattle(c, sideName, ctx.bs, ctxBase, 'deck', (canceled) => {
     if (canceled) { done && done(false); return; }
     // 「離れない」の確認（オンラインでは相手の端末に聞く）を待つ間にも、同期で相手のカードが作り直されることがある。
@@ -4889,7 +4890,8 @@ function _doBounceTamer(targetSide, tamer, ctx, callback) {
   const ta = targetSide.tamerArea || [];
   if (!tamer || ta.indexOf(tamer) === -1) { finish(); return; }
   const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge,
+    _cause: { type: 'effect', causerSide: ctx.side, causerCard: ctx.card } }; // 離れる原因（【守護】「相手の効果で」等）
   tryCancelViaLeaveBattle(tamer, targetSideName, ctx.bs, ctxBase, 'hand', (canceled) => {
     if (canceled) { finish(); return; }
     const tIdx = ta.indexOf(tamer);
@@ -4918,7 +4920,8 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
   const bounced = targetSide.battleArea[slotIdx];
   if (!bounced) { finish(); return; }
   const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge,
+    _cause: { type: 'effect', causerSide: ctx.side, causerCard: ctx.card } }; // 離れる原因（【守護】「相手の効果で」等）
   // 【分離】: リンクカードを1枚破棄して、手札に戻ること自体をキャンセルできる
   tryCancelViaLeaveBattle(bounced, targetSideName, ctx.bs, ctxBase, 'hand', (canceled) => {
     if (canceled) { finish(); return; }
@@ -13988,6 +13991,14 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, returnTo, callb
   // 旧形式（returnTo 無し）: (card, side, bs, ctxBase, callback)
   if (typeof returnTo === 'function' && callback === undefined) { callback = returnTo; returnTo = null; }
   if (!card) { callback(false); return; }
+  // 離れる原因（「相手の効果で離れるとき」【守護】等が見る _leaveCause）が未設定なら、呼び出し側が渡した効果の主（ctxBase._cause）で
+  // 設定し、判定が終わったら戻す。消滅（doDestroy）以外の「手札に戻す」「デッキに戻す」で原因が無く、メタルエンパイア EX12-072 の
+  // 【守護】がデッキの下に戻されるときに発動しなかった
+  if (bs && !bs._leaveCause && ctxBase && ctxBase._cause) {
+    bs._leaveCause = ctxBase._cause;
+    const _lcCb0 = callback;
+    callback = (...a) => { if (bs._leaveCause === ctxBase._cause) bs._leaveCause = undefined; _lcCb0(...a); };
+  }
   // 手札/デッキに戻るとき（when_deck_bounce。メタルグレイモン：アルタウスモード P-072「手札/デッキに戻るとき、〜することで、
   // 手札/デッキに戻らない」）: 先にこのカード（と進化元）の「カードが戻るとき」を発揮し、戻らない（cant_return_hand/deck）が
   // 付いたら戻すのをやめる。合わなければ従来の「離れるとき」へ
@@ -20510,11 +20521,23 @@ function executeRecipeStep(step, ctx, store, callback) {
             // 選んだデジモンを1体ずつ通常の消滅処理（doDestroy）に通す。消滅の演出は手順ごとにまとめて出る（_withDestroyFxBatch）
             const _dnDestroyCards = (cards) => {
               let _dnI = 0, _dnGone = 0;
+              const _dnPos = cards.map(c => opponent.battleArea.indexOf(c));
               const _dnStep = () => {
                 if (_dnI >= cards.length) { if (ctx.bs) ctx.bs._lastActionCount = _dnGone; ctx.renderAll && ctx.renderAll(); callback && callback(); return; }
-                const c = cards[_dnI++];
-                const i = opponent.battleArea.indexOf(c);
-                if (i === -1) { _dnStep(); return; }
+                const _dnK = _dnI++;
+                let c = cards[_dnK];
+                let i = opponent.battleArea.indexOf(c);
+                // 前のデジモンを消滅させている間（オンラインの返事待ち・状態の同期）に、相手のカードが作り直されていることがある。
+                // 同じ位置の同じカード（カードNo・名前）→ 同じカード（1枚だけ）の順に探し直す
+                // （カオスドラモン EX12-060 台帳: 2体選んだのに1体しか消滅しなかった。手札に戻す P-153 と同じ対処）
+                if (i === -1) {
+                  const _same = (x) => !!(x && (x.cardNo || '') === (c.cardNo || '') && (x.name || '') === (c.name || ''));
+                  const p0 = _dnPos[_dnK];
+                  if (p0 != null && p0 >= 0 && _same(opponent.battleArea[p0])) i = p0;
+                  if (i === -1) { const hits = opponent.battleArea.filter(_same); if (hits.length === 1) i = opponent.battleArea.indexOf(hits[0]); }
+                  if (i === -1) { console.log('[destroy N] 「' + (c.name || '') + '」が見つからないので飛ばす'); _dnStep(); return; }
+                  c = opponent.battleArea[i];
+                }
                 doDestroy(opponent, i, ctx, (removed) => {
                   if (removed !== true) { _dnStep(); return; }
                   _dnGone++;
@@ -24170,7 +24193,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = opponent.battleArea[idx];
           if (!c) { doneCb && doneCb(); return; }
           const _rdSideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
-          const _rdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+          const _rdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge,
+    _cause: { type: 'effect', causerSide: ctx.side, causerCard: ctx.card } }; // 離れる原因（【守護】「相手の効果で」等）
           // 【分離】: リンクカードを1枚破棄して、デッキに戻ること自体をキャンセルできる
           tryCancelViaLeaveBattle(c, _rdSideName, ctx.bs, _rdCtxBase, 'deck', (canceled) => {
             if (canceled) { doneCb && doneCb(); return; }

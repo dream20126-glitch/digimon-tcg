@@ -204,6 +204,12 @@ function _buildGrantBadges(card) {
   if (card.cantAttack && card.cantBlock) items.push({ label: 'アタック・ブロック不可', color: '#9933ff' });
   else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
   else if (card.cantBlock) items.push({ label: 'ブロック不可', color: '#9933ff' });
+  // 「プレイヤーにアタックできない」「デジモンにアタックできない」（buffs の cant_attack_player / cant_attack_digimon。
+  // 以前は表示が無く、ジャスティモン：アクセルアーム P-203 で「進化不可」しか出ていなかった）
+  if (!card.cantAttack && Array.isArray(card.buffs)) {
+    if (card.buffs.some(b => b && b.type === 'cant_attack_player')) items.push({ label: 'プレイヤーにアタック不可', color: '#9933ff' });
+    if (card.buffs.some(b => b && b.type === 'cant_attack_digimon')) items.push({ label: 'デジモンにアタック不可', color: '#9933ff' });
+  }
   if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
   if (card.cantRest) items.push({ label: 'レスト不可', color: '#9933ff' });
   if (card.cantRedirectAttack) items.push({ label: 'アタック対象変更不可', color: '#9933ff' });
@@ -424,11 +430,16 @@ function renderBattleRows() {
         const _hasCantRest = !!card.cantRest || (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_rest'));
         // 「アタックされない」（cant_be_attacked。シャコモン P-086）
         const _hasCantBeAtk = Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_be_attacked');
-        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo || _hasCantRest || _hasCantBeAtk) {
+        // 「プレイヤーにアタックできない」「デジモンにアタックできない」（ジャスティモン：アクセルアーム P-203。以前は印が出ず「進化不可」だけだった）
+        const _hasCantAtkPl = !card.cantAttack && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_attack_player');
+        const _hasCantAtkDg = !card.cantAttack && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_attack_digimon');
+        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo || _hasCantRest || _hasCantBeAtk || _hasCantAtkPl || _hasCantAtkDg) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
+          if (_hasCantAtkPl) mark += '⚔👤✖';
+          if (_hasCantAtkDg) mark += '⚔🐉✖';
           if (card.cantEvolve) mark += '進❌';
           if (_hasPreventUnsuspend) mark += '🔄✖';
           if (_hasCantRest) mark += 'レスト✖';

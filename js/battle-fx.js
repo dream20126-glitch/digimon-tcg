@@ -3629,29 +3629,66 @@ export function fxEffectHit(kind, p, callback) {
     setTimeout(() => _pulse(si), 2100);
     total = 2500;
   } else if (kind === 'dedigivolve') {
-    _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '🔻 退化', '#aa66ff');
-    // 下のカード（退化後）を先に置き、上に今のカードを重ねる。上のカードが欠片になって剥がれる
-    const after = p.after ? _hitCard(ov, p.after, cx, cy, CW, CH, '#aa66ff', pre + (p.after.name || '')) : null;
-    const top = _hitCard(ov, p.card, cx, cy, CW, CH, '#aa66ff', pre + nm);
-    setTimeout(() => {
-      attackStrikeFx(ov, cx, cy, CW);
-      const src = p.card.imgSrc || cardImg(p.card) || '';
+    // 退化: 対象を全部並べ（1体でも複数でも同じ）、上のカードから1枚ずつカレンダーをめくるように剥がす。
+    // 複数体は同じ段を同時に剥がす（カオスドラモン EX12-060 台帳「全てを並べて一気に／退化2は1枚ずつ」）
+    const list = (Array.isArray(p.items) && p.items.length ? p.items : [{ card: p.card, after: p.after, removed: p.removed, remote: p.remote }])
+      .filter(it => it && it.card).slice(0, 6);
+    const n = list.length;
+    const DW = Math.min(120, (W - 40) / n - 14, W * 0.3), DH = DW * 1.4;
+    const totalW = n * DW + (n - 1) * 14;
+    const allRemote = list.every(it => it.remote);
+    _hitTitle(ov, Math.max(14, cy - DH / 2 - 80), '🔻 ' + (n >= 2 ? (allRemote ? '相手の' : '') + n + '体を' : '') + '退化', '#aa66ff');
+    const OFF = 5; // 重なりのずらし幅
+    let maxLayers = 0;
+    const cols = list.map((it, k) => {
+      const x = cx - totalW / 2 + k * (DW + 14) + DW / 2;
+      const pre2 = it.remote ? '相手の' : '';
+      const rem = (Array.isArray(it.removed) && it.removed.length ? it.removed : [it.card]).slice(0, 5);
+      maxLayers = Math.max(maxLayers, rem.length);
+      // 一番下に退化後のカード、その上に剥がれるカードを下から順に重ねる（rem[0] が一番上）
+      const after = it.after ? _hitCard(ov, it.after, x, cy, DW, DH, '#aa66ff', pre2 + (it.after.name || '')) : null;
+      const layers = [];
+      for (let j = rem.length - 1; j >= 0; j--) {
+        const d = _hitCard(ov, rem[j], x - j * OFF, cy - j * OFF, DW, DH, '#aa66ff', j === 0 ? pre2 + (rem[j].name || '') : '');
+        d.style.transformOrigin = '50% 0%';
+        layers[j] = d;
+      }
+      return { x, it, after, layers, rem, pre2 };
+    });
+    const T0 = 650, STEP = 620;
+    for (let j = 0; j < maxLayers; j++) {
       setTimeout(() => {
-        const r = top.getBoundingClientRect();
-        top.style.opacity = '0';
-        for (let k = 0; k < 15; k++) {
-          const sx2 = (k % 3) / 3, sy2 = Math.floor(k / 3) / 5;
-          const sh = document.createElement('div');
-          sh.style.cssText = 'position:absolute;left:' + (r.left + sx2 * r.width) + 'px;top:' + (r.top + sy2 * r.height) + 'px;width:' + (r.width / 3) + 'px;height:' + (r.height / 5) + 'px;'
-            + (src ? 'background:url(' + src + ') ' + (-sx2 * r.width) + 'px ' + (-sy2 * r.height) + 'px/' + r.width + 'px ' + r.height + 'px;' : 'background:#555;')
-            + '--dx:' + ((Math.random() - 0.5) * 200) + 'px;--dy:' + (-60 - Math.random() * 160) + 'px;--r:' + (Math.random() * 360 - 180) + 'deg;animation:hxShard 0.9s ease-out ' + (k * 0.025) + 's forwards;box-shadow:0 0 8px #aa66ff;';
-          ov.appendChild(sh);
-        }
-        if (after) { after.style.transition = 'box-shadow 0.4s'; after.style.boxShadow = '0 0 30px #aa66ff,0 0 60px #aa66ff'; }
-        const n2 = (p.removed || []).length;
-        _hitTitle(ov, Math.min(H - 60, cy + CH / 2 + 30), '<span style="font-size:0.7em;">' + pre + '「' + nm + '」' + (p.after ? '→「' + (p.after.name || '') + '」' : '') + (n2 > 1 ? '（' + n2 + '枚破棄）' : '') + '</span>', '#aa66ff');
-      }, 260);
-    }, 400);
+        cols.forEach((col) => {
+          const d = col.layers[j];
+          if (!d) return;
+          const r = d.getBoundingClientRect();
+          // めくれる: 上の辺を軸に手前へ倒れながら上へ飛んでいく
+          d.style.transition = 'transform 0.55s cubic-bezier(.5,0,.8,.5),opacity 0.55s,filter 0.3s';
+          d.style.filter = 'brightness(1.6)';
+          d.style.transform = 'perspective(700px) translateY(' + (-DH * 0.35) + 'px) rotateX(-115deg) rotateZ(' + ((Math.random() - 0.5) * 16) + 'deg)';
+          d.style.opacity = '0';
+          for (let q = 0; q < 7; q++) {
+            const sp = document.createElement('div');
+            sp.style.cssText = 'position:absolute;left:' + (r.left + Math.random() * r.width) + 'px;top:' + (r.top + 4) + 'px;width:6px;height:6px;border-radius:50%;background:#e2c8ff;box-shadow:0 0 8px #aa66ff;'
+              + '--dx:' + ((Math.random() - 0.5) * 60) + 'px;--dy:' + (-40 - Math.random() * 70) + 'px;--r:0deg;animation:hxShard 0.8s ease-out ' + (q * 0.03) + 's forwards;';
+            ov.appendChild(sp);
+          }
+        });
+      }, T0 + j * STEP);
+    }
+    const tGlow = T0 + maxLayers * STEP;
+    setTimeout(() => {
+      cols.forEach((col) => {
+        if (col.after) { col.after.style.transition = 'box-shadow 0.4s'; col.after.style.boxShadow = '0 0 30px #aa66ff,0 0 60px #aa66ff'; }
+      });
+      if (n === 1) {
+        const c0 = cols[0], n2 = c0.rem.length;
+        _hitTitle(ov, Math.min(H - 60, cy + DH / 2 + 30), '<span style="font-size:0.7em;">' + c0.pre2 + '「' + (c0.it.card.name || '') + '」' + (c0.it.after ? '→「' + (c0.it.after.name || '') + '」' : '') + (n2 > 1 ? '（' + n2 + '枚破棄）' : '') + '</span>', '#aa66ff');
+      } else {
+        _hitTitle(ov, Math.min(H - 60, cy + DH / 2 + 30), '<span style="font-size:0.7em;">上から' + maxLayers + '枚ずつ破棄</span>', '#aa66ff');
+      }
+    }, tGlow - 150);
+    total = tGlow + 1000;
   } else if (kind === 'evo_discard') {
     const holder = p.holder || p.card;
     _hitTitle(ov, Math.max(14, cy - CH / 2 - 80), '📤 進化元を破棄', '#ff9933');

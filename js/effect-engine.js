@@ -3445,6 +3445,23 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const mainRecipe = getRecipeForCard(ctx.card, 'main');
       if (mainRecipe) {
         ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
+        // 発揮する【メイン】の文を効果発動ポップアップで出してから処理する（LM-068「その後、オプション側の【メイン】効果を発揮できる」で
+        // 「はい」の後すぐ対象選択になり、何の効果か分からなかった）。
+        // 「このカードの【メイン】効果を発揮する」（セキュリティ効果等）は、最初のポップアップに【メイン】の文が併記済みなので出さない
+        const _umeStepText = String((action && (action._stepText || action.display_text)) || '');
+        // 表示文の無いセキュリティ効果（BT1-094 等）も最初のポップアップに【メイン】が出ているので出さない
+        const _umeAlready = !_umeStepText.trim() || /このカードの\s*【メイン】\s*効果/.test(_umeStepText);
+        let _umeText = (Array.isArray(mainRecipe) ? mainRecipe : [])
+          .map(s => (s && typeof s.display_text === 'string') ? s.display_text.trim() : '')
+          .filter(Boolean).join('\n');
+        if (!_umeText && ctx.card.effect) {
+          const _mm = String(ctx.card.effect).match(/【メイン】[\s\S]*?(?=\n【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
+          if (_mm) _umeText = _mm[0].trim();
+        }
+        if (_umeText && !_umeAlready) {
+          showEffectAnnounce(ctx.card, _umeText, ctx.side, () => runRecipe(mainRecipe, ctx, callback));
+          break;
+        }
         runRecipe(mainRecipe, ctx, callback);
       } else {
         ctx.addLog('⚠ メイン効果のレシピが見つかりません');
@@ -6025,7 +6042,8 @@ function _effectHitSync(ctx, kind, p, cb, fallback) {
       window._onlineSendCommand({ type: 'fx_effectHit', kind, card: ser(p.card), after: ser(p.after), holder: ser(p.holder),
         removed: (p.removed || []).slice(0, 4).map(ser), top: !!p.top, bottom: !!p.bottom, faceUp: !!p.faceUp, remote: !p.remote,
         slot: _fxSlotForRemote(p.card),
-        cards: Array.isArray(p.cards) ? p.cards.slice(0, 6).map(it => ({ c: ser(it.card), remote: !it.remote, slot: _fxSlotForRemote(it.card) })) : null });
+        cards: Array.isArray(p.cards) ? p.cards.slice(0, 6).map(it => ({ c: ser(it.card), remote: !it.remote, slot: _fxSlotForRemote(it.card) })) : null,
+        items: Array.isArray(p.items) ? p.items.slice(0, 6).map(it => ({ c: ser(it.card), a: ser(it.after), r: (it.removed || []).slice(0, 5).map(ser), remote: !it.remote })) : null });
     } catch (_) {}
   }
   window._fxEffectHit(kind, p, done);
@@ -20465,6 +20483,57 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _dnM = /^(opponent|own):(\d+)$/.exec(String(step.target || ''));
         if (_dnM && parseInt(_dnM[2], 10) > 1 && !step.per_count) {
           const _dnTimes = parseInt(_dnM[2], 10);
+          // 相手のデジモンN体: 候補を先に数え、N体以下なら選ばずに全部、Nより多ければN体をまとめて選んでから消滅させる
+          // （カオスドラモン EX12-060 台帳: 候補が2体なのに1体ずつ選ぶ画面が出ていた）。
+          // 候補の数え方は runOneAction の destroy と同じ（条件・対象の条件・最も〜の絞り込み）。
+          // バトルのVS画面が出ている間は従来どおり1体ずつ（runOneAction 側の黒背景の扱いに任せる）
+          const _dnVsOv = typeof document !== 'undefined' ? document.getElementById('security-check-overlay') : null;
+          const _dnVsOpen = !!(_dnVsOv && _dnVsOv.style.display !== 'none') || (typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending());
+          if (_dnM[1] === 'opponent' && !_dnVsOpen) {
+            const _dnConds = step.condition ? _targetCondsOf(step) : [];
+            const _dnFilter = step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null;
+            const _dnOppTag = ctx.side === 'player' ? 'ai' : 'player';
+            let _dnIdxs = [];
+            opponent.battleArea.forEach((c, i) => {
+              if (!c) return;
+              if (_dnConds.length > 0 && !checkConditions(_dnConds, c, ctx.bs, _dnOppTag)) return;
+              if (_dnFilter && !cardMatchesFilter(c, _dnFilter, ctx.bs, ctx.side, ctx.card)) return;
+              _dnIdxs.push(i);
+            });
+            if (_dnFilter) _dnIdxs = applyExtremeFilterIdxs(_dnIdxs, opponent.battleArea, _dnFilter);
+            if (_dnIdxs.length === 0) {
+              if (ctx.bs) ctx.bs._lastActionCount = 0;
+              ctx.addLog('⚠ 対象がいません');
+              showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback && callback());
+              return;
+            }
+            // 選んだデジモンを1体ずつ通常の消滅処理（doDestroy）に通す。消滅の演出は手順ごとにまとめて出る（_withDestroyFxBatch）
+            const _dnDestroyCards = (cards) => {
+              let _dnI = 0, _dnGone = 0;
+              const _dnStep = () => {
+                if (_dnI >= cards.length) { if (ctx.bs) ctx.bs._lastActionCount = _dnGone; ctx.renderAll && ctx.renderAll(); callback && callback(); return; }
+                const c = cards[_dnI++];
+                const i = opponent.battleArea.indexOf(c);
+                if (i === -1) { _dnStep(); return; }
+                doDestroy(opponent, i, ctx, (removed) => {
+                  if (removed !== true) { _dnStep(); return; }
+                  _dnGone++;
+                  _effectDestroyFx(ctx, opponent, c, () => setTimeout(_dnStep, window._destroyFxBatch ? 0 : 300));
+                });
+              };
+              _dnStep();
+            };
+            if (_dnIdxs.length <= _dnTimes || ctx.side !== 'player' || ctx._forceTargetIdx !== undefined) {
+              console.log('[destroy N] 候補' + _dnIdxs.length + '体 ≦ ' + _dnTimes + '体（または CPU）→ 選ばずに消滅');
+              _dnDestroyCards(_dnIdxs.slice(0, _dnTimes).map(i => opponent.battleArea[i]));
+              return;
+            }
+            ctx.addLog('🎯 消滅させる対象を' + _dnTimes + '体選んでください');
+            pickUpToNTargets(ctx.side === 'player' ? 'ai' : 'pl', _dnIdxs, _dnTimes, getUIColor('destroy', '#ff4444', step.frame_color), (picked) => {
+              _dnDestroyCards((picked || []).map(i => opponent.battleArea[i]).filter(Boolean));
+            }, { forced: true });
+            return;
+          }
           const _dnOne = Object.assign({}, step, { target: _dnM[1] + ':1', _costsResolved: true });
           ['limit', 'cost', 'trigger_conditions'].forEach((k) => delete _dnOne[k]);
           let _dnK = 0, _dnTotal = 0;
@@ -20632,8 +20701,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       const applyDedigi = (idxs) => {
         let i = 0;
+        // 2体以上を退化させるときは、全部退化させてから1回の演出で並べて見せる（カオスドラモン EX12-060「相手のデジモン全てを【退化2】」）
+        const _dgCollect = (_hitFxOn() && idxs.length >= 2) ? [] : null;
         function dediNext() {
-          if (i >= idxs.length) { ctx.renderAll(); callback(); return; }
+          if (i >= idxs.length) {
+            if (_dgCollect && _dgCollect.length > 0) {
+              const f = _dgCollect[0];
+              _effectHitSync(ctx, 'dedigivolve', { card: f.card, after: f.after, removed: f.removed, remote: f.remote, items: _dgCollect }, () => { ctx.renderAll(); callback(); });
+              return;
+            }
+            ctx.renderAll(); callback(); return;
+          }
           const idx = idxs[i++];
           const tgt = tgtPlayer.battleArea[idx];
           if (!tgt) { dediNext(); return; }
@@ -20715,6 +20793,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             } else { setTimeout(showRemovedAnim, 300); }
           }
           // 上のカードが欠片になって剥がれ、下のカードが現れる（両方の画面）
+          if (_dgCollect) { _dgCollect.push({ card: tgt, after: newCarrier, removed, remote: !!(ctx.bs && tgtPlayer === ctx.bs.ai) }); dediNext(); return; }
           if (_hitFxOn()) { _effectHitSync(ctx, 'dedigivolve', { card: tgt, after: newCarrier, removed, remote: !!(ctx.bs && tgtPlayer === ctx.bs.ai) }, dediNext); return; }
           _moveBatchIntro(ctx, removed, tgt.name + 'の進化元', 'トラッシュ', showRemovedAnim, { noRemote: true });
         }
@@ -25872,6 +25951,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.block.conditions = conds;
         }
       }
+      // 【メイン】を発揮する手順の文（use_main_effect の効果発動ポップアップを出すか決める）
+      if (actionCode === 'use_main_effect') action._stepText = String(step.display_text || '');
       // storeから対象を引ける場合は対象選択をスキップして直接適用
       if (step.card && store[step.card]) {
         const storedData = store[step.card];

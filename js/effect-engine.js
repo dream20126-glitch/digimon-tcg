@@ -20672,11 +20672,29 @@ function executeRecipeStep(step, ctx, store, callback) {
           return;
         }
         let di2 = 0;
+        // 対象は「場所」ではなく「カード」で覚える。途中の消滅で離れたデジモンの場所に別のカードが登場することがある
+        // （相手のダークドラモンACE LM-043 の【スケープゴート】で消滅したメギドラモンACE LM-026 の代わりにギルモンが登場し、
+        // 対象ではなかったそのギルモンまで消滅していた）。オンラインで同期により作り直されたときは、同じ場所の同じカード
+        // （カードNo・名前）→ 同じカード（1枚だけ）の順に探し直す。見つからなければ（離れた・別のカードになった）飛ばす
+        const _dmCards = matchedIdxs.map(i => tgtPlayer.battleArea[i]);
+        const _dmDone = new Set();
+        const _dmFind = (k) => {
+          const c0 = _dmCards[k];
+          if (!c0) return -1;
+          let j = tgtPlayer.battleArea.indexOf(c0);
+          if (j !== -1) return j;
+          const _same = (x) => !!(x && !_dmDone.has(x) && (x.cardNo || '') === (c0.cardNo || '') && (x.name || '') === (c0.name || ''));
+          if (_same(tgtPlayer.battleArea[matchedIdxs[k]])) return matchedIdxs[k];
+          const hits = tgtPlayer.battleArea.filter(_same);
+          return hits.length === 1 ? tgtPlayer.battleArea.indexOf(hits[0]) : -1;
+        };
         function destroyMatchingNext() {
           if (di2 >= matchedIdxs.length) { if (ctx.bs) ctx.bs._lastActionCount = _dmCount; callback(); return; }
-          const idx = matchedIdxs[di2++];
-          const c = tgtPlayer.battleArea[idx];
-          if (!c) { destroyMatchingNext(); return; }
+          const _dmK = di2++;
+          const idx = _dmFind(_dmK);
+          const c = idx === -1 ? null : tgtPlayer.battleArea[idx];
+          if (!c) { console.log('[destroy all] 「' + ((_dmCards[_dmK] && _dmCards[_dmK].name) || '') + '」はもう場にいないので飛ばす'); destroyMatchingNext(); return; }
+          _dmDone.add(c);
           // 1体ずつ通常の消滅処理（doDestroy）を通す（消滅できない効果・【分離】等の回避、
           // 消滅時効果・道連れ・「デジモンが消滅したとき」反応はここで処理される。
           // オンライン同期も doDestroy 側で送る＝ここでは送らない）

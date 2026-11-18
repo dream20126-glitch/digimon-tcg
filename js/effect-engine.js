@@ -16860,7 +16860,14 @@ function _stepCandidatesEmpty(st, ctx) {
         ...(zones.includes('trash') ? (owner.trash || []) : []),
         ...(zones.includes('evo_source') ? _evoSourceHoldersOf(st, { card, bs, side }, owner).reduce((a, h) => a.concat(h.stack || []), []) : []),
       ];
-      return !pool.some(c => c && c !== card && cardMatchesFilter(c, f, bs, side, card));
+      // 「〇枚を〜の下に置く」は、条件に合うカードがその枚数そろわなければ実行できない（公式ルール 15-7-4。
+      // カオスドラモン EX12-060「〜2枚をこのデジモンの進化元の下に置くことで」で1枚しか無いのに確認が出ていた）
+      let _ncNeed = 1;
+      if (/^place_under_/.test(st.action)) {
+        const _tn = /:(\d+)$/.exec(String(st.target || ''));
+        _ncNeed = parseInt(st.value, 10) || (_tn ? parseInt(_tn[1], 10) : 1) || 1;
+      }
+      return pool.filter(c => c && c !== card && cardMatchesFilter(c, f, bs, side, card)).length < _ncNeed;
     }
     // 盤面のデジモン/テイマーを対象にする処理（対象の条件があるとき）
     const m = /^(opponent|own)(_card|_tamer|_digimon)?(?::(\d+|all|up_to_\d+))?$/.exec(String(st.target || ''));
@@ -17971,6 +17978,15 @@ function runRecipe(steps, ctx, callback) {
     }
     if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && (idx > 1 || (_icLead && idx === 1))
         && step && _isInlineConfirmStep(step) && !step._costsResolved) {
+      // コスト（「〜することで」の前半）を払えない・任意の処理に候補が無いなら、確認を出さずにこの手順を飛ばす
+      // （公式ルール 15-7-4。カオスドラモン EX12-060 で置けるカードが2枚無いのに「発動しますか？」が出ていた。全カード共通）
+      let _icNothing = false;
+      try { _icNothing = _stepNothingToDo(step, ctx); } catch (_) { _icNothing = false; }
+      if (_icNothing) {
+        ctx.addLog && ctx.addLog('💨 「' + (ctx.card ? ctx.card.name : '?') + '」の' + (_icLead && idx === 1 ? '任意の効果' : '「その後」以降の効果') + 'は、実行できるものが無いため発動しない');
+        nextStep();
+        return;
+      }
       const _askText = (_icLead && idx === 1) ? _inlineLeadText(ctx._inlineCostConfirm.text) : _inlineCostConfirmText(step, ctx._inlineCostConfirm.text, ctx._inlineCostConfirm.evoSourceCard || ctx.card);
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {

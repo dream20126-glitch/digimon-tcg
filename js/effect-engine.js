@@ -4783,11 +4783,11 @@ function _runSumBudgetSelection(step, ctx, store, callback) {
   const _sumModKey = (attr) => attr + '_le_mod';
   const budgets = keys.map(k => {
     const attr = _SUM_BUDGET_KEYS[k];
-    const base0 = _resolveSumBudget(step.filter[k], attr, ctx.card);
+    const base0 = _resolveSumBudget(step.filter[k], attr, ctx.card) + (parseInt(step.filter[attr + '_sum_le_bonus'], 10) || 0); // 効果の上限の変更（effect_cap_modify）
     return { key: k, attr, left: _applyLeMod(base0, step.filter[_sumModKey(attr)], ctx.bs, ctx.side, ctx.card) };
   });
   const rawFilter = Object.assign({}, step.filter);
-  keys.forEach(k => { delete rawFilter[k]; if (rawFilter[_sumModKey(_SUM_BUDGET_KEYS[k])] && rawFilter[_SUM_BUDGET_KEYS[k] + '_le'] == null) delete rawFilter[_sumModKey(_SUM_BUDGET_KEYS[k])]; });
+  keys.forEach(k => { delete rawFilter[k]; delete rawFilter[_SUM_BUDGET_KEYS[k] + '_sum_le_bonus']; if (rawFilter[_sumModKey(_SUM_BUDGET_KEYS[k])] && rawFilter[_SUM_BUDGET_KEYS[k] + '_le'] == null) delete rawFilter[_sumModKey(_SUM_BUDGET_KEYS[k])]; });
   const baseFilter = resolveDpFilterMarkers(rawFilter, ctx.card, ctx.bs, ctx.side);
   // 対象ごとの条件（発動条件ゲートは入口で評価・除去済み。残った condition/when は対象の絞り込み）
   const conds = [];
@@ -13533,6 +13533,14 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   const isOptional = Array.isArray(recipe) && recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)))
     && !_inlineCost; // 先頭が強制で後段のコストだけ任意なら、最初には確認しない
   if (isOptional) {
+    // 呼び出し側でまとめて確認済み（【守護】が複数あるときの「【守護】の効果を発動しますか？」等）
+    if (opts && opts.preConfirmed) {
+      ctx._effectConfirmed = true;
+      _markConfirmedHead(ctx, recipe);
+      logActivated();
+      runNow();
+      return;
+    }
     if (side === 'player' || alwaysConfirm) {
       showConfirmDialog(card, effectTextWithKw, (accepted) => {
         if (accepted) {
@@ -14218,12 +14226,52 @@ function _leaveReplacerList(leavingCard, leavingSide, bs) {
   return list;
 }
 function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
-  const list = _leaveReplacerList(leavingCard, leavingSide, bs);
+  let list = _leaveReplacerList(leavingCard, leavingSide, bs);
   if (list.length === 0) { callback(false); return; }
+  // 【守護】を持つデジモンが2体以上いるなら、1回だけ「【守護】の効果を発動しますか？」（カード名は出さない）と聞き、
+  // 「はい」ならどのデジモンを身代わりに消滅させるかを選ぶ（メタルエンパイア EX12-072 台帳。以前は1体ずつ名前つきで確認していた）
+  const _isGuard = (rc) => rc && rc.side === 'player' && Array.isArray(rc.recipe) && rc.recipe.some((st) => st && st._kwFlag === 'Redirect');
+  const _guards = list.filter(_isGuard).filter((rc) => (bs.player.battleArea || []).includes(rc.card));
+  if (_guards.length >= 2 && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+    const at = list.indexOf(_guards[0]);
+    list = list.filter((rc) => !_guards.includes(rc));
+    list.splice(at, 0, { _guardGroup: _guards });
+  }
+  // 【守護】の組: 確認 → 身代わりを選ぶ → その【守護】を確認なしで発揮
+  const runGuardGroup = (group, after) => {
+    const kwText = '「' + (leavingCard.name || '') + '」がバトルエリアを離れるとき、【守護】を持つ自分のデジモン1体を消滅させることで、'
+      + '「' + (leavingCard.name || '') + '」は離れない。\n（【守護】を持つデジモン：' + group.length + '体。「はい」の後に身代わりを選びます）';
+    showConfirmDialog({ name: '【守護】' }, kwText, (accepted) => {
+      if (!accepted) {
+        ctxBase && ctxBase.addLog && ctxBase.addLog('☓ 【守護】の効果は発動しなかった');
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: '【守護】' });
+        after(false);
+        return;
+      }
+      const idxs = group.map((rc) => bs.player.battleArea.indexOf(rc.card)).filter((i) => i >= 0);
+      ctxBase && ctxBase.addLog && ctxBase.addLog('🎯 身代わりに消滅させる【守護】のデジモンを選んでください');
+      const ask = () => showTargetSelection('pl', idxs, null, '#44dd88', (sel) => {
+        if (sel === null || sel === undefined) { ask(); return; } // 「はい」の後なので選び直す（使わないは出さない）
+        const rc = group.find((g) => bs.player.battleArea.indexOf(g.card) === sel);
+        if (!rc) { after(false); return; }
+        rc.card._stayedInBattleArea = false;
+        const reaction = { card: rc.card, sourceCard: rc.sourceCard, recipe: rc.recipe, eventSourceCard: leavingCard, triggerCode: 'when_leave_battle' };
+        try {
+          _runReactionEffect(reaction, rc.side, bs, ctxBase, () => {
+            const ok = rc.card._stayedInBattleArea === true;
+            delete rc.card._stayedInBattleArea;
+            after(ok);
+          }, { preConfirmed: true });
+        } catch (_) { delete rc.card._stayedInBattleArea; after(false); }
+      }, '（身代わりにする【守護】のデジモン）');
+      ask();
+    });
+  };
   let i = 0;
   const next = () => {
     if (i >= list.length) { callback(false); return; }
     const rc = list[i++];
+    if (rc && rc._guardGroup) { runGuardGroup(rc._guardGroup, (ok) => { if (ok) callback(true); else next(); }); return; }
     rc.card._stayedInBattleArea = false;
     const reaction = { card: rc.card, sourceCard: rc.sourceCard, recipe: rc.recipe, eventSourceCard: leavingCard, triggerCode: 'when_leave_battle' };
     try {
@@ -18656,6 +18704,12 @@ function _applyEffectCapMods(step, ctx) {
     };
     if (out.filter) out.filter = bump(out.filter);
     if (out.from_filter) out.from_filter = bump(out.from_filter);
+    // 合計の上限（dp_sum_le 等。'self'＝このデジモンのDP のように数値でないこともある）は、上乗せ分を別に持たせて
+    // _runSumBudgetSelection で足す（メギドラモンACE LM-026 の進化元で、アグモン-勇気の絆-ACE LM-021「DP合計この
+    // デジモンのDPまで」の上限が上がっていなかった）
+    if (out.filter && out.filter[attr + '_sum_le'] != null && out.filter[attr + '_sum_le'] !== '') {
+      out.filter = Object.assign({}, out.filter, { [attr + '_sum_le_bonus']: (parseInt(out.filter[attr + '_sum_le_bonus'], 10) || 0) + v });
+    }
     const re = new RegExp('(cond_' + attr + '_le:)(\\d+)', 'g');
     const bumpStr = (sv) => (typeof sv === 'string' ? sv.replace(re, (_m, a, n) => a + ((parseInt(n, 10) || 0) + v)) : sv);
     if (out.condition) out.condition = Array.isArray(out.condition) ? out.condition.map(bumpStr) : bumpStr(out.condition);
@@ -18842,6 +18896,8 @@ function executeRecipeStep(step, ctx, store, callback) {
   // 1体ずつ実行する。コストを払った後に行う（コストで盤面やDPが変わるため）
   if (_stepWantsSumBudget(step) && ctx.bs
       && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    // 効果の上限の変更（effect_cap_modify）は下の共通の場所より前にここで反映する（合計の上限にも掛けるため。LM-026）
+    if (!_COST_STEP_SET.has(step)) { try { step = _applyEffectCapMods(step, ctx); } catch (e) { console.error('[effect_cap_modify]', e); } }
     _runSumBudgetSelection(step, ctx, store, callback);
     return;
   }

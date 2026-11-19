@@ -1,76 +1,144 @@
-<!-- ===== AI対戦の準備（自分のデッキ・AIのデッキ・難易度・先攻後攻） ===== -->
+<!-- ===== AI対戦の準備（自分のデッキ・AIのデッキ・難易度 → サイコロで先攻後攻） ===== -->
+<!-- 選択中の印は .sel（共通CSSの .active は display:flex !important が付いていてレイアウトが崩れるため使わない） -->
 <div id="ai-battle-screen" class="screen">
 <style>
-.aib-wrap { max-width:900px; margin:auto; padding:24px 16px 40px; box-sizing:border-box; }
+.aib-wrap { max-width:900px; margin:auto; padding:24px 16px 40px; box-sizing:border-box; width:100%; }
 .aib-section { background:rgba(0,0,0,0.35); border:1px solid var(--border-col); border-radius:12px; padding:14px; margin-bottom:16px; }
 .aib-title { color:var(--main-cyan); font-weight:bold; font-size:14px; margin-bottom:10px; }
-.aib-tabs { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
-.aib-tab, .aib-opt { padding:8px 14px; border:1px solid #335; border-radius:8px; background:#0a0a0a; color:#aaa; cursor:pointer; font-size:13px; }
-.aib-tab.active, .aib-opt.active { border-color:var(--main-cyan); color:#fff; background:rgba(0,251,255,0.12); }
-.aib-opt.disabled { opacity:0.4; cursor:not-allowed; }
-.aib-opts { display:flex; gap:8px; flex-wrap:wrap; }
-#aib-levels { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.aib-lv { border:1px solid #335; border-radius:10px; background:#0a0a0a; padding:10px 6px; text-align:center; cursor:pointer; min-width:0; }
-.aib-lv.active { border-color:var(--main-cyan); background:rgba(0,251,255,0.12); box-shadow:0 0 8px rgba(0,251,255,0.3); }
+
+/* 選んだデッキの表示（押すと一覧が開く） */
+.aib-pick { display:flex; align-items:center; gap:12px; padding:10px; border:1px dashed #446; border-radius:10px; background:#0a0a0a; cursor:pointer; min-width:0; }
+.aib-pick.chosen { border-style:solid; border-color:var(--main-cyan); background:rgba(0,251,255,0.08); }
+.aib-pick img { width:46px; height:64px; object-fit:cover; border-radius:6px; background:#222; flex-shrink:0; }
+.aib-pick-ph { width:46px; height:64px; border-radius:6px; background:#151520; display:flex; align-items:center; justify-content:center; font-size:22px; color:#556; flex-shrink:0; }
+.aib-pick-body { min-width:0; flex:1; }
+.aib-pick-name { color:#fff; font-size:14px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aib-pick-sub { color:#888; font-size:11px; margin-top:3px; }
+.aib-pick-btn { flex-shrink:0; padding:7px 12px; border:1px solid var(--main-cyan); border-radius:8px; color:var(--main-cyan); font-size:12px; white-space:nowrap; }
+
+/* 難易度 */
+#aib-levels { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.aib-lv { display:flex; flex-direction:column; align-items:center; text-align:center; border:1px solid #335; border-radius:10px; background:#0a0a0a; padding:12px 8px; cursor:pointer; min-width:0; box-sizing:border-box; }
+.aib-lv.sel { border-color:var(--main-cyan); background:rgba(0,251,255,0.12); box-shadow:0 0 8px rgba(0,251,255,0.3); }
 .aib-lv.disabled { opacity:0.4; cursor:not-allowed; }
-.aib-lv-icon { font-size:30px; line-height:1.2; }
-.aib-lv-rank { color:var(--main-cyan); font-size:11px; font-weight:bold; margin-top:2px; }
-.aib-lv-name { color:#fff; font-size:13px; font-weight:bold; margin-top:2px; }
-.aib-lv-desc { color:#888; font-size:10px; margin-top:4px; line-height:1.4; }
-.aib-deck-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; max-height:300px; overflow-y:auto; }
+.aib-lv-icon { font-size:32px; line-height:1.2; flex-shrink:0; }
+.aib-lv-text { min-width:0; }
+.aib-lv-rank { color:var(--main-cyan); font-size:11px; font-weight:bold; margin-top:4px; }
+.aib-lv-name { color:#fff; font-size:13px; font-weight:bold; margin-top:2px; word-break:keep-all; overflow-wrap:anywhere; }
+.aib-lv-desc { color:#999; font-size:11px; margin-top:6px; line-height:1.5; }
+.aib-note { color:#888; font-size:12px; text-align:center; margin:4px 0 14px; }
+
+/* デッキ一覧（モーダル） */
+.aib-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9000; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; }
+.aib-modal.show { display:flex; }
+.aib-panel { width:100%; max-width:560px; max-height:85vh; display:flex; flex-direction:column; background:#0b0f18; border:1px solid var(--main-cyan); border-radius:14px; padding:14px; box-sizing:border-box; }
+.aib-panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.aib-panel-title { color:var(--main-cyan); font-weight:bold; font-size:15px; }
+.aib-close { background:none; border:none; color:#aaa; font-size:22px; cursor:pointer; padding:0 4px; }
+.aib-tabs { display:flex; gap:6px; margin-bottom:10px; }
+.aib-tab { flex:1; text-align:center; padding:8px 10px; border:1px solid #335; border-radius:8px; background:#0a0a0a; color:#aaa; cursor:pointer; font-size:13px; }
+.aib-tab.sel { border-color:var(--main-cyan); color:#fff; background:rgba(0,251,255,0.12); }
+.aib-search { width:100%; box-sizing:border-box; padding:10px 12px; margin-bottom:10px; background:#111; color:#fff; border:1px solid #335; border-radius:8px; font-size:14px; }
+.aib-list { overflow-y:auto; flex:1; min-height:120px; display:flex; flex-direction:column; gap:6px; }
 .aib-deck { display:flex; align-items:center; gap:10px; padding:8px; border:1px solid #223; border-radius:10px; background:#0a0a0a; cursor:pointer; min-width:0; }
-.aib-deck.active { border-color:var(--main-cyan); background:rgba(0,251,255,0.1); box-shadow:0 0 8px rgba(0,251,255,0.3); }
-.aib-deck img { width:42px; height:60px; object-fit:cover; border-radius:6px; background:#222; flex-shrink:0; }
+.aib-deck:hover { border-color:#4aa; }
+.aib-deck.sel { border-color:var(--main-cyan); background:rgba(0,251,255,0.1); }
+.aib-deck img { width:38px; height:54px; object-fit:cover; border-radius:5px; background:#222; flex-shrink:0; }
 .aib-deck-name { color:#fff; font-size:13px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .aib-deck-sub { color:#888; font-size:10px; margin-top:2px; }
 .aib-empty { color:#666; font-size:12px; padding:16px; text-align:center; }
-@media (max-width:600px) { .aib-deck-grid { grid-template-columns:1fr; } }
+
+/* サイコロ */
+.aib-dice-row { display:flex; gap:10px; align-items:stretch; margin:6px 0 14px; }
+.aib-dice-box { flex:1; background:#0a1a1a; border:1px solid #00fbff44; border-radius:12px; padding:14px 8px; text-align:center; min-width:0; }
+.aib-dice-box.win { border-color:#00ff88; box-shadow:0 0 12px rgba(0,255,136,0.4); }
+.aib-dice-who { font-size:12px; color:#ccc; margin-bottom:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aib-dice-face { width:64px; height:64px; margin:0 auto; background:#fff; border-radius:10px; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); padding:8px; box-sizing:border-box; color:#888; font-size:26px; font-weight:bold; }
+.aib-dice-face.q { display:flex; align-items:center; justify-content:center; }
+.aib-dot { width:9px; height:9px; background:#111; border-radius:50%; justify-self:center; align-self:center; }
+.aib-dice-vs { display:flex; align-items:center; color:#555; font-weight:bold; }
+#aib-dice-msg { text-align:center; font-size:14px; font-weight:bold; color:var(--main-cyan); min-height:20px; margin-bottom:12px; }
+
+@media (max-width:600px) {
+  .aib-wrap { padding:16px 12px 32px; }
+  /* スマホ: 難易度は縦に並べ、アイコンを左・文字を右に */
+  #aib-levels { grid-template-columns:1fr; }
+  .aib-lv { flex-direction:row; text-align:left; gap:12px; padding:10px 12px; }
+  .aib-lv-icon { font-size:28px; width:36px; text-align:center; }
+  .aib-lv-rank { display:inline; margin:0 6px 0 0; }
+  .aib-lv-name { display:inline; }
+  .aib-lv-desc { margin-top:3px; }
+  .aib-modal { padding:0; align-items:flex-end; }
+  .aib-panel { max-width:none; max-height:88vh; border-radius:14px 14px 0 0; }
+}
 </style>
   <div class="aib-wrap">
     <h2 style="color:var(--main-cyan); text-align:center; margin:0 0 18px;">🤖 AI対戦</h2>
 
     <div class="aib-section">
       <div class="aib-title">① 自分のデッキ</div>
-      <div id="aib-my-decks" class="aib-deck-grid"></div>
+      <div id="aib-my-pick" class="aib-pick" onclick="aibOpenPicker('my')"></div>
     </div>
 
     <div class="aib-section">
       <div class="aib-title">② AIのデッキ</div>
-      <div class="aib-tabs">
-        <div id="aib-tab-sample" class="aib-tab active" onclick="aibSetAiSource('sample')">おすすめデッキ</div>
-        <div id="aib-tab-mine" class="aib-tab" onclick="aibSetAiSource('mine')">マイデッキ</div>
-      </div>
-      <div id="aib-ai-decks" class="aib-deck-grid"></div>
+      <div id="aib-ai-pick" class="aib-pick" onclick="aibOpenPicker('ai')"></div>
     </div>
 
     <div class="aib-section">
       <div class="aib-title">③ 難易度</div>
-      <div class="aib-opts" id="aib-levels">
-        <div class="aib-lv active" data-v="low" onclick="aibSetLevel(this)">
-          <div class="aib-lv-icon">🐣</div><div class="aib-lv-rank">低</div><div class="aib-lv-name">見習いテイマー</div>
-          <div class="aib-lv-desc">できることは何でもやる、勢いまかせのテイマー</div>
+      <div id="aib-levels">
+        <div class="aib-lv sel" data-v="low" onclick="aibSetLevel(this)">
+          <div class="aib-lv-icon">🐣</div>
+          <div class="aib-lv-text"><div class="aib-lv-rank">低</div><div class="aib-lv-name">見習いテイマー</div>
+          <div class="aib-lv-desc">できることは何でもやる、勢いまかせのテイマー</div></div>
         </div>
         <div class="aib-lv disabled" data-v="mid" title="準備中">
-          <div class="aib-lv-icon">⚔️</div><div class="aib-lv-rank">中</div><div class="aib-lv-name">ベテランテイマー</div>
-          <div class="aib-lv-desc">準備中</div>
+          <div class="aib-lv-icon">⚔️</div>
+          <div class="aib-lv-text"><div class="aib-lv-rank">中</div><div class="aib-lv-name">ベテランテイマー</div>
+          <div class="aib-lv-desc">準備中</div></div>
         </div>
         <div class="aib-lv disabled" data-v="high" title="準備中">
-          <div class="aib-lv-icon">👑</div><div class="aib-lv-rank">高</div><div class="aib-lv-name">デジモンマスター</div>
-          <div class="aib-lv-desc">準備中</div>
+          <div class="aib-lv-icon">👑</div>
+          <div class="aib-lv-text"><div class="aib-lv-rank">高</div><div class="aib-lv-name">デジモンマスター</div>
+          <div class="aib-lv-desc">準備中</div></div>
         </div>
       </div>
     </div>
 
-    <div class="aib-section">
-      <div class="aib-title">④ 先攻・後攻</div>
-      <div class="aib-opts" id="aib-orders">
-        <div class="aib-opt active" data-v="random" onclick="aibSetOrder(this)">ランダム</div>
-        <div class="aib-opt" data-v="first" onclick="aibSetOrder(this)">先攻</div>
-        <div class="aib-opt" data-v="second" onclick="aibSetOrder(this)">後攻</div>
-      </div>
-    </div>
-
+    <div class="aib-note">🎲 先攻・後攻は、対戦開始のあとにサイコロで決めます</div>
     <button id="aib-start-btn" class="menu-btn primary" onclick="aibStart()" style="width:100%; box-sizing:border-box;">対戦開始</button>
-    <button class="menu-btn" onclick="backToTop()" style="width:100%; box-sizing:border-box; margin-top:12px; border-color:#555; color:#888;">TOPへ戻る</button>
+    <button class="menu-btn" onclick="showScreen('battle-mode-screen')" style="width:100%; box-sizing:border-box; margin-top:12px; border-color:#555; color:#888;">戻る</button>
+  </div>
+
+  <!-- デッキ一覧（検索つき） -->
+  <div id="aib-picker" class="aib-modal" onclick="if(event.target===this)aibClosePicker()">
+    <div class="aib-panel">
+      <div class="aib-panel-head">
+        <div id="aib-picker-title" class="aib-panel-title">デッキを選ぶ</div>
+        <button class="aib-close" onclick="aibClosePicker()">✕</button>
+      </div>
+      <div id="aib-picker-tabs" class="aib-tabs">
+        <div id="aib-tab-sample" class="aib-tab" onclick="aibSetAiSource('sample')">おすすめデッキ</div>
+        <div id="aib-tab-mine" class="aib-tab" onclick="aibSetAiSource('mine')">マイデッキ</div>
+      </div>
+      <input id="aib-search" class="aib-search" type="search" placeholder="🔍 デッキ名で探す" oninput="aibRenderPicker()">
+      <div id="aib-list" class="aib-list"></div>
+    </div>
+  </div>
+
+  <!-- サイコロで先攻・後攻 -->
+  <div id="aib-dice" class="aib-modal">
+    <div class="aib-panel" style="max-width:420px;">
+      <div class="aib-panel-head"><div class="aib-panel-title">🎲 先攻・後攻を決める</div></div>
+      <div class="aib-dice-row">
+        <div id="aib-dbox-me" class="aib-dice-box"><div class="aib-dice-who">あなた</div><div id="aib-dface-me" class="aib-dice-face q">?</div></div>
+        <div class="aib-dice-vs">VS</div>
+        <div id="aib-dbox-ai" class="aib-dice-box"><div id="aib-dwho-ai" class="aib-dice-who">AI</div><div id="aib-dface-ai" class="aib-dice-face q">?</div></div>
+      </div>
+      <div id="aib-dice-msg">サイコロを振ってください（大きい方が先攻）</div>
+      <button id="aib-roll-btn" class="menu-btn primary" onclick="aibRoll()" style="width:100%; box-sizing:border-box;">サイコロを振る</button>
+      <button id="aib-dice-cancel" class="menu-btn" onclick="aibCloseDice()" style="width:100%; box-sizing:border-box; margin-top:10px; border-color:#555; color:#888;">やめる</button>
+    </div>
   </div>
 </div>

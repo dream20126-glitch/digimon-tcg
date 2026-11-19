@@ -132,21 +132,38 @@
       <div class="top-card-label">マイデッキ</div>
       <div class="top-card-sub">作ったデッキを<br>確認・管理しよう</div>
     </div>
-    <div class="top-card-wide top-card--battle" onclick="showScreen('room-entrance-screen')">
+    <div class="top-card-wide top-card--battle" onclick="showScreen('battle-mode-screen')">
       <div class="top-card-wide-icon">⚔️</div>
       <div>
-        <div class="top-card-label" style="font-size:1rem;">オンライン対戦</div>
+        <div class="top-card-label" style="font-size:1rem;">対戦</div>
+        <div class="top-card-wide-sub">友達とオンラインで、<br>またはAIと1人で対戦しよう！</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ===== 対戦の種類を選ぶ（オンライン / AI） ===== -->
+<div id="battle-mode-screen" class="screen">
+<div class="page-wrap-wide">
+  <h2 style="color:var(--main-cyan); text-align:center; margin:8px 0 18px;">⚔️ 対戦</h2>
+  <div class="top-grid">
+    <div class="top-card-wide top-card--battle" onclick="showScreen('room-entrance-screen')">
+      <div class="top-card-wide-icon">🌐</div>
+      <div>
+        <div class="top-card-label" style="font-size:1rem;">オンライン</div>
         <div class="top-card-wide-sub">ルームを作って<br>友達と対戦しよう！</div>
       </div>
     </div>
     <div class="top-card-wide top-card--battle" onclick="showAiBattleSetup()">
       <div class="top-card-wide-icon">🤖</div>
       <div>
-        <div class="top-card-label" style="font-size:1rem;">AI対戦</div>
+        <div class="top-card-label" style="font-size:1rem;">AI</div>
         <div class="top-card-wide-sub">デッキと難易度を選んで<br>AIと1人で対戦しよう！</div>
       </div>
     </div>
   </div>
+  <button class="menu-btn" onclick="backToTop()" style="width:100%; max-width:420px; display:block; margin:20px auto 0; border-color:#555; color:#888;">TOPへ戻る</button>
 </div>
 </div>
 

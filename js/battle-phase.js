@@ -1032,7 +1032,7 @@ export async function aiTurn() {
   // ターン中アタック回数のリセット（cond_opp_no_attack_this_turn 等で使用）
   bs._currentTurnAttackCount = 0;
   bs._evolveCountThisTurn = 0;
-  showYourTurn('相手のターン開始', '🤖 デジモンマスター', '#ff00fb', () => {
+  showYourTurn('相手のターン開始', '🤖 ' + (window._aiBattleActive && window._aiName ? window._aiName : 'デジモンマスター'), '#ff00fb', () => {
     _hooks.checkTurnStartEffects('ai', () => {
       _hooks.applyPermanentEffects('player');
       _hooks.applyPermanentEffects('ai');

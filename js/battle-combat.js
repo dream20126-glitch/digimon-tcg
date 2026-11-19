@@ -5535,16 +5535,21 @@ export function aiMainPhase(callback) {
   }
 }
 
+// CPU が払う登場/使用コスト: プレイヤーと同じく効果による増減（summon_cost・アセンブリ等）を反映した値
+function _aiPlayCost(c) {
+  try { return _getEffectivePlayCost(c, bs, 'ai'); } catch (_) { return (c && c.playCost) || 0; }
+}
+
 function aiPlayCard(c, handIdx, onDone) {
   // 「このカードを使用/登場するとき、〇〇することで、支払うコスト-N」（summon_cost のコスト付きエントリ。
   // 茨の女王 BT26-098 等）: CPU は払えるなら自動で使う（checkCostedSummonDiscount は side!=='player' なら確認なし）
-  if (c && (c.playCost || 0) > 0) {
+  if (c && _aiPlayCost(c) > 0) {
     let _called = false;
     _checkCostedSummonDiscount(c, bs, 'ai', _hooks.makeEffectContext(c, 'ai'), (disc) => {
       if (_called) return; _called = true;
       const _hi = bs.ai.hand.indexOf(c);
       _aiPlayCardMain(c, _hi !== -1 ? _hi : handIdx, onDone, disc || 0);
-    }, { addLog, baseCost: c.playCost });
+    }, { addLog, baseCost: _aiPlayCost(c) });
     return;
   }
   _aiPlayCardMain(c, handIdx, onDone, 0);
@@ -5552,7 +5557,7 @@ function aiPlayCard(c, handIdx, onDone) {
 
 function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   // コストを払った軽減量を差し引いた支払うコスト
-  const _aiBasePay = Math.max(0, (c.playCost || 0) - (costedDisc || 0));
+  const _aiBasePay = Math.max(0, _aiPlayCost(c) - (costedDisc || 0));
   let empty = bs.ai.battleArea.findIndex(s => s === null);
   if (empty === -1) { empty = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
 
@@ -5674,14 +5679,53 @@ function _aiFindEvolve(base) {
   if (!base || base.cantEvolve || (Array.isArray(base.buffs) && base.buffs.some(b => b && b.type === 'cant_evolve'))) return null;
   for (const c of bs.ai.hand) {
     if (!c || c.type !== 'デジモン') continue;
-    let ok = false;
+    // 進化できるか・コストはプレイヤーの進化（doEvolve の _normalEvolve）と同じ判定（代替進化・常在の進化コスト増減も含む）
+    let ok = false, alt = null;
     try { ok = _resolveEvolveMatch(c, base) !== null; } catch (_) { ok = false; }
-    if (!ok) continue;
-    const cost = getEvolveCostFor(c, base);
-    if (cost === null || cost === undefined || cost > aiAvailableMemory()) continue;
-    return { card: c, cost };
+    try { alt = _getAltEvolve(c, base, bs, 'ai'); } catch (_) { alt = null; }
+    if (!ok && !alt) continue;
+    let cost = alt ? alt.cost : getEvolveCostFor(c, base);
+    if (cost === null || cost === undefined) continue;
+    try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
+    if (cost > aiAvailableMemory()) continue;
+    return { card: c, cost, alt: !!alt };
   }
   return null;
+}
+
+// CPU のバトルエリアでの進化。プレイヤーの進化（doEvolve の _normalEvolve）と同じ順で、side だけ 'ai' にして処理する
+function _aiEvolveInBattleArea(card, slotIdx, done) {
+  const base = bs.ai.battleArea[slotIdx];
+  if (!base || !card) { done(); return; }
+  let cost = getEvolveCostFor(card, base);
+  let _alt = null;
+  try { _alt = _getAltEvolve(card, base, bs, 'ai'); } catch (_) {}
+  if (_alt) { cost = _alt.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
+  const _evoDisc = _consumePendingEvoCostReduction(card, base);
+  if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  let _staticEvo = 0;
+  try { _staticEvo = _getStaticEvoCostReduction(card, base, bs, 'ai'); } catch (_) {}
+  if (_staticEvo !== 0) { cost = Math.max(0, cost - _staticEvo); addLog('💠 進化コスト' + (_staticEvo > 0 ? '-' + _staticEvo : '+' + (-_staticEvo)) + '（コスト' + cost + 'で進化）'); }
+  _fireBeforeEvolveEffects(card, bs, 'ai', { base }, (_preDisc) => {
+    if (_preDisc > 0) { cost = Math.max(0, cost - _preDisc); addLog('💠 効果で進化コスト-' + _preDisc + '（コスト' + cost + 'で進化）'); }
+    _checkBeforeEvolveDiscount(card, bs, 'ai', (discount) => {
+      if (discount > 0) { cost = Math.max(0, cost - discount); addLog('💠 効果で進化コスト-' + discount + '（コスト' + cost + 'で進化）'); }
+      _checkAbsorbEvolveDiscount(card, bs, 'ai', (discount2) => {
+        const go = () => {
+          const slot = bs.ai.battleArea.indexOf(base);
+          const hi = bs.ai.hand.indexOf(card);
+          if (slot === -1 || hi === -1) { done(); return; } // 「進化するとき」の効果で状況が変わった
+          addLog('🤖 AIが「' + base.name + '」→「' + card.name + '」に進化！');
+          doEvolveFromEffect(card, hi, slot, cost, 'ai', () => done());
+        };
+        if (discount2 > 0) {
+          cost = Math.max(0, cost - discount2);
+          addLog('💠 吸収進化で進化コスト-' + discount2 + '（コスト' + cost + 'で進化）');
+          fireOppRestThen('ai', go);
+        } else go();
+      });
+    }, { base });
+  });
 }
 
 // CPU: 進化したら1枚ドロー（公式ルール）
@@ -5747,36 +5791,19 @@ function aiPlayAuto(callback) {
     }
   }
 
-  // ② バトルエリアで進化
+  // ② バトルエリアで進化（プレイヤーの進化と同じ処理: 進化コストの増減・「進化するとき」の効果・吸収進化 →
+  //    共通の doEvolveFromEffect（状態の引き継ぎ・コスト支払い・進化ドロー・【進化時】）
   for (let i = 0; i < bs.ai.battleArea.length; i++) {
     const base = bs.ai.battleArea[i];
     if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
     const _ev = _aiFindEvolve(base);
-    if (_ev) {
-      const evoCandidate = _ev.card;
-      const handIdx = bs.ai.hand.indexOf(evoCandidate);
-      bs.ai.hand.splice(handIdx, 1);
-      // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
-      evoCandidate.stack = [base, ...(base.stack || [])];
-      // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
-      evoCandidate.summonedThisTurn = !!base.summonedThisTurn;
-      evoCandidate.suspended = base.suspended;
-      _aiCarryEvolveState(evoCandidate, base);
-      bs.ai.battleArea[i] = evoCandidate;
-      addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
-      const turnEnded = aiSpendMemory(_ev.cost);
-      renderAll();
-      showEvolveEffect(_ev.cost, base.name, base, evoCandidate, () => {
-        _aiEvolveDraw();
-        renderAll(true);
-        _hooks.checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
-          _hooks.applyPermanentEffects('ai'); renderAll();
-          if (turnEnded) { setTimeout(() => callback(), 500); return; }
-          setTimeout(() => aiPlayAuto(callback), 600);
-        }, 'ai');
-      });
-      return;
-    }
+    if (!_ev) continue;
+    _aiEvolveInBattleArea(_ev.card, i, () => {
+      _hooks.applyPermanentEffects('ai'); renderAll(true);
+      if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+      setTimeout(() => aiPlayAuto(callback), 600);
+    });
+    return;
   }
 
   const available = aiAvailableMemory();
@@ -5784,7 +5811,7 @@ function aiPlayAuto(callback) {
   // ③ オプション/テイマー/デュアル（オプション・デュアルは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
-    c.playCost !== null && c.playCost <= available &&
+    c.playCost !== null && _aiPlayCost(c) <= available &&
     (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai'))
   );
   if (optionOrTamer) {
@@ -5839,10 +5866,10 @@ function aiPlayAuto(callback) {
 
   // ④ デジモン登場
   const playable = bs.ai.hand.filter(c =>
-    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && c.playCost <= available
+    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= available
   );
   if (playable.length > 0) {
-    playable.sort((a, b) => a.playCost - b.playCost);
+    playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
     const c = playable[0];
     const handIdx = bs.ai.hand.indexOf(c);
     aiPlayCard(c, handIdx, (turnEnded) => {

@@ -13,6 +13,8 @@ let selMy = -1;
 let selAi = -1;
 let level = 'low';
 let order = 'random';
+// 難易度ごとの AI の名前（対戦画面の相手の名前・ターン開始の表示に出す）
+const AI_NAMES = { low: '見習いテイマー', mid: 'ベテランテイマー', high: 'デジモンマスター' };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const countList = (list) => String(list || '').split(',').reduce((s, l) => { const m = l.match(/x(\d+)$/); return s + (m ? parseInt(m[1], 10) : 0); }, 0);
@@ -118,6 +120,7 @@ window.aibStart = async function() {
     // チュートリアルが残っていれば止める（CPU の行動がチュートリアルのスクリプトに切り替わるため）
     if (window._tutorialRunner) { try { window._tutorialRunner.stop(); } catch (_) {} }
     window._aiLevel = level;
+    window._aiName = AI_NAMES[level] || 'AI';
     window._aiBattleActive = true;
     // 勝敗が決まったら AI対戦の準備画面に戻る
     window._onGameEnd = () => {
@@ -127,7 +130,7 @@ window.aibStart = async function() {
     };
     await window.startBattleGame({ list: my.list }, { list: ai.list }, playerFirst);
     const oppLabel = document.getElementById('opponent-name-label');
-    if (oppLabel) oppLabel.innerText = '🤖 AI（' + ({ low: '低', mid: '中', high: '高' }[level] || '') + '）';
+    if (oppLabel) oppLabel.innerText = '🤖 ' + window._aiName;
   } catch (e) {
     alert('開始できませんでした: ' + e.message);
   } finally {

@@ -5704,9 +5704,24 @@ let _aiOverflowOK = false;
 if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowOK = !!v; };
 // 中（ベテランテイマー）: 相手に渡すのは3まで（普通のプレイヤーと同じく、出したいカードを出してターンを終える。
 // 先攻1ターン目はメモリー0から始まるので、相手に渡さないと何もできない）。低は10まで（できることは全てやる）
-function aiAvailableMemory() {
-  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? 3 : 10) : 0;
+function aiAvailableMemory(card) {
+  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? Math.min(10, 3 + _aiMidMemoryBonus(card)) : 10) : 0;
   return Math.abs(bs.memory) + over;
+}
+// 中: このカードを使うために、相手に3より多くメモリーを渡してもよいか（損得）。カードの効果から得の大きさを見積もる。
+//   相手のデジモンを消滅・手札/デッキに戻す・DP-・レスト（相手にデジモンがいるとき）＋2、相手のセキュリティを減らす＋2、
+//   ドロー＋1、メモリー+N（相手に渡す分が戻る）＋N。合計を3に足した数まで渡す（最大10）
+function _aiMidMemoryBonus(card) {
+  if (!card) return 0;
+  const t = String(card.effect || '');
+  let bonus = 0;
+  const oppHas = (bs.player.battleArea || []).some(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
+  if (oppHas && /相手の[^。]*?(消滅|手札に戻す|デッキの(下|上)に戻す|DP\s*-|DP－|レストさせ)/.test(t)) bonus += 2;
+  if (/相手のセキュリティ[^。]*?(破棄|トラッシュ|手札に)/.test(t)) bonus += 2;
+  if (/(\d+)枚ドロー|カードを\d+枚引く|ドローする/.test(t)) bonus += 1;
+  const m = /メモリー\s*[+＋]\s*(\d+)/.exec(t);
+  if (m) bonus += parseInt(m[1], 10) || 0;
+  return bonus;
 }
 
 export function aiMainPhase(callback) {
@@ -5878,7 +5893,7 @@ function _aiFindEvolve(base) {
     let cost = alt ? alt.cost : getEvolveCostFor(c, base);
     if (cost === null || cost === undefined) continue;
     try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
-    if (cost > aiAvailableMemory()) continue;
+    if (cost > aiAvailableMemory(c)) continue;
     return { card: c, cost, alt: !!alt };
   }
   return null;
@@ -5994,7 +6009,7 @@ function aiPlayAuto(callback) {
       let pair = null;
       for (const base of bs.ai.battleArea) {
         if (!base) continue;
-        pair = _handJogressPairs(jc, base, 'ai').find(p => (parseInt(p.cost, 10) || 0) <= aiAvailableMemory());
+        pair = _handJogressPairs(jc, base, 'ai').find(p => (parseInt(p.cost, 10) || 0) <= aiAvailableMemory(jc));
         if (pair) break;
       }
       if (!pair) continue;
@@ -6031,7 +6046,7 @@ function aiPlayAuto(callback) {
   // ③ オプション/テイマー/デュアル（オプション・デュアルは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
-    c.playCost !== null && _aiPlayCost(c) <= available &&
+    c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c) &&
     (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai')) &&
     !(_aiIsMid() && _aiMidOptionIsWasted(c))
   );
@@ -6047,7 +6062,7 @@ function aiPlayAuto(callback) {
   // ③' ［トラッシュ］【メイン】（ゾンビプルートモン BT26-079「このカードを支払うコスト-4で登場させる」等）。
   // 使える効果があり、支払うメモリーが足りるなら使う（同じカードはこのターン1回だけ試す＝無限ループ防止）
   const zoneMain = (window._getUsableZoneMainEffects ? window._getUsableZoneMainEffects('ai', 'trash') : [])
-    .find(z => z && z.card && z.payCost <= available && z.card._aiZoneMainTurn !== bs.turn);
+    .find(z => z && z.card && z.payCost <= aiAvailableMemory(z.card) && z.card._aiZoneMainTurn !== bs.turn);
   if (zoneMain && window._activateZoneMainEffect) {
     zoneMain.card._aiZoneMainTurn = bs.turn;
     addLog('🤖 AIがトラッシュの「' + zoneMain.card.name + '」の効果を使用！');
@@ -6087,7 +6102,7 @@ function aiPlayAuto(callback) {
 
   // ④ デジモン登場
   const playable = bs.ai.hand.filter(c =>
-    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= available
+    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c)
   );
   if (playable.length > 0) {
     // 低: 安いものから。中: 出せる中で一番強い（コストの高い）ものから

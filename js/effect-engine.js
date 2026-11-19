@@ -13541,6 +13541,15 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
       runNow();
       return;
     }
+    // AI対戦（オフライン）: CPU は任意効果を必ず発動する（【カウンター】・ブラスト進化・反応で誘発する効果も含む）。
+    // ほかの効果（キュー・runRecipe のコスト確認・【ディレイ】等）はもともと CPU が自動で「はい」にしている
+    if (side === 'ai' && window._aiBattleActive && !(window._isOnlineMode && window._isOnlineMode())) {
+      ctx._effectConfirmed = true;
+      _markConfirmedHead(ctx, recipe);
+      logActivated();
+      runNow();
+      return;
+    }
     if (side === 'player' || alwaysConfirm) {
       showConfirmDialog(card, effectTextWithKw, (accepted) => {
         if (accepted) {

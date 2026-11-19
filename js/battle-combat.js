@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClashBegin, fxBattleClashReset, fxBattleResultBurst, registerClashLoser, consumeClashLoser } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { fireOptionUsedTriggers as _fireOptionUsed } from './effect-engine.js';
+import { fireOptionUsedTriggers as _fireOptionUsed, hasOwnMainEffect as _hasOwnMainEffect, mainEffectButtonState as _mainEffectButtonState } from './effect-engine.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, whenDestroyApplies as _whenDestroyApplies, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, fireBeforeEvolveEffects as _fireBeforeEvolveEffects, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
 
 // ===== 戦闘フック =====
@@ -2637,17 +2637,18 @@ export function doJogressFromEffect(card, left, right, cost, side, callback, opt
 
 // ===== 手札からの通常のジョグレス進化（公式ルール 5-1-2-2 / 8-2-3） =====
 // base（重ねた先の自分のデジモン）を進化元の1体として使える組み合わせ [{left,right,cost}] を返す
-function _handJogressPairs(card, base) {
+function _handJogressPairs(card, base, side) {
+  side = side === 'ai' ? 'ai' : 'player';
   if (!card || !base || (card.type !== 'デジモン' && card.type !== 'デュアル')) return [];
   let conds = [];
   try { conds = _getJogressConditions(card) || []; } catch (_) { conds = []; }
   if (conds.length === 0) return [];
-  const mats = bs.player.battleArea.filter(c => c && c !== base && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
+  const mats = bs[side].battleArea.filter(c => c && c !== base && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
   const out = [];
   conds.forEach((jc) => {
     mats.forEach((o) => {
-      if (_jogressSlotMatches(base, jc.slots[0], bs, 'player') && _jogressSlotMatches(o, jc.slots[1], bs, 'player')) out.push({ left: base, right: o, cost: jc.cost });
-      if (_jogressSlotMatches(o, jc.slots[0], bs, 'player') && _jogressSlotMatches(base, jc.slots[1], bs, 'player')) out.push({ left: o, right: base, cost: jc.cost });
+      if (_jogressSlotMatches(base, jc.slots[0], bs, side) && _jogressSlotMatches(o, jc.slots[1], bs, side)) out.push({ left: base, right: o, cost: jc.cost });
+      if (_jogressSlotMatches(o, jc.slots[0], bs, side) && _jogressSlotMatches(base, jc.slots[1], bs, side)) out.push({ left: o, right: base, cost: jc.cost });
     });
   });
   return out;
@@ -5716,6 +5717,27 @@ function aiPlayAuto(callback) {
     }
   }
 
+  // ②' ジョグレス進化（AI対戦: 手札の［ジョグレス進化］カードで、場の2体を使えるならする）
+  if (window._aiBattleActive) {
+    for (const jc of bs.ai.hand.slice()) {
+      if (!jc || (jc.type !== 'デジモン' && jc.type !== 'デュアル')) continue;
+      let pair = null;
+      for (const base of bs.ai.battleArea) {
+        if (!base) continue;
+        pair = _handJogressPairs(jc, base, 'ai').find(p => (parseInt(p.cost, 10) || 0) <= aiAvailableMemory());
+        if (pair) break;
+      }
+      if (!pair) continue;
+      addLog('🤖 AIが「' + pair.left.name + '」と「' + pair.right.name + '」で「' + jc.name + '」にジョグレス進化！');
+      doJogressFromEffect(jc, pair.left, pair.right, parseInt(pair.cost, 10) || 0, 'ai', () => {
+        _hooks.applyPermanentEffects('ai'); renderAll(true);
+        if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
+      });
+      return;
+    }
+  }
+
   // ② バトルエリアで進化
   for (let i = 0; i < bs.ai.battleArea.length; i++) {
     const base = bs.ai.battleArea[i];
@@ -5780,6 +5802,31 @@ function aiPlayAuto(callback) {
       setTimeout(() => aiPlayAuto(callback), 500);
     });
     return;
+  }
+
+  // ③'' 場のデジモン・テイマーの【メイン】効果（AI対戦: 使えるものは全て使う。同じカードはこのターン1回だけ試す）
+  if (window._aiBattleActive && window._triggerMainEffect) {
+    const mainCard = [...bs.ai.battleArea, ...bs.ai.tamerArea].find(c => {
+      if (!c || c._noMainAbility || c._aiMainTurn === bs.turn) return false;
+      try {
+        if (!_hasOwnMainEffect(c)) return false;
+        const st = _mainEffectButtonState(c) || {};
+        return !st.usedUp && !st.unusable;
+      } catch (_) { return false; }
+    });
+    if (mainCard) {
+      mainCard._aiMainTurn = bs.turn;
+      if (!mainCard._usedEffects) mainCard._usedEffects = [];
+      mainCard._usedEffects.push('self');
+      addLog('🤖 AIが「' + mainCard.name + '」の【メイン】効果を使用！');
+      window._triggerMainEffect(mainCard, () => {
+        _hooks.applyPermanentEffects('ai');
+        renderAll(true);
+        if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 500);
+      });
+      return;
+    }
   }
 
   // ④ デジモン登場

@@ -634,6 +634,18 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 手札5枚ドロー
   drawCards('player', 5);
   drawCards('ai', 5);
+  // AI対戦「中」（ベテランテイマー）のマリガン: 序盤に出せるデジモン（Lv.3 か登場コスト3以下）が1枚も無ければ、
+  // プレイヤーの引き直し（doMulligan）と同じく手札をデッキに戻してシャッフルし、5枚引き直す（1回だけ）。低はしない
+  if (window._aiBattleActive && window._aiLevel === 'mid') {
+    const _early = (c) => c && c.type === 'デジモン'
+      && (String(c.level) === '3' || (c.playCost !== null && c.playCost !== undefined && c.playCost !== '' && (parseInt(c.playCost, 10) || 0) <= 3));
+    if (!bs.ai.hand.some(_early)) {
+      bs.ai.deck = shuffle(bs.ai.deck.concat(bs.ai.hand));
+      bs.ai.hand = [];
+      drawCards('ai', 5);
+      addLog('🔄 相手がマリガン！手札を引き直しました');
+    }
+  }
 
   addLog('🃏 手札: ' + bs.player.hand.length + '枚 / デッキ: ' + bs.player.deck.length + '枚');
 

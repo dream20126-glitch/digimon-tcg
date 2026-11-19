@@ -5659,6 +5659,16 @@ function aiPlayScript(cardNames, callback) {
   }
 }
 
+// CPU の進化: 進化しても同じ1体なので、効果で与えられた状態（DP±・Sアタック±・付与された効果等）は引き継ぐ
+// （プレイヤーの進化 _finishDoEvolve と同じ。以前は CPU だけ消していて、Sアタック-3 を与えても進化で消えていた）
+function _aiCarryEvolveState(evo, base) {
+  evo.baseDp = parseInt(evo.dp) || 0;
+  evo.buffs = Array.isArray(base.buffs) ? base.buffs : [];
+  evo._grantedRecipes = base._grantedRecipes;
+  evo.dpModifier = base.dpModifier || 0;
+  evo.dp = evo.baseDp + evo.dpModifier;
+}
+
 // CPU: base に進化できる手札のカードと、その進化コスト（進化条件の色・特徴・名称どおり。払えるものだけ）
 function _aiFindEvolve(base) {
   if (!base || base.cantEvolve || (Array.isArray(base.buffs) && base.buffs.some(b => b && b.type === 'cant_evolve'))) return null;
@@ -5698,8 +5708,7 @@ function aiPlayAuto(callback) {
       // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
       evoCandidate.summonedThisTurn = !!oldCard.summonedThisTurn;
       evoCandidate.suspended = oldCard.suspended;
-      evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
-      evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
+      _aiCarryEvolveState(evoCandidate, oldCard);
       bs.ai.ikusei = evoCandidate;
       addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
       const turnEnded = aiSpendMemory(_ev.cost);
@@ -5752,8 +5761,7 @@ function aiPlayAuto(callback) {
       // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
       evoCandidate.summonedThisTurn = !!base.summonedThisTurn;
       evoCandidate.suspended = base.suspended;
-      evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
-      evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
+      _aiCarryEvolveState(evoCandidate, base);
       bs.ai.battleArea[i] = evoCandidate;
       addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
       const turnEnded = aiSpendMemory(_ev.cost);
@@ -7015,9 +7023,7 @@ export function aiScriptEvolveBattle(sourceKey, targetKey, onDone) {
   // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
   evo.summonedThisTurn = !!base.summonedThisTurn;
   evo.suspended = base.suspended;
-  evo.baseDp = parseInt(evo.dp) || 0;
-  evo.dpModifier = 0;
-  evo.buffs = [];
+  _aiCarryEvolveState(evo, base);
   bs.ai.battleArea[slotIdx] = evo;
   const cost = evo.evolveCost;
   addLog('🤖 AIが「' + base.name + '」→「' + evo.name + '」進化！（コスト ' + cost + '）');
@@ -7065,9 +7071,7 @@ export function aiScriptEvolveBreed(targetKey, onDone) {
   // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
   evo.summonedThisTurn = !!base.summonedThisTurn;
   evo.suspended = base.suspended;
-  evo.baseDp = parseInt(evo.dp) || 0;
-  evo.dpModifier = 0;
-  evo.buffs = [];
+  _aiCarryEvolveState(evo, base);
   bs.ai.ikusei = evo;
   const cost = evo.evolveCost;
   addLog('🤖 AIが育成「' + base.name + '」→「' + evo.name + '」進化！');

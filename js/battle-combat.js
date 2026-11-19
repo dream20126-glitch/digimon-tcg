@@ -5977,12 +5977,50 @@ function _aiEvolveIku(card, done) {
 }
 
 // 中: 使っても意味の無いオプション・デュアル（相手のデジモンに使う効果なのに、相手のデジモンがいない）は使わない
+// 判定はレシピの【メイン】の手順で行う: 盤面のデジモン（相手の/自分の）を対象にする手順に対象が1体もいなくて、
+// ほかに単独で意味のある手順（ドロー・メモリー+・デッキオープン・登場・【ディレイ】等）も無ければ「使わない」。
+// 対象の絞り込み（DP以下・Lv以下・レスト中）も見る。レシピが読めないカードは効果テキストで判断する
+const _AI_DEPENDENT_ACTIONS = new Set(['destroy', 'bounce', 'dp_minus', 'rest', 'select_evo_source', 'dedigivolve', 'evo_discard_all', 'return_deck', 'grant_keyword', 'dp_plus']);
+function _aiMidStepTargetCount(st) {
+  const t = String((st && st.target) || '');
+  if (!t || /^(same_target|target_trigger_source|self)/.test(t)) return null;
+  let area;
+  const oppM = /^opp(?:onent)?(_suspended)?(?::|$)/.exec(t);
+  if (oppM) area = (bs.player.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!oppM[1] || c.suspended));
+  else if (/^own(?::|$)/.test(t)) area = (bs.ai.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
+  else if (/^own_tamer/.test(t)) area = (bs.ai.tamerArea || []).filter(Boolean);
+  else return null; // セキュリティ・手札・トラッシュ等は盤面の対象ではない（使えるものとして扱う）
+  const f = (st.filter && typeof st.filter === 'object') ? st.filter : {};
+  const lim = { dp_le: f.dp_le, dp_ge: f.dp_ge, lv_le: f.lv_le };
+  const cm = /cond_(dp_le|dp_ge|lv_le):(\d+)/.exec(String(st.condition || ''));
+  if (cm) lim[cm[1]] = parseInt(cm[2], 10);
+  return area.filter(c => !(typeof lim.dp_le === 'number' && _dpOf(c) > lim.dp_le)
+    && !(typeof lim.dp_ge === 'number' && _dpOf(c) < lim.dp_ge)
+    && !(typeof lim.lv_le === 'number' && _lvOf(c) > lim.lv_le)).length;
+}
 function _aiMidOptionIsWasted(c) {
   if (!c || (c.type !== 'オプション' && c.type !== 'デュアル')) return false;
-  const oppHas = (bs.player.battleArea || []).some(x => x);
-  if (oppHas) return false;
-  const t = String(c.effect || '');
-  return /相手のデジモン/.test(t) && !/自分の|ドロー|メモリー|セキュリティ|手札|デッキ/.test(t);
+  let r = c.recipe;
+  if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
+  const steps = (r && Array.isArray(r.main)) ? r.main.filter(Boolean) : null;
+  if (!steps || steps.length === 0) {
+    const oppHas = (bs.player.battleArea || []).some(x => x);
+    if (oppHas) return false;
+    const t = String(c.effect || '');
+    return /相手のデジモン/.test(t) && !/自分の|ドロー|メモリー|セキュリティ|手札|デッキ/.test(t);
+  }
+  let targeted = 0;
+  for (const st of steps) {
+    const n = _aiMidStepTargetCount(st);
+    if (n === null) {
+      // 対象を持たない手順: 前の手順で選んだ対象に効くもの以外（ドロー・メモリー+等）は単独で意味がある
+      if (!(st.card || _AI_DEPENDENT_ACTIONS.has(st.action))) return false;
+      continue;
+    }
+    targeted++;
+    if (n > 0) return false;
+  }
+  return targeted > 0;
 }
 
 function aiPlayAuto(callback) {

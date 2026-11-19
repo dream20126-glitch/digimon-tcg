@@ -355,11 +355,14 @@ export function buildIkuCallbacks() {
       }
       try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (_) {}
       renderAll();
-      // 【移動時】: 育成エリア→バトルエリア移動で誘発（【登場時】とは別トリガー）
-      checkAndTriggerEffect(card, '【移動時】', () => {
-        renderAll();
-        breedActionDone();
-      }, 'player');
+      // 「バトルエリアへ移動！」を出してから【移動時】へ（CPU が移動したとき aiPhaseBreed と同じ演出）
+      showPhaseAnnounce('🚀 バトルエリアへ移動！', '#00fbff', () => {
+        // 【移動時】: 育成エリア→バトルエリア移動で誘発（【登場時】とは別トリガー）
+        checkAndTriggerEffect(card, '【移動時】', () => {
+          renderAll();
+          breedActionDone();
+        }, 'player');
+      });
     },
   };
 }
@@ -376,7 +379,7 @@ export function setupCommonWindowExports() {
   // Phase 3: フェーズ進行
   window.onEndTurn = onEndTurn;
   window.skipBreedPhase = skipBreedPhase;
-  window.doIkuMove = () => { doIkuMove(); breedActionDone(); };
+  window.doIkuMove = () => { doIkuMove(); }; // 育成フェイズの終了は onBreedMove（演出・【移動時】の後）で行う
   window.showYourTurn = showYourTurn;
   window.showPhaseAnnounce = showPhaseAnnounce;
   window.showSkipAnnounce = showSkipAnnounce;

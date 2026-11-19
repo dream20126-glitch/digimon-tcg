@@ -380,11 +380,10 @@ function renderBattleRows() {
         // dp_set（元々のDP変更）対応: 実効ベース = 現DP - 修正値
         const dpMod = _dpModFromBuffs(card);
         const effBaseDp = (typeof card.dp === 'number') ? (card.dp - dpMod) : (card.baseDp || card.dp);
-        // 現在のDP（修正後）を大きく出し、その横に修正値（+N / -N）を小さく添える（両方の盤面共通）
-        const curDp = effBaseDp + dpMod;
-        let dpHtml = `${curDp}`;
-        if (dpMod > 0) dpHtml = `<span style="color:#00ff88;">${curDp}</span><span style="color:#00ff88;font-size:7px;"> (+${dpMod})</span>`;
-        else if (dpMod < 0) dpHtml = `<span style="color:#ff4444;">${curDp}</span><span style="color:#ff4444;font-size:7px;"> (${dpMod})</span>`;
+        // 本来のDPの横に修正値（+N / -N）を小さく添える（両方の盤面共通）
+        let dpHtml = `${effBaseDp}`;
+        if (dpMod > 0) dpHtml += `<span style="color:#00ff88;font-size:6px;"> +${dpMod}</span>`;
+        else if (dpMod < 0) dpHtml += `<span style="color:#ff4444;font-size:6px;"> ${dpMod}</span>`;
         html += `<div class="s-dp">${dpHtml}</div>`;
 
         // 進化元枚数（右上）

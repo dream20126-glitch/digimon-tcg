@@ -5574,17 +5574,37 @@ function aiPlayScript(cardNames, callback) {
   }
 }
 
+// CPU: base に進化できる手札のカードと、その進化コスト（進化条件の色・特徴・名称どおり。払えるものだけ）
+function _aiFindEvolve(base) {
+  if (!base || base.cantEvolve || (Array.isArray(base.buffs) && base.buffs.some(b => b && b.type === 'cant_evolve'))) return null;
+  for (const c of bs.ai.hand) {
+    if (!c || c.type !== 'デジモン') continue;
+    let ok = false;
+    try { ok = _resolveEvolveMatch(c, base) !== null; } catch (_) { ok = false; }
+    if (!ok) continue;
+    const cost = getEvolveCostFor(c, base);
+    if (cost === null || cost === undefined || cost > aiAvailableMemory()) continue;
+    return { card: c, cost };
+  }
+  return null;
+}
+
+// CPU: 進化したら1枚ドロー（公式ルール）
+function _aiEvolveDraw() {
+  if (bs.ai.deck.length > 0) {
+    bs.ai.hand.push(bs.ai.deck.shift());
+    addLog('🤖 進化ドロー');
+  }
+}
+
 function aiPlayAuto(callback) {
   if (!aiCanAct()) { callback(); return; }
 
   // ① 育成エリアで進化
   if (bs.ai.ikusei && bs.ai.ikusei.type === 'デジモン') {
-    const ikuseiLv = parseInt(bs.ai.ikusei.level) || 0;
-    const evoCandidate = bs.ai.hand.find(c =>
-      c.type === 'デジモン' && parseInt(c.level) === ikuseiLv + 1 &&
-      c.evolveCost !== null && c.evolveCost <= aiAvailableMemory()
-    );
-    if (evoCandidate) {
+    const _ev = _aiFindEvolve(bs.ai.ikusei);
+    if (_ev) {
+      const evoCandidate = _ev.card;
       const handIdx = bs.ai.hand.indexOf(evoCandidate);
       bs.ai.hand.splice(handIdx, 1);
       const oldCard = bs.ai.ikusei;
@@ -5596,12 +5616,17 @@ function aiPlayAuto(callback) {
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
       evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
       bs.ai.ikusei = evoCandidate;
-      addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！');
-      const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
+      addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
+      const turnEnded = aiSpendMemory(_ev.cost);
       renderAll();
-      showEvolveEffect(evoCandidate.evolveCost, oldCard.name, oldCard, evoCandidate, () => {
-        if (turnEnded) { setTimeout(() => callback(), 500); return; }
-        setTimeout(() => aiPlayAuto(callback), 600);
+      showEvolveEffect(_ev.cost, oldCard.name, oldCard, evoCandidate, () => {
+        _aiEvolveDraw();
+        renderAll(true);
+        _hooks.checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
+          _hooks.applyPermanentEffects('ai'); renderAll();
+          if (turnEnded) { setTimeout(() => callback(), 500); return; }
+          setTimeout(() => aiPlayAuto(callback), 600);
+        }, 'ai');
       });
       return;
     }
@@ -5611,12 +5636,9 @@ function aiPlayAuto(callback) {
   for (let i = 0; i < bs.ai.battleArea.length; i++) {
     const base = bs.ai.battleArea[i];
     if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
-    const baseLv = parseInt(base.level) || 0;
-    const evoCandidate = bs.ai.hand.find(c =>
-      c.type === 'デジモン' && parseInt(c.level) === baseLv + 1 &&
-      c.evolveCost !== null && c.evolveCost <= aiAvailableMemory()
-    );
-    if (evoCandidate) {
+    const _ev = _aiFindEvolve(base);
+    if (_ev) {
+      const evoCandidate = _ev.card;
       const handIdx = bs.ai.hand.indexOf(evoCandidate);
       bs.ai.hand.splice(handIdx, 1);
       // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
@@ -5627,10 +5649,12 @@ function aiPlayAuto(callback) {
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
       evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
       bs.ai.battleArea[i] = evoCandidate;
-      addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！');
-      const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
+      addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
+      const turnEnded = aiSpendMemory(_ev.cost);
       renderAll();
-      showEvolveEffect(evoCandidate.evolveCost, base.name, base, evoCandidate, () => {
+      showEvolveEffect(_ev.cost, base.name, base, evoCandidate, () => {
+        _aiEvolveDraw();
+        renderAll(true);
         _hooks.checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
           _hooks.applyPermanentEffects('ai'); renderAll();
           if (turnEnded) { setTimeout(() => callback(), 500); return; }

@@ -185,6 +185,13 @@ window.confirmExitGate = function() {
     const wasOnline = isOnlineMode();
     if (wasOnline) sendCommand({ type: 'player_exit', playerName: '' });
     cleanupOnline();
+    // AI対戦: 準備画面に戻る（CPU の続きの行動は止める）
+    if (!wasOnline && window._aiBattleActive) {
+      window._aiBattleActive = false;
+      window._onGameEnd = null;
+      bs._battleAborted = true;
+      if (typeof window.showAiBattleSetup === 'function') { window.showAiBattleSetup(); return; }
+    }
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 };

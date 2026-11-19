@@ -1,0 +1,59 @@
+<!-- ===== AI対戦の準備（自分のデッキ・AIのデッキ・難易度・先攻後攻） ===== -->
+<div id="ai-battle-screen" class="screen">
+<style>
+.aib-wrap { max-width:900px; margin:auto; padding:24px 16px 40px; box-sizing:border-box; }
+.aib-section { background:rgba(0,0,0,0.35); border:1px solid var(--border-col); border-radius:12px; padding:14px; margin-bottom:16px; }
+.aib-title { color:var(--main-cyan); font-weight:bold; font-size:14px; margin-bottom:10px; }
+.aib-tabs { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+.aib-tab, .aib-opt { padding:8px 14px; border:1px solid #335; border-radius:8px; background:#0a0a0a; color:#aaa; cursor:pointer; font-size:13px; }
+.aib-tab.active, .aib-opt.active { border-color:var(--main-cyan); color:#fff; background:rgba(0,251,255,0.12); }
+.aib-opt.disabled { opacity:0.4; cursor:not-allowed; }
+.aib-opts { display:flex; gap:8px; flex-wrap:wrap; }
+.aib-deck-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; max-height:300px; overflow-y:auto; }
+.aib-deck { display:flex; align-items:center; gap:10px; padding:8px; border:1px solid #223; border-radius:10px; background:#0a0a0a; cursor:pointer; min-width:0; }
+.aib-deck.active { border-color:var(--main-cyan); background:rgba(0,251,255,0.1); box-shadow:0 0 8px rgba(0,251,255,0.3); }
+.aib-deck img { width:42px; height:60px; object-fit:cover; border-radius:6px; background:#222; flex-shrink:0; }
+.aib-deck-name { color:#fff; font-size:13px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aib-deck-sub { color:#888; font-size:10px; margin-top:2px; }
+.aib-empty { color:#666; font-size:12px; padding:16px; text-align:center; }
+@media (max-width:600px) { .aib-deck-grid { grid-template-columns:1fr; } }
+</style>
+  <div class="aib-wrap">
+    <h2 style="color:var(--main-cyan); text-align:center; margin:0 0 18px;">🤖 AI対戦</h2>
+
+    <div class="aib-section">
+      <div class="aib-title">① 自分のデッキ</div>
+      <div id="aib-my-decks" class="aib-deck-grid"></div>
+    </div>
+
+    <div class="aib-section">
+      <div class="aib-title">② AIのデッキ</div>
+      <div class="aib-tabs">
+        <div id="aib-tab-sample" class="aib-tab active" onclick="aibSetAiSource('sample')">おすすめデッキ</div>
+        <div id="aib-tab-mine" class="aib-tab" onclick="aibSetAiSource('mine')">マイデッキ</div>
+      </div>
+      <div id="aib-ai-decks" class="aib-deck-grid"></div>
+    </div>
+
+    <div class="aib-section">
+      <div class="aib-title">③ 難易度</div>
+      <div class="aib-opts" id="aib-levels">
+        <div class="aib-opt active" data-v="low" onclick="aibSetLevel(this)">低</div>
+        <div class="aib-opt disabled" data-v="mid" title="準備中">中（準備中）</div>
+        <div class="aib-opt disabled" data-v="high" title="準備中">高（準備中）</div>
+      </div>
+    </div>
+
+    <div class="aib-section">
+      <div class="aib-title">④ 先攻・後攻</div>
+      <div class="aib-opts" id="aib-orders">
+        <div class="aib-opt active" data-v="random" onclick="aibSetOrder(this)">ランダム</div>
+        <div class="aib-opt" data-v="first" onclick="aibSetOrder(this)">先攻</div>
+        <div class="aib-opt" data-v="second" onclick="aibSetOrder(this)">後攻</div>
+      </div>
+    </div>
+
+    <button id="aib-start-btn" class="menu-btn primary" onclick="aibStart()" style="width:100%; box-sizing:border-box;">対戦開始</button>
+    <button class="menu-btn" onclick="backToTop()" style="width:100%; box-sizing:border-box; margin-top:12px; border-color:#555; color:#888;">TOPへ戻る</button>
+  </div>
+</div>

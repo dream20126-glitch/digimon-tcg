@@ -1106,7 +1106,8 @@ function aiPhaseDraw() {
     });
   } else {
     addLog('⚠ AIのデッキ切れ！');
-    // TODO: Phase 4 で勝利処理を実装
+    // デッキが0枚でドローできない → 相手（AI）の敗北（公式ルール）
+    if (typeof window.battleVictory === 'function') window.battleVictory();
     return;
   }
 }

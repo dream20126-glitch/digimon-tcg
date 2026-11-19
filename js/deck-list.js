@@ -42,6 +42,7 @@ window.loadSavedDecks = async function() {
           <div style="display:flex; gap:8px;">
             <button class="deck-action-btn deck-action-btn-check" onclick="viewDeckDetail(${i})">確認</button>
             <button class="deck-action-btn deck-action-btn-edit" onclick="editDeckByIndex(${i})">編集</button>
+            <button class="deck-action-btn deck-action-btn-edit" onclick="duplicateDeckByIndex(${i})">複製</button>
             <button class="deck-action-btn" style="background:linear-gradient(135deg,#1a0000,#0d0000); border-color:#ff4444; color:#ff4444;" onclick="deleteDeckByIndex(${i})">削除</button>
           </div>
         </div>
@@ -108,6 +109,23 @@ window.toggleRegistration = async function(name, isRegister, mainCount = 50) {
       alert('登録を解除しました。');
       goToDeckListDirect();
     }
+  } catch (e) {
+    alert('エラー: ' + e.message);
+  }
+};
+
+// 複製：中身とカバーはそのまま、別の名前で保存（対戦デッキ登録は引き継がない）
+window.duplicateDeckByIndex = async function(idx) {
+  const d = window.latestDecks[idx];
+  if (!d) return;
+  const name = (prompt('複製したデッキの名前', `${d.name}（コピー）`) || '').trim();
+  if (!name) return;
+  try {
+    const check = await gasPost('checkExistingDeck', { name, password: currentSessionPassword });
+    if (check.exists) return alert(`「${name}」は既にあります。別の名前にしてください。`);
+    const r = await gasPost('saveDeck', { name, cover: d.cover || '', list: d.list, password: currentSessionPassword, isUpdate: false });
+    if (r && String(r.status || '').startsWith('SUCCESS')) { alert('複製しました'); loadSavedDecks(); }
+    else alert('複製に失敗しました: ' + ((r && r.status) || ''));
   } catch (e) {
     alert('エラー: ' + e.message);
   }

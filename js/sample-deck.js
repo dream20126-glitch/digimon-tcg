@@ -169,7 +169,7 @@ window.showSampleAdminList = async function() {
     adminSampleDecks = Array.isArray(decks) ? decks : [];
     if (adminSampleDecks.length === 0) { area.innerHTML = '<p style="color:#555; text-align:center; padding:40px;">サンプルデッキが登録されていません</p>'; return; }
     area.innerHTML = `<div style="overflow-x:auto;"><table class="admin-table"><thead><tr>
-      <th style="width:40px;">順</th><th style="width:110px;">カテゴリ</th><th>デッキ名</th><th style="width:60px;">枚数</th><th style="width:60px;">公開</th><th style="width:60px;">AI用</th><th style="width:130px;">操作</th>
+      <th style="width:40px;">順</th><th style="width:110px;">カテゴリ</th><th>デッキ名</th><th style="width:60px;">枚数</th><th style="width:60px;">公開</th><th style="width:60px;">AI用</th><th style="width:180px;">操作</th>
     </tr></thead><tbody>${adminSampleDecks.map((d, i) => `<tr>
       <td style="color:#888;">${esc(d.order)}</td>
       <td style="color:${d.category ? 'var(--main-cyan)' : '#666'}; font-size:11px;">${esc(d.category || '未設定')}</td>
@@ -179,6 +179,7 @@ window.showSampleAdminList = async function() {
       <td>${d.forAi ? '<span style="color:#ffaa00;">AI用</span>' : '<span style="color:#666;">―</span>'}</td>
       <td>
         <button class="admin-btn-sm" style="padding:4px 10px; font-size:11px;" onclick="editSampleDeckAdmin(${i})">編集</button>
+        <button class="admin-btn-sm" style="padding:4px 10px; font-size:11px;" onclick="duplicateSampleDeckAdmin(${i})">複製</button>
         <button class="admin-btn-danger" onclick="deleteSampleDeckAdmin(${i})">削除</button>
       </td>
     </tr>`).join('')}</tbody></table></div>`;
@@ -207,6 +208,23 @@ window.deleteSampleDeckAdmin = async function(i) {
   try {
     const r = await gasPost('deleteSampleDeck', { deckId: d.deckId, password: window._adminPassword || '' });
     if (r.status === 'SUCCESS') { alert('削除しました'); showSampleAdminList(); }
+    else alert('エラー: ' + r.status);
+  } catch (e) { alert('通信エラー: ' + e.message); }
+};
+
+// 複製（中身・カテゴリ・AI用はそのまま。誤って一覧に出ないよう非公開で作る）
+window.duplicateSampleDeckAdmin = async function(i) {
+  const d = adminSampleDecks[i];
+  if (!d) return;
+  const name = prompt('複製したデッキの名前（複製は「非公開」で作成されます）', `${d.deckName}（コピー）`);
+  if (!name || !name.trim()) return;
+  try {
+    const r = await gasPost('saveSampleDeck', {
+      deck: { deckName: name.trim(), cover: d.cover || '', list: d.list, description: d.description || '',
+        category: d.category || '', order: d.order || 0, published: false, forAi: !!d.forAi },
+      password: window._adminPassword || '',
+    });
+    if (String(r.status).startsWith('SUCCESS')) { alert('複製しました'); showSampleAdminList(); }
     else alert('エラー: ' + r.status);
   } catch (e) { alert('通信エラー: ' + e.message); }
 };

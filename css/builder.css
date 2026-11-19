@@ -307,6 +307,7 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
+.deck-lv-grid.wide { grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); }
 .deck-thumb {
   position: relative;
   min-width: 0;

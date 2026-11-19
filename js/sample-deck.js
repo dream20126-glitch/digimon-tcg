@@ -3,7 +3,7 @@
 // - 管理者: 管理画面でサンプルデッキを作成・編集・削除する（デッキビルダーを isSampleMode で使う）
 // シート「サンプルデッキ」の「AI用」は AI対戦で AI に持たせられるデッキ（サンプルと兼用）
 import { gasGet, gasPost } from './firebase-config.js';
-import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, renderDeckByLevelHtml } from './cards.js';
 
 window.isSampleMode = false;
 let sampleDecks = [];        // ユーザー向け（公開のみ）
@@ -107,11 +107,7 @@ window.showSampleDetail = async function(idx) {
   const entries = parseDeckList(d.list);
   const cnt = countDeck(entries);
   document.getElementById('sample-detail-count').innerText = `メイン ${cnt.main}枚 / デジタマ ${cnt.tama}枚`;
-  grid.innerHTML = entries.map((e) => `
-    <div style="text-align:center;">
-      <img src="${esc(getCardImageUrl(e.card))}" style="width:100%; border-radius:4px;" onclick="showSampleCardZoom('${esc(getCardImageUrl(e.card))}')">
-      <div style="font-size:10px; color:#aaa;">x${e.count}</div>
-    </div>`).join('');
+  grid.innerHTML = renderDeckByLevelHtml(entries, { wide: true, onImgClick: (e) => `showSampleCardZoom('${getCardImageUrl(e.card)}')` });
 };
 
 window.showSampleCardZoom = function(src) {

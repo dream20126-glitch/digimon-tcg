@@ -171,6 +171,46 @@ export function getCardImageUrl(card) {
   return directUrl;
 }
 
+// デッキの中身を Lv ごと（デジタマ・Lv3〜7・テイマー・オプション）に分ける
+// entries: [{ card, count }] → [{ label, total, items }]（Lv順、各Lv内はカードNo順）
+export function groupDeckByLevel(entries) {
+  const groups = [];
+  const groupOf = (c) => {
+    const lv = String(c["レベル"] == null ? '' : c["レベル"]).trim();
+    const type = String(c["タイプ"] || '');
+    if (lv === '2') return { key: '0', label: 'デジタマ（Lv.2）' };
+    if (type.includes('テイマー')) return { key: '8', label: 'テイマー' };
+    if (type.includes('オプション')) return { key: '9', label: 'オプション' };
+    if (/^\d+$/.test(lv)) return { key: lv, label: `Lv.${lv}` };
+    return { key: '7z', label: 'Lv.なし' };
+  };
+  (entries || []).forEach((e) => {
+    const g = groupOf(e.card);
+    let grp = groups.find((x) => x.key === g.key);
+    if (!grp) { grp = { ...g, items: [], total: 0 }; groups.push(grp); }
+    grp.items.push(e);
+    grp.total += e.count;
+  });
+  groups.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+  groups.forEach((g) => g.items.sort((a, b) => String(a.card["カードNo"]).localeCompare(String(b.card["カードNo"]))));
+  return groups;
+}
+
+// Lv ごとの画像一覧（見出し＋小計＋各カードに枚数バッジ）の HTML
+// thumbExtra(entry) で画像の下に付ける HTML、onImgClick(entry) で画像タップ時の onclick 文字列を指定できる
+// wide: true で確認画面向け（横に並ぶ数を画面幅に合わせる）
+export function renderDeckByLevelHtml(entries, { thumbExtra, onImgClick, wide } = {}) {
+  const q = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return groupDeckByLevel(entries).map((g) => `
+    <div class="deck-lv-head"><span>${g.label}</span><b>${g.total}枚</b></div>
+    <div class="deck-lv-grid${wide ? ' wide' : ''}">${g.items.map((e) => `
+      <div class="deck-thumb" title="${q(e.card["名前"])}">
+        <img src="${q(getCardImageUrl(e.card))}" loading="lazy"${onImgClick ? ` onclick="${q(onImgClick(e))}"` : ''}>
+        <span class="deck-thumb-qty">x${e.count}</span>
+        ${thumbExtra ? thumbExtra(e) : ''}
+      </div>`).join('')}</div>`).join('');
+}
+
 // カードデータ読み込み（静的JSON優先 → GAS フォールバック）
 export async function loadCardAndKeywordData() {
   if (allCards.length > 0) return { cards: allCards, keywords };

@@ -25,6 +25,10 @@
         🎬 チュートリアルシナリオ登録
         <span class="btn-sub">チュートリアル用のシナリオ（盤面・ステップ）を作成・管理します</span>
       </button>
+      <button class="admin-btn-lg" onclick="showSampleAdminList()">
+        🗂 サンプルデッキ管理
+        <span class="btn-sub">ユーザーに見せるサンプルデッキ（AI対戦用のデッキも兼ねる）を作成・管理します</span>
+      </button>
       <button class="admin-btn-lg" onclick="showAdminDeckList()">
         📋 デッキ一覧管理
         <span class="btn-sub">ユーザーが保存したデッキの確認・管理を行います</span>
@@ -118,5 +122,42 @@
         <tbody id="admin-table-body"><tr><td colspan="5" style="text-align:center; color:#555; padding:40px;">データを読み込んでいます...</td></tr></tbody>
       </table>
     </div>
+  </div>
+</div>
+
+<!-- サンプルデッキ一覧（管理） -->
+<div id="sample-admin-list-screen" class="screen">
+  <div style="max-width:900px; margin:auto; padding:24px 16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:20px;">
+      <h2 style="color:var(--main-cyan); margin:0; font-size:1.2rem;">🗂 サンプルデッキ一覧</h2>
+      <div>
+        <button class="admin-btn-sm" onclick="initSampleBuilder()">＋ 新規作成</button>
+        <button class="admin-btn-sm" onclick="showScreen('管理画面-screen')" style="border-color:#555; color:#555;">戻る</button>
+      </div>
+    </div>
+    <div id="sample-admin-list"><p style="color:#555; text-align:center; padding:40px;">読み込み中...</p></div>
+  </div>
+</div>
+
+<!-- サンプルデッキ保存（管理） -->
+<div id="sample-save-screen" class="screen">
+  <div class="tsave-wrap">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:6px;" id="ssave-title">サンプルデッキ登録</h2>
+    <p id="ssave-count" style="color:#aaa; text-align:center; font-size:12px; margin-bottom:20px;"></p>
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <div class="tsave-field"><label>デッキ名 <span style="color:#ff4444;">*</span></label><input type="text" id="ssave-deck-name" placeholder="例：赤単アグモン"></div>
+      <div class="tsave-field"><label>説明</label><textarea id="ssave-desc" placeholder="デッキの特徴や回し方のポイント"></textarea></div>
+      <div class="tsave-field"><label>表示順（小さいほど上）</label><input type="number" id="ssave-order" min="0" step="1"></div>
+      <div class="tsave-field" style="display:flex; gap:20px; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="ssave-published" style="width:auto;"> ユーザーに公開する</label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="ssave-for-ai" style="width:auto;"> AI対戦のデッキに使う</label>
+      </div>
+    </div>
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:16px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">代表画像を選択 <span style="color:#ff4444;">*</span></p>
+      <div id="ssave-cover-area" style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; max-height:220px; overflow-y:auto;"></div>
+    </div>
+    <button class="menu-btn primary" id="ssave-confirm-btn" onclick="executeSampleSave()">保存を確定する</button>
+    <button class="menu-btn" onclick="showScreen('deck-make-screen')" style="margin-top:8px;">デッキ編集に戻る</button>
   </div>
 </div>

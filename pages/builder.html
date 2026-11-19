@@ -1,3 +1,39 @@
+<!-- ===== デッキ作成の入口（一から作る／サンプルデッキから作る） ===== -->
+<div id="deck-start-screen" class="screen">
+<style>
+.sample-deck-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+.sample-deck-card { display:flex; align-items:center; gap:12px; background:#0a0a0a; border:1px solid var(--border-col); border-radius:12px; padding:12px; cursor:pointer; transition:all 0.2s; text-align:left; min-width:0; }
+.sample-deck-card:hover { border-color:var(--main-cyan); background:rgba(0,251,255,0.04); }
+.sample-deck-card img { width:60px; height:85px; object-fit:cover; border-radius:8px; background:#222; flex-shrink:0; }
+.sample-deck-info { min-width:0; flex:1; }
+.sample-deck-name { color:#fff; font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sample-deck-desc { color:#999; font-size:11px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.sample-deck-count { color:var(--main-cyan); font-size:10px; margin-top:4px; }
+@media (max-width:600px) { .sample-deck-grid { grid-template-columns:1fr; } }
+</style>
+  <div style="max-width:900px; margin:auto; padding:24px 16px; box-sizing:border-box;">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:20px;">デッキ作成</h2>
+    <button class="menu-btn primary" onclick="initBuilder()" style="width:100%; box-sizing:border-box; margin-bottom:24px;">＋ 一から作る</button>
+    <div style="color:var(--main-cyan); font-weight:bold; font-size:14px; margin-bottom:4px;">サンプルデッキから作る</div>
+    <div style="color:#888; font-size:11px; margin-bottom:12px;">タップすると中身を確認でき、そのまま、または編集してマイデッキに登録できます</div>
+    <div id="sample-deck-container" class="sample-deck-grid"></div>
+    <button class="menu-btn" onclick="backToTop()" style="width:100%; box-sizing:border-box; margin-top:24px; border-color:#555; color:#888;">TOPへ戻る</button>
+  </div>
+</div>
+
+<!-- ===== サンプルデッキの中身 ===== -->
+<div id="sample-detail-screen" class="screen">
+  <div style="max-width:900px; margin:auto; padding:24px 16px; box-sizing:border-box;">
+    <h2 id="sample-detail-name" style="color:#fff; text-align:center; margin:0 0 6px;"></h2>
+    <div id="sample-detail-count" style="color:var(--main-cyan); text-align:center; font-size:12px; margin-bottom:8px;"></div>
+    <div id="sample-detail-desc" style="color:#aaa; font-size:12px; line-height:1.6; white-space:pre-wrap; margin-bottom:16px;"></div>
+    <div id="sample-detail-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:8px; margin-bottom:20px;"></div>
+    <button class="menu-btn primary" onclick="registerSampleAsIs()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">このままマイデッキに登録</button>
+    <button class="menu-btn" onclick="editSampleBeforeRegister()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">編集してから登録</button>
+    <button class="menu-btn" onclick="showDeckStart()" style="width:100%; box-sizing:border-box; border-color:#555; color:#888;">一覧へ戻る</button>
+  </div>
+</div>
+
 <!-- ===== デッキビルダー ===== -->
 <div id="deck-make-screen" class="screen">
   <div class="builder-main">
@@ -36,7 +72,7 @@
       <span class="filter-label">FEATURE (特徴)</span>
       <input type="text" id="s-feature" oninput="filterCards()" placeholder="特徴を入力...">
       <button class="menu-btn" style="margin-top:10px; border-color:#555; color:#555;"
-        onclick="isTutorialMode ? (confirm('作成を中止して管理画面へ戻りますか？') && (isTutorialMode=false, showScreen('管理画面-screen'))) : backToTop()">
+        onclick="isSampleMode ? leaveSampleBuilder() : isTutorialMode ? (confirm('作成を中止して管理画面へ戻りますか？') && (isTutorialMode=false, showScreen('管理画面-screen'))) : backToTop()">
         <span id="back-btn-label">TOPへ戻る</span>
       </button>
     </div>
@@ -54,7 +90,7 @@
         <span style="color:#ff00fb;">TAMA: <b id="tama-count">0</b>/5</span>
       </div>
       <div id="deck-list-area"></div>
-      <button class="menu-btn primary" onclick="isTutorialMode ? showTutorialSaveScreen() : showSaveScreen()">デッキを保存する</button>
+      <button class="menu-btn primary" onclick="isSampleMode ? showSampleSaveScreen() : isTutorialMode ? showTutorialSaveScreen() : showSaveScreen()">デッキを保存する</button>
     </div>
   </div>
 </div>

@@ -20,6 +20,7 @@ window.tryAdminLogin = async function() {
     btn.innerText = 'ログイン'; btn.disabled = false;
     if (result.valid) {
       adminLoggedIn = true;
+      window._adminPassword = pass; // サンプルデッキの保存・削除で使う（GAS 側で照合）
       document.getElementById('admin-login-area').style.display = 'none';
       document.getElementById('admin-content-area').style.display = 'block';
     } else {
@@ -34,6 +35,7 @@ window.tryAdminLogin = async function() {
 
 window.adminLogout = function() {
   adminLoggedIn = false;
+  window._adminPassword = '';
   document.getElementById('admin-pass-input').value = '';
   document.getElementById('admin-login-area').style.display = 'block';
   document.getElementById('admin-content-area').style.display = 'none';
@@ -104,7 +106,7 @@ window.deleteTutorialConfirm = async function(rowIndex, name) {
 
 // チュートリアル用デッキビルダー
 window.initTutorialBuilder = async function() {
-  isTutorialMode = true; tdEditData = null;
+  isTutorialMode = true; window.isSampleMode = false; tdEditData = null;
   window._editDeckName = ''; window._editPassword = '';
   tempDeck = []; updateDeckUI();
   const label = document.getElementById('back-btn-label');
@@ -119,7 +121,7 @@ window.initTutorialBuilder = async function() {
 };
 
 window.editTutorialDeck = async function(d) {
-  isTutorialMode = true; tdEditData = d; tempDeck = [];
+  isTutorialMode = true; window.isSampleMode = false; tdEditData = d; tempDeck = [];
   showScreen('deck-make-screen');
   if (allCards.length === 0) {
     document.getElementById('loading-overlay').style.display = 'flex';

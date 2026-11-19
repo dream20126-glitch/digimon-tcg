@@ -10,6 +10,7 @@ let selectedTypes = [];
 // デッキビルダー初期化
 window.initBuilder = async function() {
   isTutorialMode = false;
+  window.isSampleMode = false;
   searchMode = 'name';
   selectedColors = [];
   selectedLevels = [];
@@ -32,6 +33,7 @@ window.initBuilder = async function() {
 
 window.editDeckByIndex = async function(idx) {
   isTutorialMode = false;
+  window.isSampleMode = false;
   const d = window.latestDecks[idx];
   window._editDeckName = d.name;
   window._editPassword = currentSessionPassword;

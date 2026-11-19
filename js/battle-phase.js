@@ -192,6 +192,13 @@ export function doDraw(side, reason, callback, options) {
 
   const c = deck.splice(0, 1)[0];
   hand.push(c);
+  // 相手（CPU）のドローは引いたカードを見せない（相手の手札は非公開）
+  if (side !== 'player') {
+    addLog('🃏 相手が' + reason);
+    renderAll();
+    callback && callback(() => {});
+    return;
+  }
   const isLv6 = parseInt(c.level) >= 6;
   addLog('🃏 ' + reason + '：「' + c.name + '」');
   showDrawEffect(c, isLv6, (dismiss) => { renderAll(); callback && callback(dismiss); }, options);

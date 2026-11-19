@@ -5584,6 +5584,11 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
     renderAll();
     showOptionEffect(c, () => {
       const turnEnded = aiSpendMemory(_aiBasePay);
+      // プレイヤーと同じく【メイン】〜アーツ進化〜【進化時】を1続きの処理として扱う（公式ルール 8-19-1）
+      if (window._effectBusy) window._effectBusy(1);
+      const _endBusy = (cb) => { if (window._effectBusyEnd) window._effectBusyEnd(cb); else cb(); };
+      const _onDoneDual = onDone;
+      onDone = (te) => _endBusy(() => _onDoneDual(te));
       _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
         const candidates = _findArtsEvolveCandidates(c, 'ai');
         if (candidates.length > 0) {
@@ -5599,7 +5604,8 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
           onDone(turnEnded);
           return;
         }
-        bs.ai.trash.push(c); renderAll(true);
+        if (!_isCardInAnyZone(c, bs.ai)) bs.ai.trash.push(c);
+        renderAll(true);
         onDone(turnEnded);
       }, 'ai');
     });
@@ -5615,7 +5621,10 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
     showPlayEffect(c, () => {
       const turnEnded = aiSpendMemory(_aiBasePay);
       _hooks.applyPermanentEffects('ai');
-      renderAll(); onDone(turnEnded);
+      renderAll();
+      // プレイヤーのテイマー登場（doPlay）と同じく【登場時】は常にスキャンする
+      // （このテイマー自身の【登場時】・他のカードの「テイマーが登場したとき」を拾う）
+      _hooks.checkAndTriggerEffect(c, '【登場時】', () => { renderAll(true); onDone(turnEnded); }, 'ai');
     });
     return;
   }
@@ -5639,14 +5648,11 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
     renderAll();
     // 【登場時】効果を発動 (公式ルール準拠)。支払いでレストしたカードの「レストしたとき」（エアドラモン LM-009）が
     // 保留中なら【登場時】が無くても誘発の処理を通す
-    if (hasKeyword(c, '【登場時】') || _hasCostRestPending(bs)) {
-      _hooks.checkAndTriggerEffect(c, '【登場時】', () => {
-        renderAll(true);
-        onDone(turnEnded);
-      }, 'ai');
-    } else {
+    // プレイヤーの登場（doPlay）と同じく【登場時】は常にスキャンする（他のカードの「デジモンが登場したとき」も拾う）
+    _hooks.checkAndTriggerEffect(c, '【登場時】', () => {
+      renderAll(true);
       onDone(turnEnded);
-    }
+    }, 'ai');
   });
 }
 
@@ -5728,43 +5734,57 @@ function _aiEvolveInBattleArea(card, slotIdx, done) {
   });
 }
 
-// CPU: 進化したら1枚ドロー（公式ルール）
-function _aiEvolveDraw() {
-  if (bs.ai.deck.length > 0) {
-    bs.ai.hand.push(bs.ai.deck.shift());
-    addLog('🤖 進化ドロー');
-  }
+// CPU の育成エリアでの進化（プレイヤーの doEvolveIku と同じ処理。side だけ 'ai'）。done(turnEnded)
+function _aiEvolveIku(card, done) {
+  const base = bs.ai.ikusei;
+  if (!base || !card) { done(false); return; }
+  let cost = getEvolveCostFor(card, base);
+  let _altEvo = null;
+  try { _altEvo = _getAltEvolve(card, base, bs, 'ai'); } catch (_) {}
+  if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
+  const _evoDisc = _consumePendingEvoCostReduction(card, base);
+  if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  if (!canPayMemory('ai', cost)) { done(false); return; }
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: base.suspended,
+    summonedThisTurn: base.summonedThisTurn,
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes,
+    dpModifier: base.dpModifier || 0,
+    stack: [base].concat(base.stack || []),
+  });
+  evolved.dp = evolved.baseDp + evolved.dpModifier;
+  bs.ai.ikusei = evolved;
+  const hi = bs.ai.hand.indexOf(card);
+  if (hi !== -1) bs.ai.hand.splice(hi, 1);
+  addLog('🤖 AIが育成「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
+  renderAll();
+  showEvolveEffect(cost, base.name, base, evolved, () => {
+    const turnEnded = aiSpendMemory(cost);
+    doDraw('ai', '進化ドロー', (dismissDraw) => {
+      if (typeof dismissDraw === 'function') dismissDraw();
+      if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { renderAll(true); done(turnEnded); }, 'ai');
+      } else {
+        done(turnEnded);
+      }
+    }, { deferDismiss: false });
+  });
 }
 
 function aiPlayAuto(callback) {
   if (!aiCanAct()) { callback(); return; }
 
-  // ① 育成エリアで進化
+  // ① 育成エリアで進化（プレイヤーの doEvolveIku と同じ処理: 代替進化・進化コスト-の予約 → 状態を引き継いだ新しい1体 →
+  //    コスト支払い → 進化ドロー → 【進化時】）
   if (bs.ai.ikusei && bs.ai.ikusei.type === 'デジモン') {
     const _ev = _aiFindEvolve(bs.ai.ikusei);
     if (_ev) {
-      const evoCandidate = _ev.card;
-      const handIdx = bs.ai.hand.indexOf(evoCandidate);
-      bs.ai.hand.splice(handIdx, 1);
-      const oldCard = bs.ai.ikusei;
-      // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
-      evoCandidate.stack = [oldCard, ...(oldCard.stack || [])];
-      // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
-      evoCandidate.summonedThisTurn = !!oldCard.summonedThisTurn;
-      evoCandidate.suspended = oldCard.suspended;
-      _aiCarryEvolveState(evoCandidate, oldCard);
-      bs.ai.ikusei = evoCandidate;
-      addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！（コスト' + _ev.cost + '）');
-      const turnEnded = aiSpendMemory(_ev.cost);
-      renderAll();
-      showEvolveEffect(_ev.cost, oldCard.name, oldCard, evoCandidate, () => {
-        _aiEvolveDraw();
-        renderAll(true);
-        _hooks.checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
-          _hooks.applyPermanentEffects('ai'); renderAll();
-          if (turnEnded) { setTimeout(() => callback(), 500); return; }
-          setTimeout(() => aiPlayAuto(callback), 600);
-        }, 'ai');
+      _aiEvolveIku(_ev.card, (turnEnded) => {
+        _hooks.applyPermanentEffects('ai'); renderAll();
+        if (turnEnded) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
       });
       return;
     }

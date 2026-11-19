@@ -43,9 +43,15 @@ function countFromList(list) {
 }
 
 // ===== ユーザー: デッキ作成の入口 =====
-window.showDeckStart = async function() {
+window.showDeckStart = function() {
   window.isSampleMode = false;
   showScreen('deck-start-screen');
+};
+
+// ===== ユーザー: サンプルデッキ一覧 =====
+window.showSampleList = async function() {
+  window.isSampleMode = false;
+  showScreen('sample-list-screen');
   const area = document.getElementById('sample-deck-container');
   if (!area) return;
   area.innerHTML = '<div style="color:var(--main-cyan); padding:20px; text-align:center;">サンプルデッキを読み込み中...</div>';

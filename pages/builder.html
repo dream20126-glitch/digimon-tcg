@@ -13,11 +13,19 @@
 </style>
   <div style="max-width:900px; margin:auto; padding:24px 16px; box-sizing:border-box;">
     <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:20px;">デッキ作成</h2>
-    <button class="menu-btn primary" onclick="initBuilder()" style="width:100%; box-sizing:border-box; margin-bottom:24px;">＋ 一から作る</button>
-    <div style="color:var(--main-cyan); font-weight:bold; font-size:14px; margin-bottom:4px;">サンプルデッキから作る</div>
+    <button class="menu-btn primary" onclick="initBuilder()" style="width:100%; box-sizing:border-box; margin-bottom:12px;">オリジナルデッキを作成</button>
+    <button class="menu-btn primary" onclick="showSampleList()" style="width:100%; box-sizing:border-box;">サンプルデッキから作成</button>
+    <button class="menu-btn" onclick="backToTop()" style="width:100%; box-sizing:border-box; margin-top:24px; border-color:#555; color:#888;">TOPへ戻る</button>
+  </div>
+</div>
+
+<!-- ===== サンプルデッキ一覧 ===== -->
+<div id="sample-list-screen" class="screen">
+  <div style="max-width:900px; margin:auto; padding:24px 16px; box-sizing:border-box;">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:8px;">サンプルデッキから作成</h2>
     <div style="color:#888; font-size:11px; margin-bottom:12px;">タップすると中身を確認でき、そのまま、または編集してマイデッキに登録できます</div>
     <div id="sample-deck-container" class="sample-deck-grid"></div>
-    <button class="menu-btn" onclick="backToTop()" style="width:100%; box-sizing:border-box; margin-top:24px; border-color:#555; color:#888;">TOPへ戻る</button>
+    <button class="menu-btn" onclick="showDeckStart()" style="width:100%; box-sizing:border-box; margin-top:24px; border-color:#555; color:#888;">戻る</button>
   </div>
 </div>
 
@@ -30,7 +38,7 @@
     <div id="sample-detail-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:8px; margin-bottom:20px;"></div>
     <button class="menu-btn primary" onclick="registerSampleAsIs()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">このままマイデッキに登録</button>
     <button class="menu-btn" onclick="editSampleBeforeRegister()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">編集してから登録</button>
-    <button class="menu-btn" onclick="showDeckStart()" style="width:100%; box-sizing:border-box; border-color:#555; color:#888;">一覧へ戻る</button>
+    <button class="menu-btn" onclick="showSampleList()" style="width:100%; box-sizing:border-box; border-color:#555; color:#888;">一覧へ戻る</button>
   </div>
 </div>
 

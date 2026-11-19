@@ -3994,8 +3994,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 手札から登場可能なデジモン/テイマーを選択
       const summonTargets = player.hand.map((c, i) => ({ card: c, idx: i })).filter(x => x.card.type === 'デジモン' || x.card.type === 'テイマー');
       if(summonTargets.length === 0) { ctx.addLog('⚠ 登場可能なカードがありません'); callback(); break; }
-      ctx.addLog('🎯 登場させるカードを手札から選んでください');
-      showHandSelection(player.hand, summonTargets.map(x => x.idx), '#00fbff', (selectedIdx) => {
+      const _smPick = (selectedIdx) => {
         if(selectedIdx !== null) {
           const card = player.hand.splice(selectedIdx, 1)[0];
           const emptySlot = player.battleArea.indexOf(null);
@@ -4005,7 +4004,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           ctx.addLog('⚡ 「' + card.name + '」をコストなしで登場！');
         }
         ctx.renderAll(); callback();
-      });
+      };
+      // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）
+      if (effectiveSide === 'ai') { _smPick(summonTargets[0].idx); break; }
+      ctx.addLog('🎯 登場させるカードを手札から選んでください');
+      showHandSelection(player.hand, summonTargets.map(x => x.idx), '#00fbff', _smPick);
       break;
     }
 
@@ -4709,6 +4712,8 @@ function _runCountOrChoice(base, wide, ctx, store, callback) {
   const pickNext = () => {
     const rest = remaining();
     if (rest.length === 0) { apply(); return; }
+    // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。多く選べるよう絞り込みに合う対象を先に
+    if (ctx.side === 'ai') { picked.push(rest.filter(fitsWide)[0] || rest[0]); pickNext(); return; }
     showTargetSelection('both', rest.map(_boardEnc), null, color, (v) => {
       const e = rest.find((x) => _boardEnc(x) === v);
       if (!e) { apply(); return; }
@@ -19429,6 +19434,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         if (valid.length === 0) { showEffectFailed(null, callback); return; }
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）
+        if (effectiveSide === 'ai') {
+          const picked = player.battleArea[valid[0]];
+          if (step.store) store[step.store] = { idx: valid[0], card: picked };
+          ctx.bs._lastPickedCard = picked;
+          callback();
+          return;
+        }
         showTargetSelection(rowId, valid, null, '#00fbff', (selectedIdx) => {
           if (selectedIdx !== null) {
             const picked = player.battleArea[selectedIdx];
@@ -19459,6 +19472,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         console.log('[select opponent]', 'ctxSide=' + ctx.side, 'opponent.battleArea.length=' + opponent.battleArea.length, 'valid=' + valid.length, 'cards=' + opponent.battleArea.filter(c => c).map(c => c.name).join(','));
         if (valid.length === 0) { console.log('[select opponent] FAILED: no valid targets'); showEffectFailed(null, callback); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+        // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）
+        if (effectiveSide === 'ai') {
+          const picked = opponent.battleArea[valid[0]];
+          if (step.store) store[step.store] = { idx: valid[0], card: picked };
+          ctx.bs._lastPickedCard = picked;
+          callback();
+          return;
+        }
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
           if (selectedIdx !== null) {
             const picked = opponent.battleArea[selectedIdx];
@@ -19606,6 +19627,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (selectedCount >= maxCount) { finishSelectMulti(); return; }
         const valid = getValidTargets();
         if (valid.length === 0) { finishSelectMulti(); return; }
+        // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。選べるだけ（最大数まで）先頭から
+        if (effectiveSide === 'ai') {
+          selected.push(valid[0]);
+          if (step.store) {
+            if (!store[step.store]) store[step.store] = [];
+            store[step.store].push({ idx: valid[0], card: opponent.battleArea[valid[0]] });
+          }
+          selectedCount++;
+          doSelect();
+          return;
+        }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         ctx.addLog('🎯 対象を選んでください（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）');
         ensureRemoteAnnounce();
@@ -19663,6 +19695,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog('⚠ 条件を満たす進化元がありません');
         showEffectFailed(null, callback);
         return;
+      }
+      // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）
+      if (effectiveSide === 'ai') {
+        if (step.store) store[step.store] = { card: evoCards[0], parentCard: parentCard };
+        callback();
+        break;
       }
       // 進化元カードを選択するUI
       showEvoSourceSelection(parentCard, evoCards, step.filter, (selectedEvoCard) => {
@@ -22068,6 +22106,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         _moveBatchIntro(ctx, selectedCards, carrier.name + 'の進化元', 'トラッシュ', discardNext);
       };
+      // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。進化元の先頭から N 枚
+      if (effectiveSide === 'ai') { onSelectComplete(carrier.stack.slice(0, need)); break; }
       // showEvoSourceSelection を使って evo card を N 枚選ばせる
       // フィルタなし（任意の進化元から選択可）
       showEvoSourceSelection(carrier, carrier.stack.slice(), null, (selectedCards) => {
@@ -22472,6 +22512,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         // _forceTargetIdx で対象が事前確定済みなら UI スキップ（same_target など）
         if (ctx._forceTargetIdx !== undefined) {
           applyAll([ctx._forceTargetIdx]);
+          return;
+        }
+        // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。先頭から選べるだけ
+        if (effectiveSide === 'ai') {
+          applyAll(validIdxs.slice(0, wantCount));
           return;
         }
         if (isUpTo) {
@@ -22905,6 +22950,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback();
         };
         if (ctx._forceTargetIdx !== undefined) { applyAll([ctx._forceTargetIdx]); return; }
+        // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。先頭から選べるだけ
+        if (effectiveSide === 'ai') { applyAll(validIdxs.slice(0, wantCount)); return; }
         if (isUpTo) {
           pickUpToNTargets(rowSide, validIdxs, wantCount, '#00ff88', applyAll);
         } else {
@@ -24634,7 +24681,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const idxs = owner.security.map((_, i) => i);
       const rowId = (owner === player ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl')) + '-sec';
       const _stsAfter = (c, done) => _stsAfterTop(c, done);
-      showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
+      const _stsPick = (selectedIdx) => {
         if (selectedIdx == null) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); return; }
         const c = owner.security.splice(selectedIdx, 1)[0];
         if (c && owner !== player) _sendOppSecurityMovesNow(ctx, [{ card: c, idx: selectedIdx, to: 'trash' }]);
@@ -24643,7 +24690,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');
         ctx.renderAll();
         _stsAfter(c, () => callback());
-      });
+      };
+      // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。先頭（上）の1枚
+      if (effectiveSide === 'ai') { _stsPick(idxs[0]); break; }
+      showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', _stsPick);
       break;
     }
 

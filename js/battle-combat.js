@@ -5517,7 +5517,11 @@ const AI_SCRIPTS = {
 };
 
 function aiCanAct() { return bs.memory <= 0; }
-function aiAvailableMemory() { return Math.abs(bs.memory); }
+// AI対戦: アタックを終えたあとは、メモリーが相手側に渡っても（相手側10まで）払えるものは使う（＝できる行動は全て取る）。
+// 払ってメモリーが相手側に移ればターン終了
+let _aiOverflowOK = false;
+if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowOK = !!v; };
+function aiAvailableMemory() { return Math.abs(bs.memory) + (_aiOverflowOK && bs.memory <= 0 ? 10 : 0); }
 
 export function aiMainPhase(callback) {
   if (!aiCanAct()) { callback(); return; }

@@ -1220,6 +1220,12 @@ function aiPhaseMain() {
         renderAll();
         _hooks.aiMainPhase(() => {
           _hooks.aiAttackPhase(() => {
+            // AI対戦: アタックの後、残りのメモリー（相手側に渡る分も含めて）で使えるものを使ってからターン終了
+            if (window._aiBattleActive && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
+              window._aiSetOverflow(true);
+              _hooks.aiMainPhase(() => { window._aiSetOverflow(false); endAiTurn(); });
+              return;
+            }
             endAiTurn();
           });
         });

@@ -1,6 +1,6 @@
 // デッキビルダーロジック（GAS API版）
 import { gasPost } from './firebase-config.js';
-import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, isBehaviorOk, renderDeckByLevelHtml } from './cards.js';
+import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, isBehaviorOk, renderLevelBarHtml } from './cards.js';
 
 let searchMode = 'name';
 let selectedColors = [];
@@ -244,17 +244,23 @@ window.updateDeckUI = function() {
   let mainTotal = 0, tamaTotal = 0;
   const listArea = document.getElementById('deck-list-area');
   if (!listArea) return;
-  // Lv ごと（デジタマ・Lv3〜7・テイマー・オプション）に分けて、カード画像＋枚数で並べる
-  tempDeck.forEach(i => {
-    if (String(i.card["レベル"]) === '2') tamaTotal += i.count; else mainTotal += i.count;
-  });
-  listArea.innerHTML = renderDeckByLevelHtml(tempDeck, {
-    onImgClick: (i) => `showPreview('${i.card["カードNo"]}')`,
-    thumbExtra: (i) => `<div class="deck-thumb-ctrl">
-            <button onclick="changeQty('${i.card["カードNo"]}', -1)">−</button>
-            <button onclick="changeQty('${i.card["カードNo"]}', 1)">＋</button>
-          </div>`,
-  });
+  listArea.innerHTML = tempDeck.map(i => {
+    const isTama = (String(i.card["レベル"]) === '2');
+    if (isTama) tamaTotal += i.count; else mainTotal += i.count;
+    return `<div class="deck-item">
+      <div class="deck-item-info">
+        <span class="deck-item-name">${i.card["名前"]}</span>
+        <span class="deck-item-qty">x${i.count}</span>
+      </div>
+      <div class="deck-controls">
+        <button class="ctrl-btn" onclick="changeQty('${i.card["カードNo"]}', 1)">+</button>
+        <button class="ctrl-btn" onclick="changeQty('${i.card["カードNo"]}', -1)">-</button>
+        <button class="ctrl-btn del" onclick="tempDeck=tempDeck.filter(x=>x.card['カードNo']!=='${i.card["カードNo"]}');updateDeckUI();">全削</button>
+      </div>
+    </div>`;
+  }).join('');
+  const lvBar = document.getElementById('deck-lv-bar');
+  if (lvBar) lvBar.innerHTML = tempDeck.length ? renderLevelBarHtml(tempDeck) : '';
   const mainEl = document.getElementById('main-count');
   const tamaEl = document.getElementById('tama-count');
   if (mainEl) mainEl.innerText = mainTotal;

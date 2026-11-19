@@ -3,7 +3,7 @@
 // - 管理者: 管理画面でサンプルデッキを作成・編集・削除する（デッキビルダーを isSampleMode で使う）
 // シート「サンプルデッキ」の「AI用」は AI対戦で AI に持たせられるデッキ（サンプルと兼用）
 import { gasGet, gasPost } from './firebase-config.js';
-import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, renderDeckByLevelHtml } from './cards.js';
+import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, renderLevelBarHtml } from './cards.js';
 
 window.isSampleMode = false;
 let sampleDecks = [];        // ユーザー向け（公開のみ）
@@ -103,11 +103,17 @@ window.showSampleDetail = async function(idx) {
   document.getElementById('sample-detail-desc').innerText = d.description || '';
   const grid = document.getElementById('sample-detail-grid');
   grid.innerHTML = '<div style="color:var(--main-cyan); padding:20px;">読み込み中...</div>';
+  document.getElementById('sample-detail-lvbar').innerHTML = '';
   await ensureCards();
   const entries = parseDeckList(d.list);
   const cnt = countDeck(entries);
   document.getElementById('sample-detail-count').innerText = `メイン ${cnt.main}枚 / デジタマ ${cnt.tama}枚`;
-  grid.innerHTML = renderDeckByLevelHtml(entries, { wide: true, onImgClick: (e) => `showSampleCardZoom('${getCardImageUrl(e.card)}')` });
+  document.getElementById('sample-detail-lvbar').innerHTML = renderLevelBarHtml(entries);
+  grid.innerHTML = entries.map((e) => `
+    <div style="text-align:center;">
+      <img src="${esc(getCardImageUrl(e.card))}" style="width:100%; border-radius:4px;" onclick="showSampleCardZoom('${esc(getCardImageUrl(e.card))}')">
+      <div style="font-size:10px; color:#aaa;">x${e.count}</div>
+    </div>`).join('');
 };
 
 window.showSampleCardZoom = function(src) {

@@ -289,67 +289,36 @@
   }
 }
 
-/* デッキ内カード：Lv ごとの画像一覧 */
-.deck-lv-head {
+/* デッキの Lv ごとの枚数バー */
+.lv-bar {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 12px;
-  color: var(--main-cyan);
-  border-bottom: 1px solid rgba(0, 251, 255, 0.25);
-  padding: 2px 2px 3px;
-  margin: 10px 0 6px;
+  gap: 3px;
+  align-items: flex-end;
+  padding: 6px 4px 4px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 251, 255, 0.2);
+  border-radius: 6px;
+  box-sizing: border-box;
 }
-.deck-lv-head:first-child { margin-top: 0; }
-.deck-lv-head b { color: #fff; font-size: 13px; }
-.deck-lv-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-.deck-lv-grid.wide { grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); }
-.deck-thumb {
-  position: relative;
-  min-width: 0;
-}
-.deck-thumb img {
-  width: 100%;
-  display: block;
-  border-radius: 3px;
-  cursor: pointer;
-  background: #222;
-  aspect-ratio: 5/7;
-  object-fit: cover;
-}
-.deck-thumb-qty {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  background: rgba(0, 0, 0, 0.85);
-  color: var(--main-cyan);
-  font-weight: bold;
-  font-size: 12px;
-  padding: 0 5px;
-  border-radius: 8px;
-  border: 1px solid var(--main-cyan);
-  pointer-events: none;
-}
-.deck-thumb-ctrl {
-  display: flex;
-  gap: 2px;
-  margin-top: 2px;
-}
-.deck-thumb-ctrl button {
+.lv-bar-col {
   flex: 1;
-  padding: 2px 0;
-  font-size: 12px;
-  background: #111;
-  color: var(--main-cyan);
-  border: 1px solid #335;
-  border-radius: 3px;
-  cursor: pointer;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.deck-thumb-ctrl button:active { background: #003040; }
-@media (max-width: 900px) {
-  .deck-lv-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.lv-bar-num { font-size: 12px; font-weight: bold; color: #fff; line-height: 1.2; }
+.lv-bar-track {
+  width: 70%;
+  height: 40px;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  margin: 2px 0;
 }
+.lv-bar-fill { width: 100%; background: var(--main-cyan); border-radius: 2px 2px 0 0; min-height: 0; }
+.lv-bar-fill.tama { background: #ff00fb; }
+.lv-bar-label { font-size: 9px; color: #9ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lv-bar-col.zero .lv-bar-num, .lv-bar-col.zero .lv-bar-label { color: #555; }

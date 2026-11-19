@@ -1,6 +1,6 @@
 // デッキ一覧・登録ロジック（GAS API版）
 import { gasGet, gasPost } from './firebase-config.js';
-import { getCardImageUrl, getGoogleDriveDirectLink, loadCardAndKeywordData, renderDeckByLevelHtml } from './cards.js';
+import { getCardImageUrl, getGoogleDriveDirectLink, loadCardAndKeywordData, renderLevelBarHtml } from './cards.js';
 
 window.loadSavedDecks = async function() {
   const container = document.getElementById('saved-decks-container');
@@ -68,18 +68,26 @@ window.viewDeckDetail = async function(idx) {
   // カード画像・レベル判定に図鑑データが必要（デッキ確認は任意のカードを含みうるため全件読み込み）
   if (allCards.length === 0) await loadCardAndKeywordData();
 
-  // Lv ごとに見出し＋枚数をつけて並べる
   let mainDeckCount = 0;
-  const entries = [];
+  const lvEntries = [];
+  document.getElementById('view-lvbar').innerHTML = '';
   d.list.split(',').forEach(line => {
     const m = line.match(/(.+)\((.+)\)x(\d+)/);
-    if (!m) return;
-    const count = parseInt(m[3]);
-    const cardObj = allCards.find(c => c["カードNo"] === m[2]);
-    if (cardObj && String(cardObj["レベル"]) !== '2') mainDeckCount += count;
-    entries.push({ card: cardObj || { "カードNo": m[2], "名前": m[1] }, count });
+    if (m) {
+      const cardNo = m[2], count = parseInt(m[3]);
+      const cardObj = allCards.find(c => c["カードNo"] === cardNo);
+      if (cardObj && String(cardObj["レベル"]) !== '2') mainDeckCount += count;
+      if (cardObj) lvEntries.push({ card: cardObj, count });
+      const imgUrl = cardObj ? getCardImageUrl(cardObj) : '';
+      const cellId = `view-cell-${cardNo.replace(/[^a-z0-9]/gi, '')}`;
+      grid.innerHTML += `<div id="${cellId}" style="text-align:center;">
+        ${imgUrl ? `<img src="${imgUrl}" style="width:100%; border-radius:4px;">` : '<div style="height:80px; background:#111; border-radius:4px;"></div>'}
+        <div style="font-size:10px; color:#aaa;">x${count}</div>
+      </div>`;
+    }
   });
-  grid.innerHTML = renderDeckByLevelHtml(entries, { wide: true });
+
+  document.getElementById('view-lvbar').innerHTML = renderLevelBarHtml(lvEntries);
 
   const actionArea = document.getElementById('modal-action-area');
   if (String(d.status).trim() === '登録済み') {

@@ -171,44 +171,36 @@ export function getCardImageUrl(card) {
   return directUrl;
 }
 
-// デッキの中身を Lv ごと（デジタマ・Lv3〜7・テイマー・オプション）に分ける
-// entries: [{ card, count }] → [{ label, total, items }]（Lv順、各Lv内はカードNo順）
-export function groupDeckByLevel(entries) {
-  const groups = [];
-  const groupOf = (c) => {
+// デッキの Lv ごとの枚数バー（Lv2〜7・テイマー・オプション。0枚の Lv も出して見比べやすくする）
+// entries: [{ card, count }]
+export function renderLevelBarHtml(entries) {
+  const cols = [
+    { key: '2', label: 'Lv2' }, { key: '3', label: 'Lv3' }, { key: '4', label: 'Lv4' }, { key: '5', label: 'Lv5' },
+    { key: '6', label: 'Lv6' }, { key: '7', label: 'Lv7' }, { key: 'T', label: 'テイマー' }, { key: 'O', label: 'オプション' },
+  ];
+  const cnt = {};
+  (entries || []).forEach((e) => {
+    const c = e.card || {};
     const lv = String(c["レベル"] == null ? '' : c["レベル"]).trim();
     const type = String(c["タイプ"] || '');
-    if (lv === '2') return { key: '0', label: 'デジタマ（Lv.2）' };
-    if (type.includes('テイマー')) return { key: '8', label: 'テイマー' };
-    if (type.includes('オプション')) return { key: '9', label: 'オプション' };
-    if (/^\d+$/.test(lv)) return { key: lv, label: `Lv.${lv}` };
-    return { key: '7z', label: 'Lv.なし' };
-  };
-  (entries || []).forEach((e) => {
-    const g = groupOf(e.card);
-    let grp = groups.find((x) => x.key === g.key);
-    if (!grp) { grp = { ...g, items: [], total: 0 }; groups.push(grp); }
-    grp.items.push(e);
-    grp.total += e.count;
+    let k;
+    if (lv === '2') k = '2';
+    else if (type.includes('テイマー')) k = 'T';
+    else if (type.includes('オプション')) k = 'O';
+    else if (/^\d+$/.test(lv)) k = lv;
+    else k = '-';
+    if (!cols.some((x) => x.key === k)) cols.push({ key: k, label: k === '-' ? 'Lvなし' : `Lv${k}` });
+    cnt[k] = (cnt[k] || 0) + e.count;
   });
-  groups.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
-  groups.forEach((g) => g.items.sort((a, b) => String(a.card["カードNo"]).localeCompare(String(b.card["カードNo"]))));
-  return groups;
-}
-
-// Lv ごとの画像一覧（見出し＋小計＋各カードに枚数バッジ）の HTML
-// thumbExtra(entry) で画像の下に付ける HTML、onImgClick(entry) で画像タップ時の onclick 文字列を指定できる
-// wide: true で確認画面向け（横に並ぶ数を画面幅に合わせる）
-export function renderDeckByLevelHtml(entries, { thumbExtra, onImgClick, wide } = {}) {
-  const q = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  return groupDeckByLevel(entries).map((g) => `
-    <div class="deck-lv-head"><span>${g.label}</span><b>${g.total}枚</b></div>
-    <div class="deck-lv-grid${wide ? ' wide' : ''}">${g.items.map((e) => `
-      <div class="deck-thumb" title="${q(e.card["名前"])}">
-        <img src="${q(getCardImageUrl(e.card))}" loading="lazy"${onImgClick ? ` onclick="${q(onImgClick(e))}"` : ''}>
-        <span class="deck-thumb-qty">x${e.count}</span>
-        ${thumbExtra ? thumbExtra(e) : ''}
-      </div>`).join('')}</div>`).join('');
+  const max = Math.max(1, ...cols.map((x) => cnt[x.key] || 0));
+  return `<div class="lv-bar">${cols.map((x) => {
+    const n = cnt[x.key] || 0;
+    return `<div class="lv-bar-col${n ? '' : ' zero'}">
+      <span class="lv-bar-num">${n}</span>
+      <div class="lv-bar-track"><div class="lv-bar-fill${x.key === '2' ? ' tama' : ''}" style="height:${Math.round(n / max * 100)}%"></div></div>
+      <span class="lv-bar-label">${x.label}</span>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 // カードデータ読み込み（静的JSON優先 → GAS フォールバック）

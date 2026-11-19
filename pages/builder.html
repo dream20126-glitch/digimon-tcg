@@ -37,7 +37,8 @@
     <h2 id="sample-detail-name" style="color:#fff; text-align:center; margin:0 0 6px;"></h2>
     <div id="sample-detail-count" style="color:var(--main-cyan); text-align:center; font-size:12px; margin-bottom:8px;"></div>
     <div id="sample-detail-desc" style="color:#aaa; font-size:12px; line-height:1.6; white-space:pre-wrap; margin-bottom:16px;"></div>
-    <div id="sample-detail-grid" style="margin-bottom:20px;"></div>
+    <div id="sample-detail-lvbar"></div>
+    <div id="sample-detail-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:8px; margin-bottom:20px;"></div>
     <button class="menu-btn primary" onclick="registerSampleAsIs()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">このままマイデッキに登録</button>
     <button class="menu-btn" onclick="editSampleBeforeRegister()" style="width:100%; box-sizing:border-box; margin-bottom:10px;">編集してから登録</button>
     <button class="menu-btn" onclick="showSampleList()" style="width:100%; box-sizing:border-box; border-color:#555; color:#888;">一覧へ戻る</button>
@@ -99,6 +100,7 @@
         <span>MAIN: <b id="main-count">0</b>/50</span>
         <span style="color:#ff00fb;">TAMA: <b id="tama-count">0</b>/5</span>
       </div>
+      <div id="deck-lv-bar"></div>
       <div id="deck-list-area"></div>
       <button class="menu-btn primary" onclick="isSampleMode ? showSampleSaveScreen() : isTutorialMode ? showTutorialSaveScreen() : showSaveScreen()">デッキを保存する</button>
     </div>

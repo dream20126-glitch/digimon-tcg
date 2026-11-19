@@ -435,6 +435,13 @@ window.acceptHand = function() {
       showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
         addLog('⏳ 相手のターン（操作待ち）'); renderAll();
       });
+    } else if (window._aiBattleActive && !bs.isPlayerTurn) {
+      // AI対戦で AI が先攻: AI のターンから始める。先攻1ターン目のドローは無し（AI 側で飛ばす）。
+      // aiTurn がターン数を+1するので 0 にしておく（自分の最初のターンは後攻なのでドローする＝isFirstTurn は切る）
+      bs.turn = 0;
+      bs.isFirstTurn = false;
+      bs._aiSkipFirstDraw = true;
+      aiTurn();
     } else {
       startFirstTurn();
     }

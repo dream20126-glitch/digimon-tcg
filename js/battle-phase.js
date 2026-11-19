@@ -1096,6 +1096,14 @@ function aiPhaseUnsuspend() {
 
 function aiPhaseDraw() {
   setOppPhase('draw');
+  // 先攻プレイヤーの最初のターンはドローしない（公式ルール）
+  if (bs._aiSkipFirstDraw) {
+    bs._aiSkipFirstDraw = false;
+    showSkipAnnounce('🃏 ドローフェイズ スキップ！（先攻1ターン目）', () => {
+      setTimeout(() => aiPhaseBreed(), 300);
+    });
+    return;
+  }
   if (bs.ai.deck.length > 0) {
     const c = bs.ai.deck.splice(0, 1)[0];
     bs.ai.hand.push(c);
@@ -1150,17 +1158,9 @@ function aiPhaseBreed() {
       addLog('🤖 AIが「' + moved.name + '」を育成エリアからバトルエリアへ移動');
       renderAll();
       // 【移動時】: 育成→バトルエリア移動は「登場」ではないため on_play ではなく on_move で誘発する
+      // 育成フェイズでできるのは「孵化」「移動」のどちらか1つだけ（公式ルール）。移動したら孵化はしない
       _hooks.checkAndTriggerEffect(moved, '【移動時】', () => {
-        // 育成エリアが空 → 孵化も試みる
-        if (!bs.ai.ikusei && bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
-          const c = bs.ai.tamaDeck.splice(0, 1)[0];
-          bs.ai.ikusei = c;
-          addLog('🤖 AIがデジタマを孵化！');
-          renderAll();
-          setTimeout(() => aiPhaseMain(), 500);
-        } else {
-          setTimeout(() => aiPhaseMain(), 500);
-        }
+        setTimeout(() => aiPhaseMain(), 500);
       }, 'ai');
     });
   }

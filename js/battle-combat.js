@@ -5094,7 +5094,20 @@ export function aiAttackPhase(callback) {
     }
   }
 
-  const atkIdx = bs.ai.battleArea.findIndex(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended && !c.summonedThisTurn);
+  // メモリーが相手（プレイヤー）側に移っていれば AI のターンは終わっている（公式ルール）。アタックしない
+  if (bs.memory > 0 && !bs._aiScriptInProgress) { callback(); return; }
+  // アタックできるデジモン（自分のメインと同じ条件）: アクティブ・登場したターンでない（≪速攻≫は可）・
+  // 「アタックできない」「レストできない」でない。AI はセキュリティ（プレイヤー）にだけアタックするので、
+  // 「プレイヤーにアタックできない」デジモンはアタックしない
+  const _aiCanAttack = (c) => {
+    if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || c.suspended) return false;
+    const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
+    if (c.summonedThisTurn && !rush) return false;
+    if (c.cantAttack || c.cantRest) return false;
+    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player')) return false;
+    return true;
+  };
+  const atkIdx = bs.ai.battleArea.findIndex(_aiCanAttack);
   if (atkIdx === -1) { callback(); return; }
 
   const atk = bs.ai.battleArea[atkIdx];

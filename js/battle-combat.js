@@ -3149,10 +3149,19 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
   // 【衝突】: このデジモンのアタック中、相手（CPU）のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない
   // （オンラインの防御側 checkOnlineBlock と同じ判定）
   const forced = _hasCollision(atk, 'player');
-  const blockerIdx = bs.ai.battleArea.findIndex((c, i) => c && i !== targetIdx && _canBlockNow(c)
+  const _canBlk = (c, i) => c && i !== targetIdx && _canBlockNow(c)
     && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))
-    && !(noEvoOnly && (!c.stack || c.stack.length === 0)));
+    && !(noEvoOnly && (!c.stack || c.stack.length === 0));
+  let blockerIdx = bs.ai.battleArea.findIndex(_canBlk);
   if (blockerIdx < 0) return false;
+  // 中: ブロックするかと、どのデジモンでブロックするかを判断する（【衝突】でブロックが強制なら必ずブロック）
+  if (_aiIsMid()) {
+    const cands = bs.ai.battleArea.map((c, i) => (_canBlk(c, i) ? i : -1)).filter(i => i >= 0);
+    const pick = _aiMidChooseBlocker(atk, cands, targetIdx);
+    if (pick >= 0) blockerIdx = pick;
+    else if (forced) blockerIdx = cands.slice().sort((a, b) => _dpOf(bs.ai.battleArea[a]) - _dpOf(bs.ai.battleArea[b]))[0];
+    else { addLog('🤖 AIはブロックしなかった'); return false; }
+  }
   const blocker = bs.ai.battleArea[blockerIdx];
   blocker.suspended = true;
   addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
@@ -5139,6 +5148,66 @@ function showBlockerConfirm(card, onYes, onNo) {
 
 // ===== AIアタックフェーズ =====
 
+// ===== AI対戦「中」（ベテランテイマー）の判断 =====
+// ルールの処理は低と同じ。変わるのは「どれを選ぶか」だけ
+function _aiIsMid() {
+  return typeof window !== 'undefined' && !!window._aiBattleActive && window._aiLevel === 'mid' && !_onlineMode;
+}
+const _dpOf = (c) => (c ? (parseInt(c.dp, 10) || 0) : 0);
+const _lvOf = (c) => (c ? (parseInt(c.level, 10) || 0) : 0);
+// プレイヤーのデジモンのうち、CPU のアタッカー atk をブロックできるもの（除外 exceptIdx）
+function _aiPlayerBlockersFor(atk, exceptIdx) {
+  if (!atk) return [];
+  if ((atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk)) return [];
+  const forced = _hasCollision(atk, 'ai');
+  const noEvoOnly = !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo);
+  return (bs.player.battleArea || []).filter((c, i) => c && i !== exceptIdx && _canBlockNow(c)
+    && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))
+    && !(noEvoOnly && (!c.stack || c.stack.length === 0)));
+}
+// 中のアタック先: 相手のセキュリティが0ならとどめ（プレイヤーへ）→ 勝てるデジモン（強い順）→ セキュリティ。
+// 負けるアタックはしない（ブロックしてくるデジモンのDPがアタッカー以上なら、そのアタック自体をやめる）。null＝アタックしない
+function _aiMidPickTarget(c) {
+  const atkDp = _dpOf(c);
+  const cantPlayer = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player');
+  const secLeft = (bs.player.security || []).length;
+  // とどめ: ブロックされても、ほかに手が無いので狙う
+  if (!cantPlayer && secLeft === 0) return { mode: 'security' };
+  const pa = bs.player.battleArea || [];
+  const wins = [];
+  for (let i = 0; i < pa.length; i++) {
+    const d = pa[i];
+    if (!d || (d.type !== 'デジモン' && d.type !== 'デュアル')) continue;
+    const ok = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(c, d, bs, 'ai') : d.suspended;
+    if (!ok) continue;
+    // 勝てる相手。DPが同じ（相打ち）は、相手の方がレベルが高いときだけ
+    if (_dpOf(d) < atkDp || (_dpOf(d) === atkDp && _lvOf(d) > _lvOf(c))) wins.push(i);
+  }
+  const strongBlock = (exceptIdx) => _aiPlayerBlockersFor(c, exceptIdx).some(b => _dpOf(b) >= atkDp);
+  if (wins.length > 0) {
+    wins.sort((a, b) => (_lvOf(pa[b]) - _lvOf(pa[a])) || (_dpOf(pa[b]) - _dpOf(pa[a])));
+    const i = wins.find(w => !strongBlock(w));
+    if (i !== undefined) return { mode: 'digimon', idx: i, def: pa[i] };
+  }
+  if (cantPlayer) return null;
+  if (strongBlock(-1)) return null;
+  return { mode: 'security' };
+}
+// 中のブロック: 勝てる・相打ちならブロック。負けるブロックは、自分のセキュリティが2枚以下のプレイヤーへのアタック
+// （0枚なら必ず）のときだけ。選ぶのは「勝てる中で一番弱い」→「相打ち」→「一番弱い（負けてもよい1体）」
+function _aiMidChooseBlocker(atk, cands, targetIdx) {
+  const atkDp = _dpOf(atk);
+  const area = bs.ai.battleArea;
+  const byWeak = (a, b) => (_lvOf(area[a]) - _lvOf(area[b])) || (_dpOf(area[a]) - _dpOf(area[b]));
+  const win = cands.filter(i => _dpOf(area[i]) > atkDp).sort(byWeak);
+  if (win.length) return win[0];
+  const tie = cands.filter(i => _dpOf(area[i]) === atkDp).sort(byWeak);
+  if (tie.length) return tie[0];
+  const secLeft = (bs.ai.security || []).length;
+  if (targetIdx < 0 && secLeft <= 2) return cands.slice().sort(byWeak)[0];
+  return -1;
+}
+
 export function aiAttackPhase(callback) {
   hideCombatBackdrop();
   if (bs._battleAborted) return;
@@ -5168,6 +5237,7 @@ export function aiAttackPhase(callback) {
   // アタック先: アタックできる相手のデジモンがいればそのデジモン（先頭から）。いなければプレイヤー（セキュリティ）。
   // 「プレイヤーにアタックできない」ならプレイヤーは選べない
   const _aiPickTarget = (c) => {
+    if (_aiIsMid()) return _aiMidPickTarget(c);
     const pa = bs.player.battleArea || [];
     for (let i = 0; i < pa.length; i++) {
       const d = pa[i];
@@ -5880,6 +5950,15 @@ function _aiEvolveIku(card, done) {
   });
 }
 
+// 中: 使っても意味の無いオプション・デュアル（相手のデジモンに使う効果なのに、相手のデジモンがいない）は使わない
+function _aiMidOptionIsWasted(c) {
+  if (!c || (c.type !== 'オプション' && c.type !== 'デュアル')) return false;
+  const oppHas = (bs.player.battleArea || []).some(x => x);
+  if (oppHas) return false;
+  const t = String(c.effect || '');
+  return /相手のデジモン/.test(t) && !/自分の|ドロー|メモリー|セキュリティ|手札|デッキ/.test(t);
+}
+
 function aiPlayAuto(callback) {
   if (!aiCanAct()) { callback(); return; }
 
@@ -5920,7 +5999,10 @@ function aiPlayAuto(callback) {
 
   // ② バトルエリアで進化（プレイヤーの進化と同じ処理: 進化コストの増減・「進化するとき」の効果・吸収進化 →
   //    共通の doEvolveFromEffect（状態の引き継ぎ・コスト支払い・進化ドロー・【進化時】）
-  for (let i = 0; i < bs.ai.battleArea.length; i++) {
+  // 中: レベルの高いデジモンから進化させる（1体を大きく育てる）。低は並び順のまま
+  const _evoOrder = bs.ai.battleArea.map((_, i) => i);
+  if (_aiIsMid()) _evoOrder.sort((a, b) => _lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a]));
+  for (const i of _evoOrder) {
     const base = bs.ai.battleArea[i];
     if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
     const _ev = _aiFindEvolve(base);
@@ -5939,7 +6021,8 @@ function aiPlayAuto(callback) {
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
     c.playCost !== null && _aiPlayCost(c) <= available &&
-    (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai'))
+    (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai')) &&
+    !(_aiIsMid() && _aiMidOptionIsWasted(c))
   );
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);
@@ -5996,7 +6079,9 @@ function aiPlayAuto(callback) {
     c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= available
   );
   if (playable.length > 0) {
-    playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
+    // 低: 安いものから。中: 出せる中で一番強い（コストの高い）ものから
+    if (_aiIsMid()) playable.sort((a, b) => (_aiPlayCost(b) - _aiPlayCost(a)) || (_lvOf(b) - _lvOf(a)));
+    else playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
     const c = playable[0];
     const handIdx = bs.ai.hand.indexOf(c);
     aiPlayCard(c, handIdx, (turnEnded) => {

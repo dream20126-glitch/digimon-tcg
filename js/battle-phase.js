@@ -1155,7 +1155,12 @@ function aiPhaseBreed() {
     return;
   }
   // 育成エリアにLv3以上 → バトルエリアへ移動
-  if (bs.ai.ikusei && parseInt(bs.ai.ikusei.level) >= 3) {
+  // 中（ベテランテイマー）: Lv4以上に育ててから出す。ただしバトルエリアにデジモンがいない・手札に次の進化先が無いなら Lv3 でも出す
+  const _ikuLv = bs.ai.ikusei ? (parseInt(bs.ai.ikusei.level) || 0) : 0;
+  const _midHold = !!(window._aiBattleActive && window._aiLevel === 'mid' && _ikuLv === 3
+    && (bs.ai.battleArea || []).some(c => c && (c.type === 'デジモン' || c.type === 'デュアル'))
+    && (bs.ai.hand || []).some(c => c && c.type === 'デジモン' && (parseInt(c.level) || 0) === 4));
+  if (bs.ai.ikusei && _ikuLv >= 3 && !_midHold) {
     let slot = bs.ai.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
     showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
@@ -1231,7 +1236,8 @@ function aiPhaseMain() {
         _hooks.aiMainPhase(() => {
           _hooks.aiAttackPhase(() => {
             // AI対戦: アタックの後、残りのメモリー（相手側に渡る分も含めて）で使えるものを使ってからターン終了
-            if (window._aiBattleActive && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
+            // 中（ベテランテイマー）はメモリーを相手に渡してまで使わない（自分側の残りで止める）
+            if (window._aiBattleActive && window._aiLevel !== 'mid' && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
               window._aiSetOverflow(true);
               _hooks.aiMainPhase(() => { window._aiSetOverflow(false); endAiTurn(); });
               return;

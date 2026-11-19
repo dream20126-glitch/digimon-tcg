@@ -1593,6 +1593,12 @@ function executeQueueEntry(entry, context, callback0) {
   // （保留コスト・【ディレイ】・進化コスト軽減等の CPU 任意効果と同じ慣例）。アナウンス演出を
   // 挟んでから実行する。オンライン対戦の相手（ai 側）の効果は相手の端末で処理されるため対象外
   if (actualSide === 'ai' && !(window._isOnlineMode && window._isOnlineMode())) {
+    // 中（ベテランテイマー）: 自分のカードを失うだけの任意効果は使わない
+    if (_cpuMidActive() && Array.isArray(_recipeStepsForLookup) && !_cpuMidWantsOptional(_recipeStepsForLookup, context.bs || (typeof window !== 'undefined' ? window._lastBattleState : null), card)) {
+      if (typeof window !== 'undefined' && typeof window.addLog === 'function') window.addLog('🤖 AIは「' + card.name + '」の効果を使わなかった');
+      callback && callback();
+      return;
+    }
     executeWithAnnounce();
     return;
   }
@@ -2160,7 +2166,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // AI: _forceTargetIdx を優先しつつ先頭から dpNeed 体に適用
         const dpPick = [];
         if (ctx._forceTargetIdx != null && dpTargets.indexOf(ctx._forceTargetIdx) >= 0) dpPick.push(ctx._forceTargetIdx);
-        for (const di of dpTargets) { if (dpPick.length >= dpNeed) break; if (dpPick.indexOf(di) < 0) dpPick.push(di); }
+        for (const di of _cpuOrder(dpTargets, opponent.battleArea, 'dpminus', val)) { if (dpPick.length >= dpNeed) break; if (dpPick.indexOf(di) < 0) dpPick.push(di); }
         dpPick.forEach(applyDpMinus);
         ctx.renderAll(); callback(); break;
       }
@@ -2397,7 +2403,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _dAuto = !isOwn && !_dVsOpen && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length === 1);
       console.log('[destroy auto]', 'cands=' + destroyTargets.length, 'vsOpen=' + _dVsOpen, 'auto=' + _dAuto);
       if(effectiveSide === 'ai' || _dAuto) {
-        const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : destroyTargets[0];
+        const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : (effectiveSide === 'ai' ? _cpuOrder(destroyTargets, tgtPlayer.battleArea, isOwn ? 'weak' : 'harm')[0] : destroyTargets[0]);
         const card = tgtPlayer.battleArea[di];
         if (ctx.bs) ctx.bs._lastActionCount = 1;
         // バトル演出の黒背景（_combat-backdrop）が残っていると盤面の消滅演出が見えず、画面が真っ黒のままになる（メガドラモン
@@ -2511,7 +2517,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           : null;
         if (effectiveSide === 'ai') {
           const picks = [];
-          bounceTargets.forEach(i => { if (picks.length < bounceNeed && !(_bExclude && _bExclude(i, picks))) picks.push(i); });
+          _cpuOrder(bounceTargets, opponent.battleArea, 'harm').forEach(i => { if (picks.length < bounceNeed && !(_bExclude && _bExclude(i, picks))) picks.push(i); });
           _bounceSequential(picks, () => { ctx.renderAll(); callback(); });
           break;
         }
@@ -2522,7 +2528,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       if(effectiveSide === 'ai') {
-        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx, callback);
+        doBounce(opponent, ctx._forceTargetIdx ?? _cpuOrder(bounceTargets, opponent.battleArea, 'harm')[0], ctx, callback);
         break;
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください' + (onlySuspended ? '（レスト状態のみ）' : ''));
@@ -3283,7 +3289,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         callback();
       };
       if (effectiveSide === 'ai') {
-        applyCab(opponent.battleArea[ctx._forceTargetIdx ?? cabTargets[0]], finishCab);
+        applyCab(opponent.battleArea[ctx._forceTargetIdx ?? _cpuOrder(cabTargets, opponent.battleArea, 'harm')[0]], finishCab);
         break;
       }
       ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
@@ -3539,7 +3545,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       if (effectiveSide === 'ai') {
-        const ai = ctx._forceTargetIdx ?? smTargets[0];
+        const ai = ctx._forceTargetIdx ?? _cpuOrder(smTargets, opponent.battleArea, 'harm')[0];
         applySM(opponent.battleArea[ai], ai);
         ctx.renderAll();
         callback && callback();
@@ -3751,7 +3757,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       if(effectiveSide === 'ai') {
-        const ri = ctx._forceTargetIdx ?? restTargets[0];
+        const ri = ctx._forceTargetIdx ?? _cpuOrder(restTargets, opponent.battleArea, 'rest')[0];
         opponent.battleArea[ri].suspended = true;
         ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
         syncRest(ri);
@@ -3782,7 +3788,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) caTargets.push(i); }
       if(caTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
-        const cai = ctx._forceTargetIdx ?? caTargets[0];
+        const cai = ctx._forceTargetIdx ?? _cpuOrder(caTargets, opponent.battleArea, 'harm')[0];
         opponent.battleArea[cai].cantAttack = true;
         addBuffDirect(opponent.battleArea[cai], 'cant_attack', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
         ctx.addLog('🔒 「' + opponent.battleArea[cai].name + '」アタック不可');
@@ -3836,7 +3842,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) cbTargets.push(i); }
       if(cbTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
-        const cbi = ctx._forceTargetIdx ?? cbTargets[0];
+        const cbi = ctx._forceTargetIdx ?? _cpuOrder(cbTargets, opponent.battleArea, 'rest')[0];
         opponent.battleArea[cbi].cantBlock = true;
         addBuffDirect(opponent.battleArea[cbi], 'cant_block', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
         ctx.addLog('🔒 「' + opponent.battleArea[cbi].name + '」ブロック不可');
@@ -3860,7 +3866,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) ceTargets.push(i); }
       if(ceTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
-        const cei = ctx._forceTargetIdx ?? ceTargets[0];
+        const cei = ctx._forceTargetIdx ?? _cpuOrder(ceTargets, opponent.battleArea, 'harm')[0];
         opponent.battleArea[cei].cantEvolve = true;
         addBuffDirect(opponent.battleArea[cei], 'cant_evolve', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
         ctx.addLog('❌ 「' + opponent.battleArea[cei].name + '」進化不可');
@@ -4600,6 +4606,68 @@ function _boardCardOf(bs, v) {
   if (v >= 100) return (bs.player.battleArea || [])[v - 100] || null;
   return (bs.ai.battleArea || [])[v] || null;
 }
+// ===== AI対戦「中」（ベテランテイマー）: CPU が盤面のデジモンを選ぶときの優先順 =====
+// 低（見習いテイマー）・チュートリアル・オンラインでは候補の順のまま（今までどおり先頭）。
+// mode: 'harm'＝相手のデジモンに不利な効果（消滅・手札に戻す等）→ 強い順（Lv→DP）
+//       'weak'＝自分のデジモンに不利な効果（コストで消滅等）→ 弱い順
+//       'buff'＝自分のデジモンに有利な効果（DP+・アクティブ等）→ これから戦える（アクティブの）強い順
+//       'rest'＝相手のデジモンのレスト・ブロックできない等 → アクティブの【ブロッカー】→ アクティブの強い順
+//       'dpminus'＝DPマイナス（opt＝マイナス値）→ 倒しきれる中で強い順 → 倒しきれなければ強い順
+function _cpuMidActive() {
+  return typeof window !== 'undefined' && !!window._aiBattleActive && window._aiLevel === 'mid'
+    && !(window._isOnlineMode && window._isOnlineMode());
+}
+if (typeof window !== 'undefined') window._cpuMidActive = _cpuMidActive;
+function _cpuStrength(c) {
+  if (!c) return -1;
+  return (parseInt(c.level, 10) || 0) * 100000 + (parseInt(c.dp, 10) || 0) + ((c.stack && c.stack.length) || 0);
+}
+function _cpuIsBlocker(c) {
+  if (!c) return false;
+  if (c._permEffects && c._permEffects.blocker) return true;
+  if (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'keyword_blocker' || (b.type === 'grant_keyword' && /blocker/.test(String(b.value || '')))))) return true;
+  return /【ブロッカー】|≪ブロッカー≫/.test(String(c.effect || ''));
+}
+function _cpuOrder(idxs, area, mode, opt) {
+  if (!_cpuMidActive() || !Array.isArray(idxs) || idxs.length < 2 || !Array.isArray(area)) return idxs;
+  const at = (i) => area[i];
+  const str = (i) => _cpuStrength(at(i));
+  const act = (i) => (at(i) && !at(i).suspended ? 1 : 0);
+  const s = idxs.slice();
+  if (mode === 'weak') return s.sort((a, b) => str(a) - str(b));
+  if (mode === 'buff') return s.sort((a, b) => (act(b) - act(a)) || (str(b) - str(a)));
+  if (mode === 'rest') {
+    const blk = (i) => (act(i) && _cpuIsBlocker(at(i)) ? 1 : 0);
+    return s.sort((a, b) => (blk(b) - blk(a)) || (act(b) - act(a)) || (str(b) - str(a)));
+  }
+  if (mode === 'dpminus') {
+    const v = parseInt(opt, 10) || 0;
+    const kill = (i) => ((parseInt(at(i) && at(i).dp, 10) || 0) <= v ? 1 : 0);
+    return s.sort((a, b) => (kill(b) - kill(a)) || (str(b) - str(a)));
+  }
+  return s.sort((a, b) => str(b) - str(a));
+}
+// 中: 任意効果を使うか。自分のカードを失うだけ（自分のデジモンの消滅・手札に戻す・手札を捨てる等）の効果は使わない。
+// ［手札］【カウンター】【ブラスト進化】/【ブラストジョグレス】は、進化した姿のDPがアタックしてきたデジモンより高いときだけ使う
+// （進化しても負けるならカードを1枚使うだけで得にならない）
+const _CPU_LOSS_ACTIONS = new Set(['destroy', 'bounce', 'return_hand', 'return_deck', 'discard', 'deck_trash_top', 'dedigivolve', 'evo_discard_all', 'security_trash_select']);
+function _cpuStepIsSelfLoss(st) {
+  if (!st || !_CPU_LOSS_ACTIONS.has(st.action)) return false;
+  const t = String(st.target || '');
+  if (st.action === 'discard' || st.action === 'deck_trash_top') return !/^opp/.test(t);
+  return /^(own|self)/.test(t);
+}
+function _cpuMidWantsOptional(recipe, bs, card) {
+  const steps = (Array.isArray(recipe) ? recipe : []).filter(Boolean);
+  if (steps.length === 0) return true;
+  const blast = steps.find(s => (s.action === 'evolve' || s.action === 'jogress_evolve') && s.evolve_into === 'self_card' && s.from === 'hand');
+  if (blast) {
+    const atk = bs && bs._attackingCard;
+    if (!atk || !card) return true;
+    return (parseInt(card.dp, 10) || 0) > (parseInt(atk.dp, 10) || 0);
+  }
+  return !steps.every(_cpuStepIsSelfLoss);
+}
 // 候補から n 体選ぶ。CPU（effSide==='ai'）は preferOwn に応じて自分側/相手側を優先して先頭から。
 // 候補が n 体以下なら全員。それ以外は showCardListPicker（自分/相手の別をカード名の前に表示）
 // 選んだ候補のカードを、今の盤面のカードで探し直す。オンラインでは相手のカードは同期（state_sync）のたびに
@@ -4623,7 +4691,11 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0, upTo) {
   const want = Math.min(n || 1, cands.length);
   if (want <= 0) { cb([]); return; }
   if (effSide === 'ai') {
-    const sorted = cands.slice().sort((a, b) => (a.own === b.own) ? 0 : ((a.own === !!preferOwn) ? -1 : 1));
+    // 中: 相手のデジモン同士は強い順（自分のデジモン同士は今までどおり）
+    const _mid = _cpuMidActive();
+    const sorted = cands.slice().sort((a, b) => (a.own === b.own)
+      ? ((_mid && !a.own) ? (_cpuStrength(b.card) - _cpuStrength(a.card)) : 0)
+      : ((a.own === !!preferOwn) ? -1 : 1));
     cb(sorted.slice(0, want));
     return;
   }
@@ -8452,7 +8524,7 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     if(validTargets.length === 0) { showEffectFailed(null, callback); return; }
     // _forceTargetIdx で対象が事前確定済みなら UI スキップして自動適用（same_target など）
     if(ctx.side === 'ai' || ctx._forceTargetIdx !== undefined) {
-      const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : validTargets[0];
+      const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, player.battleArea, isPlus ? 'buff' : 'weak')[0];
       const tgtCard = player.battleArea[fixedIdx];
       if (tgtCard) {
         ctx.bs._lastPickedCard = tgtCard;
@@ -13559,6 +13631,12 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
     // AI対戦（オフライン）: CPU は任意効果を必ず発動する（【カウンター】・ブラスト進化・反応で誘発する効果も含む）。
     // ほかの効果（キュー・runRecipe のコスト確認・【ディレイ】等）はもともと CPU が自動で「はい」にしている
     if (side === 'ai' && window._aiBattleActive && !(window._isOnlineMode && window._isOnlineMode())) {
+      // 中（ベテランテイマー）: 得にならない任意効果は使わない（【カウンター】・ブラスト進化は得するときだけ）
+      if (_cpuMidActive() && !_cpuMidWantsOptional(recipe, bs, card)) {
+        ctx.addLog && ctx.addLog('🤖 AIは「' + (isEvo ? sourceCard.name : card.name) + '」の効果を使わなかった');
+        finish();
+        return;
+      }
       ctx._effectConfirmed = true;
       _markConfirmedHead(ctx, recipe);
       logActivated();
@@ -19484,8 +19562,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）
         if (effectiveSide === 'ai') {
-          const picked = opponent.battleArea[valid[0]];
-          if (step.store) store[step.store] = { idx: valid[0], card: picked };
+          const _v0 = _cpuOrder(valid, opponent.battleArea, 'harm')[0];
+          const picked = opponent.battleArea[_v0];
+          if (step.store) store[step.store] = { idx: _v0, card: picked };
           ctx.bs._lastPickedCard = picked;
           callback();
           return;
@@ -19639,10 +19718,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (valid.length === 0) { finishSelectMulti(); return; }
         // CPU（'ai'）の効果は CPU が選ぶ（公式ルール: 効果の持ち主が選ぶ）。選べるだけ（最大数まで）先頭から
         if (effectiveSide === 'ai') {
-          selected.push(valid[0]);
+          const _v0 = _cpuOrder(valid, opponent.battleArea, 'harm')[0];
+          selected.push(_v0);
           if (step.store) {
             if (!store[step.store]) store[step.store] = [];
-            store[step.store].push({ idx: valid[0], card: opponent.battleArea[valid[0]] });
+            store[step.store].push({ idx: _v0, card: opponent.battleArea[_v0] });
           }
           selectedCount++;
           doSelect();
@@ -20677,7 +20757,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             };
             if (_dnIdxs.length <= _dnTimes || ctx.side !== 'player' || ctx._forceTargetIdx !== undefined) {
               console.log('[destroy N] 候補' + _dnIdxs.length + '体 ≦ ' + _dnTimes + '体（または CPU）→ 選ばずに消滅');
-              _dnDestroyCards(_dnIdxs.slice(0, _dnTimes).map(i => opponent.battleArea[i]));
+              _dnDestroyCards((ctx.side !== 'player' ? _cpuOrder(_dnIdxs, opponent.battleArea, 'harm') : _dnIdxs).slice(0, _dnTimes).map(i => opponent.battleArea[i]));
               return;
             }
             ctx.addLog('🎯 消滅させる対象を' + _dnTimes + '体選んでください');
@@ -21920,7 +22000,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
         if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
-          const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : validTargets[0];
+          const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, tgtPlayer.battleArea, tgtPlayer === player ? 'buff' : 'harm')[0];
           _gePick(tgtPlayer.battleArea[fixedIdx]);
           ctx.renderAll && ctx.renderAll(); callback();
           return;

@@ -81,6 +81,7 @@
   position: absolute; bottom: 1px; right: 2px;
   background: rgba(0, 0, 0, 0.85); color: #00fbff;
   font-size: 7px; padding: 1px 3px; border-radius: 2px; font-weight: bold;
+  white-space: nowrap; z-index: 2;
 }
 .b-slot .s-name {
   position: absolute; bottom: 13px; left: 0; right: 0;

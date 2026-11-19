@@ -244,21 +244,42 @@ window.updateDeckUI = function() {
   let mainTotal = 0, tamaTotal = 0;
   const listArea = document.getElementById('deck-list-area');
   if (!listArea) return;
-  listArea.innerHTML = tempDeck.map(i => {
+  // Lv ごと（デジタマ・Lv3〜7・テイマー・オプション）に分けて、カード画像＋枚数で並べる
+  const groups = [];
+  const groupOf = (c) => {
+    const lv = String(c["レベル"] == null ? '' : c["レベル"]).trim();
+    const type = String(c["タイプ"] || '');
+    if (lv === '2') return { key: '0', label: 'デジタマ（Lv.2）' };
+    if (type.includes('テイマー')) return { key: '8', label: 'テイマー' };
+    if (type.includes('オプション')) return { key: '9', label: 'オプション' };
+    if (/^\d+$/.test(lv)) return { key: lv, label: `Lv.${lv}` };
+    return { key: '7z', label: 'Lv.なし' };
+  };
+  tempDeck.forEach(i => {
     const isTama = (String(i.card["レベル"]) === '2');
     if (isTama) tamaTotal += i.count; else mainTotal += i.count;
-    return `<div class="deck-item">
-      <div class="deck-item-info">
-        <span class="deck-item-name">${i.card["名前"]}</span>
-        <span class="deck-item-qty">x${i.count}</span>
-      </div>
-      <div class="deck-controls">
-        <button class="ctrl-btn" onclick="changeQty('${i.card["カードNo"]}', 1)">+</button>
-        <button class="ctrl-btn" onclick="changeQty('${i.card["カードNo"]}', -1)">-</button>
-        <button class="ctrl-btn del" onclick="tempDeck=tempDeck.filter(x=>x.card['カードNo']!=='${i.card["カードNo"]}');updateDeckUI();">全削</button>
-      </div>
-    </div>`;
-  }).join('');
+    const g = groupOf(i.card);
+    let grp = groups.find(x => x.key === g.key);
+    if (!grp) { grp = { ...g, items: [], total: 0 }; groups.push(grp); }
+    grp.items.push(i);
+    grp.total += i.count;
+  });
+  groups.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+  listArea.innerHTML = groups.map(g => `
+    <div class="deck-lv-head"><span>${g.label}</span><b>${g.total}枚</b></div>
+    <div class="deck-lv-grid">${g.items
+      .slice().sort((a, b) => String(a.card["カードNo"]).localeCompare(String(b.card["カードNo"])))
+      .map(i => {
+        const no = i.card["カードNo"];
+        return `<div class="deck-thumb" title="${i.card["名前"]}">
+          <img src="${getCardImageUrl(i.card)}" onclick="showPreview('${no}')" loading="lazy">
+          <span class="deck-thumb-qty">x${i.count}</span>
+          <div class="deck-thumb-ctrl">
+            <button onclick="changeQty('${no}', -1)">−</button>
+            <button onclick="changeQty('${no}', 1)">＋</button>
+          </div>
+        </div>`;
+      }).join('')}</div>`).join('');
   const mainEl = document.getElementById('main-count');
   const tamaEl = document.getElementById('tama-count');
   if (mainEl) mainEl.innerText = mainTotal;

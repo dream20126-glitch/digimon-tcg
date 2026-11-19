@@ -261,3 +261,37 @@ async function beginBattle(playerFirst) {
     starting = false;
   }
 }
+
+// ===== テスト用: AIの手札を見る =====
+// テスト中だけ有効。公開するときは false にする（ボタンが出なくなる）
+const AI_HAND_PEEK = true;
+window._aiHandPeekEnabled = AI_HAND_PEEK;
+window.aiPeekHand = function() {
+  const b = window._lastBattleState;
+  if (!b || !b.ai || !window._aiBattleActive) return;
+  const old = document.getElementById('ai-peek-overlay');
+  if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'ai-peek-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:70000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  const imgOf = (c) => c.imgSrc || getGoogleDriveDirectLink(c.imageUrl || c['ImageURL'] || '') || '';
+  const cards = (b.ai.hand || []).map((c) => {
+    const cost = c.playCost != null && c.playCost !== '' ? c.playCost : '-';
+    const sub = [c.type, c.level && c.level !== 'なし' ? 'Lv.' + c.level : '', c.dp ? 'DP' + c.dp : '', 'コスト' + cost].filter(Boolean).join('・');
+    return `<div style="width:92px;text-align:center;">
+      <img src="${esc(imgOf(c))}" onerror="this.style.visibility='hidden'" style="width:92px;height:128px;object-fit:cover;border-radius:6px;background:#222;display:block;">
+      <div style="color:#fff;font-size:11px;font-weight:bold;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.name)}</div>
+      <div style="color:#aaa;font-size:9px;line-height:1.3;">${esc(sub)}</div>
+    </div>`;
+  }).join('');
+  ov.innerHTML = `<div style="background:#0b0f18;border:1px solid #ff00fb;border-radius:14px;padding:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;box-sizing:border-box;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div style="color:#ff9cff;font-weight:bold;font-size:14px;">🔍 AIの手札（テスト用）</div>
+      <button onclick="document.getElementById('ai-peek-overlay').remove()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="color:#888;font-size:11px;margin-bottom:10px;">手札 ${(b.ai.hand || []).length}枚 / デッキ ${(b.ai.deck || []).length}枚 / デジタマ ${(b.ai.tamaDeck || []).length}枚 / セキュリティ ${(b.ai.security || []).length}枚</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">${cards || '<div style="color:#666;font-size:12px;padding:16px;">手札はありません</div>'}</div>
+  </div>`;
+  document.body.appendChild(ov);
+};

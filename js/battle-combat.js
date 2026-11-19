@@ -6165,8 +6165,18 @@ function _aiMidOptionIsWasted(c) {
     const t = String(c.effect || '');
     return /相手のデジモン/.test(t) && !/自分の|ドロー|メモリー|セキュリティ|手札|デッキ/.test(t);
   }
+  // 自分のセキュリティデジモンを強くする効果（ST1-14 スターライトエクスプロージョン等）は、次のプレイヤーのターンに
+  // アタックされうるときだけ意味がある: プレイヤーのバトルエリアにデジモンがいるか、育成エリアに Lv.3 以上がいる
+  // （育成エリアから出したデジモンはそのターンにアタックできる）
+  const _plCanAttackNext = () => (bs.player.battleArea || []).some(x => x && (x.type === 'デジモン' || x.type === 'デュアル'))
+    || (bs.player.ikusei && (parseInt(bs.player.ikusei.level, 10) || 0) >= 3);
   let targeted = 0;
   for (const st of steps) {
+    if (/^own_security/.test(String(st.target || '')) && /^(dp_plus|grant_keyword)$/.test(String(st.action || ''))) {
+      targeted++;
+      if (_plCanAttackNext()) return false;
+      continue;
+    }
     const n = _aiMidStepTargetCount(st);
     if (n === null) {
       // 対象を持たない手順: 前の手順で選んだ対象に効くもの以外（ドロー・メモリー+等）は単独で意味がある

@@ -11863,6 +11863,16 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
     e.stopPropagation();
     finish();
   });
+  // AI対戦: 相手（CPU）の効果は OK を出さない。相手（CPU）が読み終えて OK を押したら進む
+  // （オンライン対戦で相手の効果が出ているときと同じ見え方。文章の長さに合わせて少し待つ）
+  if (side !== 'player' && window._aiBattleActive && !(window._isOnlineMode && window._isOnlineMode())) {
+    okBtn.style.display = 'none';
+    const waitEl = document.createElement('div');
+    waitEl.style.cssText = 'color:' + sideColor + ';font-size:12px;opacity:0.8;';
+    waitEl.innerText = '相手が確認中...';
+    box.appendChild(waitEl);
+    setTimeout(finish, Math.min(4500, 1800 + displayText.length * 15));
+  }
 }
 
 // ===== 効果不発ポップアップ =====

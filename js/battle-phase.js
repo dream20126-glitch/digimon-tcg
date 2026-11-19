@@ -1157,11 +1157,14 @@ function aiPhaseBreed() {
       bs.ai.ikusei = null;
       addLog('🤖 AIが「' + moved.name + '」を育成エリアからバトルエリアへ移動');
       renderAll();
+      // 自分が移動したときと同じく「バトルエリアへ移動！」を出してから【移動時】へ
+      showPhaseAnnounce('🚀 バトルエリアへ移動！', '#ff9900', () => {
       // 【移動時】: 育成→バトルエリア移動は「登場」ではないため on_play ではなく on_move で誘発する
       // 育成フェイズでできるのは「孵化」「移動」のどちらか1つだけ（公式ルール）。移動したら孵化はしない
       _hooks.checkAndTriggerEffect(moved, '【移動時】', () => {
         setTimeout(() => aiPhaseMain(), 500);
       }, 'ai');
+      });
     });
   }
   // 育成エリアが空でデジタマあり → 孵化

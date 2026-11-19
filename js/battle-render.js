@@ -381,10 +381,11 @@ function renderBattleRows() {
         const dpMod = _dpModFromBuffs(card);
         const effBaseDp = (typeof card.dp === 'number') ? (card.dp - dpMod) : (card.baseDp || card.dp);
         // 本来のDPの横に修正値（+N / -N）を小さく添える（両方の盤面共通）
+        // 増減があるときは文字を小さくしてカードの幅に収める（css: .s-dp.s-dp-mod）
         let dpHtml = `${effBaseDp}`;
-        if (dpMod > 0) dpHtml += `<span style="color:#00ff88;font-size:6px;"> +${dpMod}</span>`;
-        else if (dpMod < 0) dpHtml += `<span style="color:#ff4444;font-size:6px;"> ${dpMod}</span>`;
-        html += `<div class="s-dp">${dpHtml}</div>`;
+        if (dpMod > 0) dpHtml += `<span class="s-dp-n" style="color:#00ff88;">+${dpMod}</span>`;
+        else if (dpMod < 0) dpHtml += `<span class="s-dp-n" style="color:#ff4444;">${dpMod}</span>`;
+        html += `<div class="s-dp${dpMod ? ' s-dp-mod' : ''}">${dpHtml}</div>`;
 
         // 進化元枚数（右上）
         if (card.stack && card.stack.length > 0) {

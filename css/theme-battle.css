@@ -586,6 +586,8 @@
   #battle-screen .b-slot { width: var(--card-w); height: var(--card-h); border-radius: 8px; }
   #battle-screen .b-slot .s-name { font-size: 10px; bottom: 17px; padding: 2px; }
   #battle-screen .b-slot .s-dp { font-size: 10px; padding: 1px 4px; }
+  /* DPの増減つきはカードの幅に合わせて小さめに（カード内に収める） */
+  #battle-screen .b-slot .s-dp.s-dp-mod { font-size: calc(var(--card-w) * 0.11); padding: 1px 2px; }
   #battle-screen .b-slot [style*="font-size:6px"] { font-size: 9px !important; }
   #battle-screen .b-slot [style*="font-size:8px"] { font-size: 10px !important; }
   #battle-screen #ai-battle-row,

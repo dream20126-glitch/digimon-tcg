@@ -83,6 +83,9 @@
   font-size: 7px; padding: 1px 3px; border-radius: 2px; font-weight: bold;
   white-space: nowrap; z-index: 2;
 }
+/* DPの増減つき（例: 2000 -1000）は小さめの文字でカード内に収める */
+.b-slot .s-dp.s-dp-mod { font-size: 6px; padding: 1px 2px; letter-spacing: -0.2px; }
+.b-slot .s-dp .s-dp-n { margin-left: 2px; }
 .b-slot .s-name {
   position: absolute; bottom: 13px; left: 0; right: 0;
   background: rgba(0, 0, 0, 0.75); color: #fff;

@@ -11,7 +11,14 @@ let adminSampleDecks = [];   // 管理画面向け（非公開も）
 let sdEditData = null;       // 管理画面で編集中のサンプルデッキ（新規は null）
 let sdSaveCover = '';
 
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// サンプルデッキのカテゴリ（シートの「カテゴリ」列にこの文字をそのまま保存）
+const SAMPLE_CATEGORIES = [
+  { label: '現環境トップ5', icon: '🏆' },
+  { label: '管理人オススメ', icon: '⭐' },
+  { label: '初心者向け', icon: '🔰' },
+];
+
+const esc =(s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function ensureCards() {
   if (allCards.length > 0) return;
@@ -63,7 +70,7 @@ window.showSampleList = async function() {
       area.innerHTML = '<div style="color:#555; padding:30px; text-align:center;">サンプルデッキはまだありません</div>';
       return;
     }
-    area.innerHTML = sampleDecks.map((d, i) => `
+    const card = (d, i) => `
       <div class="sample-deck-card" onclick="showSampleDetail(${i})">
         <img src="${esc(getGoogleDriveDirectLink(d.cover))}" onerror="this.style.visibility='hidden'">
         <div class="sample-deck-info">
@@ -71,7 +78,17 @@ window.showSampleList = async function() {
           <div class="sample-deck-desc">${esc(d.description || '')}</div>
           <div class="sample-deck-count">${countFromList(d.list)}枚</div>
         </div>
-      </div>`).join('');
+      </div>`;
+    // カテゴリごとに見出しを付けて並べる（カテゴリ未設定は最後に「その他」）
+    const sections = SAMPLE_CATEGORIES.map((c) => ({ ...c, items: [] }));
+    const other = { label: 'その他', icon: '📁', items: [] };
+    sampleDecks.forEach((d, i) => {
+      const sec = sections.find((s) => s.label === d.category) || other;
+      sec.items.push(card(d, i));
+    });
+    area.innerHTML = [...sections, other].filter((s) => s.items.length > 0).map((s) => `
+      <div class="sample-cat-title">${s.icon} ${esc(s.label)}</div>
+      <div class="sample-deck-grid">${s.items.join('')}</div>`).join('');
   } catch (e) {
     area.innerHTML = `<div style="color:#ff4444; padding:20px; text-align:center;">読み込みエラー: ${esc(e.message)}</div>`;
   }
@@ -152,9 +169,10 @@ window.showSampleAdminList = async function() {
     adminSampleDecks = Array.isArray(decks) ? decks : [];
     if (adminSampleDecks.length === 0) { area.innerHTML = '<p style="color:#555; text-align:center; padding:40px;">サンプルデッキが登録されていません</p>'; return; }
     area.innerHTML = `<div style="overflow-x:auto;"><table class="admin-table"><thead><tr>
-      <th style="width:40px;">順</th><th>デッキ名</th><th style="width:60px;">枚数</th><th style="width:60px;">公開</th><th style="width:60px;">AI用</th><th style="width:130px;">操作</th>
+      <th style="width:40px;">順</th><th style="width:110px;">カテゴリ</th><th>デッキ名</th><th style="width:60px;">枚数</th><th style="width:60px;">公開</th><th style="width:60px;">AI用</th><th style="width:130px;">操作</th>
     </tr></thead><tbody>${adminSampleDecks.map((d, i) => `<tr>
       <td style="color:#888;">${esc(d.order)}</td>
+      <td style="color:${d.category ? 'var(--main-cyan)' : '#666'}; font-size:11px;">${esc(d.category || '未設定')}</td>
       <td style="color:#fff; font-weight:bold;">${esc(d.deckName)}<div style="font-size:10px; color:#888; font-weight:normal;">${esc(d.description || '')}</div></td>
       <td>${countFromList(d.list)}</td>
       <td>${d.published ? '<span style="color:#00ff88;">公開</span>' : '<span style="color:#666;">非公開</span>'}</td>
@@ -206,7 +224,8 @@ window.showSampleSaveScreen = function() {
   document.getElementById('ssave-title').innerText = d ? 'サンプルデッキ編集' : 'サンプルデッキ登録';
   document.getElementById('ssave-deck-name').value = d ? (d.deckName || '') : '';
   document.getElementById('ssave-desc').value = d ? (d.description || '') : '';
-  document.getElementById('ssave-order').value = d ? (d.order || 0) : (adminSampleDecks.length + 1);
+  document.getElementById('ssave-category').value = d ? (d.category || '') : '';
+  document.getElementById('ssave-order').value =d ? (d.order || 0) : (adminSampleDecks.length + 1);
   document.getElementById('ssave-published').checked = d ? !!d.published : true;
   document.getElementById('ssave-for-ai').checked = d ? !!d.forAi : false;
   const cnt = countDeck(tempDeck);
@@ -236,6 +255,7 @@ window.executeSampleSave = async function() {
     cover: sdSaveCover,
     list: tempDeck.map((e) => `${e.card['名前']}(${e.card['カードNo']})x${e.count}`).join(','),
     description: document.getElementById('ssave-desc').value.trim(),
+    category: document.getElementById('ssave-category').value,
     order: parseInt(document.getElementById('ssave-order').value, 10) || 0,
     published: document.getElementById('ssave-published').checked,
     forAi: document.getElementById('ssave-for-ai').checked,

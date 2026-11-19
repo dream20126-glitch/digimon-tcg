@@ -1129,6 +1129,26 @@ function aiPhaseDraw() {
 
 // ----- AI 育成フェイズ -----
 
+// AI対戦「中」: 育成エリアのデジモンを育成エリアに残すか（true＝残す）。
+// 出す: バトルエリアにデジモンがいない／Lv.5以上（もう戦える）／今のメモリーで手札から進化できない（残しても育たない）／
+//       自分のセキュリティが2枚以下で、相手にアタックできるデジモンがいて、このデジモンがブロッカーか相手の一番強いデジモン以上のDP（守りに出す）
+// 残す: それ以外（育成エリアで安全に進化させて、進化ドローも得る）
+function _aiMidHoldInNursery(iku) {
+  if (!iku) return false;
+  const lv = parseInt(iku.level) || 0;
+  const isDigi = (c) => c && (c.type === 'デジモン' || c.type === 'デュアル');
+  if (!(bs.ai.battleArea || []).some(isDigi)) return false;
+  if (lv >= 5) return false;
+  if (!(window._aiCanEvolveNow && window._aiCanEvolveNow(iku))) return false;
+  const oppDigi = (bs.player.battleArea || []).filter(isDigi);
+  if ((bs.ai.security || []).length <= 2 && oppDigi.length > 0) {
+    const maxOppDp = Math.max(...oppDigi.map(c => parseInt(c.dp) || 0));
+    const blocker = !!(iku._permEffects && iku._permEffects.blocker) || /【ブロッカー】|≪ブロッカー≫/.test(String(iku.effect || ''));
+    if (blocker || (parseInt(iku.dp) || 0) >= maxOppDp) return false;
+  }
+  return true;
+}
+
 function aiPhaseBreed() {
   setOppPhase('breed');
   // チュートリアル: AIスクリプトがあれば育成系アクションをここで実行
@@ -1155,11 +1175,9 @@ function aiPhaseBreed() {
     return;
   }
   // 育成エリアにLv3以上 → バトルエリアへ移動
-  // 中（ベテランテイマー）: Lv4以上に育ててから出す。ただしバトルエリアにデジモンがいない・手札に次の進化先が無いなら Lv3 でも出す
+  // 中（ベテランテイマー）は状況を見て決める（_aiMidHoldInNursery）。低は Lv3 以上ならすぐ出す
   const _ikuLv = bs.ai.ikusei ? (parseInt(bs.ai.ikusei.level) || 0) : 0;
-  const _midHold = !!(window._aiBattleActive && window._aiLevel === 'mid' && _ikuLv === 3
-    && (bs.ai.battleArea || []).some(c => c && (c.type === 'デジモン' || c.type === 'デュアル'))
-    && (bs.ai.hand || []).some(c => c && c.type === 'デジモン' && (parseInt(c.level) || 0) === 4));
+  const _midHold = !!(window._aiBattleActive && window._aiLevel === 'mid' && _ikuLv >= 3 && _aiMidHoldInNursery(bs.ai.ikusei));
   if (bs.ai.ikusei && _ikuLv >= 3 && !_midHold) {
     let slot = bs.ai.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }

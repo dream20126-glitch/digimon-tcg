@@ -5169,7 +5169,10 @@ function _aiPlayerBlockersFor(atk, exceptIdx) {
 // 負けるアタックはしない（ブロックしてくるデジモンのDPがアタッカー以上なら、そのアタック自体をやめる）。null＝アタックしない
 function _aiMidPickTarget(c) {
   const atkDp = _dpOf(c);
-  const cantPlayer = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player');
+  // Sアタック-でチェック数が0のデジモンはプレイヤーにアタックしない（セキュリティをチェックできずに終わるだけ。
+  // セキュリティ0枚でもチェック0回なら勝てない）
+  const cantPlayer = (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player'))
+    || getSecurityAttackCount(c) <= 0;
   const secLeft = (bs.player.security || []).length;
   // とどめ: ブロックされても、ほかに手が無いので狙う
   if (!cantPlayer && secLeft === 0) return { mode: 'security' };
@@ -5875,6 +5878,9 @@ function _aiFindEvolve(base) {
   }
   return null;
 }
+
+// 育成フェイズの判断用（battle-phase.js）: この CPU のデジモンを、今のメモリーで手札から進化させられるか
+if (typeof window !== 'undefined') window._aiCanEvolveNow = (base) => { try { return !!_aiFindEvolve(base); } catch (_) { return false; } };
 
 // CPU のバトルエリアでの進化。プレイヤーの進化（doEvolve の _normalEvolve）と同じ順で、side だけ 'ai' にして処理する
 function _aiEvolveInBattleArea(card, slotIdx, done) {

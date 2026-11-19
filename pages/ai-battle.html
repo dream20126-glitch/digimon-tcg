@@ -9,6 +9,14 @@
 .aib-tab.active, .aib-opt.active { border-color:var(--main-cyan); color:#fff; background:rgba(0,251,255,0.12); }
 .aib-opt.disabled { opacity:0.4; cursor:not-allowed; }
 .aib-opts { display:flex; gap:8px; flex-wrap:wrap; }
+#aib-levels { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.aib-lv { border:1px solid #335; border-radius:10px; background:#0a0a0a; padding:10px 6px; text-align:center; cursor:pointer; min-width:0; }
+.aib-lv.active { border-color:var(--main-cyan); background:rgba(0,251,255,0.12); box-shadow:0 0 8px rgba(0,251,255,0.3); }
+.aib-lv.disabled { opacity:0.4; cursor:not-allowed; }
+.aib-lv-icon { font-size:30px; line-height:1.2; }
+.aib-lv-rank { color:var(--main-cyan); font-size:11px; font-weight:bold; margin-top:2px; }
+.aib-lv-name { color:#fff; font-size:13px; font-weight:bold; margin-top:2px; }
+.aib-lv-desc { color:#888; font-size:10px; margin-top:4px; line-height:1.4; }
 .aib-deck-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; max-height:300px; overflow-y:auto; }
 .aib-deck { display:flex; align-items:center; gap:10px; padding:8px; border:1px solid #223; border-radius:10px; background:#0a0a0a; cursor:pointer; min-width:0; }
 .aib-deck.active { border-color:var(--main-cyan); background:rgba(0,251,255,0.1); box-shadow:0 0 8px rgba(0,251,255,0.3); }
@@ -38,9 +46,18 @@
     <div class="aib-section">
       <div class="aib-title">③ 難易度</div>
       <div class="aib-opts" id="aib-levels">
-        <div class="aib-opt active" data-v="low" onclick="aibSetLevel(this)">低<br><span style="font-size:10px;">見習いテイマー</span></div>
-        <div class="aib-opt disabled" data-v="mid" title="準備中">中<br><span style="font-size:10px;">ベテランテイマー（準備中）</span></div>
-        <div class="aib-opt disabled" data-v="high" title="準備中">高<br><span style="font-size:10px;">デジモンマスター（準備中）</span></div>
+        <div class="aib-lv active" data-v="low" onclick="aibSetLevel(this)">
+          <div class="aib-lv-icon">🐣</div><div class="aib-lv-rank">低</div><div class="aib-lv-name">見習いテイマー</div>
+          <div class="aib-lv-desc">できることは何でもやる、勢いまかせのテイマー</div>
+        </div>
+        <div class="aib-lv disabled" data-v="mid" title="準備中">
+          <div class="aib-lv-icon">⚔️</div><div class="aib-lv-rank">中</div><div class="aib-lv-name">ベテランテイマー</div>
+          <div class="aib-lv-desc">準備中</div>
+        </div>
+        <div class="aib-lv disabled" data-v="high" title="準備中">
+          <div class="aib-lv-icon">👑</div><div class="aib-lv-rank">高</div><div class="aib-lv-name">デジモンマスター</div>
+          <div class="aib-lv-desc">準備中</div>
+        </div>
       </div>
     </div>
 

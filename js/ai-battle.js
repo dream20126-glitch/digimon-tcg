@@ -15,6 +15,7 @@ let level = 'low';
 let order = 'random';
 // 難易度ごとの AI の名前（対戦画面の相手の名前・ターン開始の表示に出す）
 const AI_NAMES = { low: '見習いテイマー', mid: 'ベテランテイマー', high: 'デジモンマスター' };
+const AI_ICONS = { low: '🐣', mid: '⚔️', high: '👑' };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const countList = (list) => String(list || '').split(',').reduce((s, l) => { const m = l.match(/x(\d+)$/); return s + (m ? parseInt(m[1], 10) : 0); }, 0);
@@ -74,7 +75,7 @@ window.aibSetAiSource = function(src) { if (aiSource !== src) { aiSource = src; 
 window.aibSetLevel = function(el) {
   if (el.classList.contains('disabled')) return;
   level = el.dataset.v;
-  document.querySelectorAll('#aib-levels .aib-opt').forEach((x) => x.classList.toggle('active', x === el));
+  document.querySelectorAll('#aib-levels .aib-lv').forEach((x) => x.classList.toggle('active', x === el));
 };
 window.aibSetOrder = function(el) {
   order = el.dataset.v;
@@ -121,6 +122,7 @@ window.aibStart = async function() {
     if (window._tutorialRunner) { try { window._tutorialRunner.stop(); } catch (_) {} }
     window._aiLevel = level;
     window._aiName = AI_NAMES[level] || 'AI';
+    window._aiIcon = AI_ICONS[level] || '🤖';
     window._aiBattleActive = true;
     // 勝敗が決まったら AI対戦の準備画面に戻る
     window._onGameEnd = () => {
@@ -130,7 +132,7 @@ window.aibStart = async function() {
     };
     await window.startBattleGame({ list: my.list }, { list: ai.list }, playerFirst);
     const oppLabel = document.getElementById('opponent-name-label');
-    if (oppLabel) oppLabel.innerText = '🤖 ' + window._aiName;
+    if (oppLabel) oppLabel.innerText = window._aiIcon + ' ' + window._aiName;
   } catch (e) {
     alert('開始できませんでした: ' + e.message);
   } finally {

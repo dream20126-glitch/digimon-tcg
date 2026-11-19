@@ -432,7 +432,7 @@ window.acceptHand = function() {
   animateSecuritySet(() => {
     addLog('🛡 セキュリティセット完了！');
     // AI対戦「中」: 相手（AI）がマリガンしたかを画面に出してから始める
-    if (window._aiBattleActive && window._aiLevel === 'mid' && !bs._aiMullAnnounced) {
+    if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && !bs._aiMullAnnounced) {
       bs._aiMullAnnounced = true;
       showPhaseAnnounce(bs._aiMulliganed ? '🔄 相手はマリガンしました' : '✋ 相手はマリガンしませんでした', '#ff00fb', () => window._aiAfterSecuritySet());
       return;
@@ -648,10 +648,14 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // AI対戦「中」（ベテランテイマー）のマリガン: 序盤に出せるデジモン（Lv.3 か登場コスト3以下）が1枚も無ければ、
   // プレイヤーの引き直し（doMulligan）と同じく手札をデッキに戻してシャッフルし、5枚引き直す（1回だけ）。低はしない
   bs._aiMulliganed = false; bs._aiMullAnnounced = false;
-  if (window._aiBattleActive && window._aiLevel === 'mid') {
+  // 高（デジモンマスター）: 序盤に出せるデジモンに加えて、次につながる Lv.4（または2枚目の序盤のデジモン）も無ければ引き直す
+  if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high')) {
     const _early = (c) => c && c.type === 'デジモン'
       && (String(c.level) === '3' || (c.playCost !== null && c.playCost !== undefined && c.playCost !== '' && (parseInt(c.playCost, 10) || 0) <= 3));
-    if (!bs.ai.hand.some(_early)) {
+    const _earlyN = bs.ai.hand.filter(_early).length;
+    const _hasLv4 = bs.ai.hand.some(c => c && c.type === 'デジモン' && String(c.level) === '4');
+    const _bad = window._aiLevel === 'high' ? (_earlyN === 0 || (!_hasLv4 && _earlyN < 2)) : _earlyN === 0;
+    if (_bad) {
       bs.ai.deck = shuffle(bs.ai.deck.concat(bs.ai.hand));
       bs.ai.hand = [];
       drawCards('ai', 5);

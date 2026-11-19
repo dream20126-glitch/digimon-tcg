@@ -3157,7 +3157,7 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
   // 中: ブロックするかと、どのデジモンでブロックするかを判断する（【衝突】でブロックが強制なら必ずブロック）
   if (_aiIsMid()) {
     const cands = bs.ai.battleArea.map((c, i) => (_canBlk(c, i) ? i : -1)).filter(i => i >= 0);
-    const pick = _aiMidChooseBlocker(atk, cands, targetIdx);
+    const pick = _aiIsHigh() ? _aiHighChooseBlocker(atk, cands, targetIdx) : _aiMidChooseBlocker(atk, cands, targetIdx);
     if (pick >= 0) blockerIdx = pick;
     else if (forced) blockerIdx = cands.slice().sort((a, b) => _dpOf(bs.ai.battleArea[a]) - _dpOf(bs.ai.battleArea[b]))[0];
     else { addLog('🤖 AIはブロックしなかった'); return false; }
@@ -5151,7 +5151,7 @@ function showBlockerConfirm(card, onYes, onNo) {
 // ===== AI対戦「中」（ベテランテイマー）の判断 =====
 // ルールの処理は低と同じ。変わるのは「どれを選ぶか」だけ
 function _aiIsMid() {
-  return typeof window !== 'undefined' && !!window._aiBattleActive && window._aiLevel === 'mid' && !_onlineMode;
+  return typeof window !== 'undefined' && !!window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && !_onlineMode;
 }
 const _dpOf = (c) => (c ? (parseInt(c.dp, 10) || 0) : 0);
 const _lvOf = (c) => (c ? (parseInt(c.level, 10) || 0) : 0);
@@ -5211,7 +5211,151 @@ function _aiMidChooseBlocker(atk, cands, targetIdx) {
   return -1;
 }
 
+// ===== AI対戦「高」（デジモンマスター）の判断 =====
+// 中の判断（_aiIsMid は高でも true）に加えて、行動の候補ごとに結果を点数で見積もり、一番良いものを選ぶ。
+// ずるはしない: プレイヤーの手札・セキュリティの中身・デッキは見ない（場・枚数・公開情報だけ）
+function _aiIsHigh() { return _aiIsMid() && window._aiLevel === 'high'; }
+const _aiThreat = (c) => (typeof window !== 'undefined' && window._cpuThreat ? window._cpuThreat(c) : _dpOf(c) + _lvOf(c) * 1500);
+// 自分のデジモンを失ったときの痛さ（【消滅時】で得をするデジモンは、身代わりにしても痛くない）
+function _aiOwnValue(c) {
+  if (!c) return 0;
+  let v = _aiThreat(c);
+  if (/【消滅時】/.test(String(c.effect || '') + String(c.evoSourceEffect || ''))) v -= 2500;
+  return v;
+}
+function _aiChecksOf(c) { try { return getSecurityAttackCount(c); } catch (_) { return 1; } }
+const _aiIsDigi = (c) => c && (c.type === 'デジモン' || c.type === 'デュアル');
+function _aiCantHitPlayer(c) {
+  return (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player')) || _aiChecksOf(c) <= 0;
+}
+// このターンに勝ち切れるか: プレイヤーのアクティブなブロッカーが、チェック数の多いアタッカーから順に止めると考えて、
+// 残りのアタッカーでセキュリティを0にしたうえでもう1回プレイヤーにアタックできるか
+function _aiHighLethal(attackers) {
+  let sec = (bs.player.security || []).length;
+  const chk = attackers.filter(c => !_aiCantHitPlayer(c)).map(_aiChecksOf).sort((a, b) => b - a);
+  const blockers = (bs.player.battleArea || []).filter(c => c && _canBlockNow(c) && isBlocker(c)).length;
+  for (const k of chk.slice(blockers)) {
+    if (sec === 0) return true;
+    sec = Math.max(0, sec - k);
+  }
+  return false;
+}
+// 守りを固めるべきか: 次のプレイヤーのターンに来るチェック数の合計が、自分のセキュリティ以上（＝負けうる）か、セキュリティ2枚以下
+function _aiHighDefense() {
+  const sec = (bs.ai.security || []).length;
+  const incoming = (bs.player.battleArea || []).filter(_aiIsDigi).reduce((s, c) => {
+    const pe = c._permEffects || {};
+    let n = 1 + (parseInt(pe.securityAttackPlus, 10) || 0);
+    (c.buffs || []).forEach(b => { if (b && b.type === 'security_attack_plus') n += parseInt(b.value, 10) || 0; });
+    return s + n;
+  }, 0);
+  return sec <= 2 || incoming >= sec;
+}
+// アタッカーとアタック先の組み合わせを全部見積もって、一番良いものを選ぶ。{ atkIdx, tgt } か null（アタックしない）
+//  ・勝ち切れるターン: 全員でプレイヤーへ（ブロックされても続ける）
+//  ・守りを固めるべきとき: 【ブロッカー】のデジモンはアタックせずに残す
+//  ・デジモンを倒す: 倒す相手の脅威（【ブロッカー】はさらに高く）。相打ちは、相手の脅威が自分のデジモンの価値を上回るときだけ
+//  ・セキュリティ: チェック数 ×（相手のセキュリティが2枚以下なら大きく）。ブロックされて負けるなら行かない
+//  同じ相手なら、弱いアタッカーで倒して強いデジモンを残す
+function _aiHighPickAttack(canAttack) {
+  const area = bs.ai.battleArea || [];
+  const idxs = area.map((c, i) => (canAttack(c) ? i : -1)).filter(i => i >= 0);
+  if (idxs.length === 0) return null;
+  const lethal = _aiHighLethal(idxs.map(i => area[i]));
+  const defense = !lethal && _aiHighDefense();
+  const pa = bs.player.battleArea || [];
+  const secLeft = (bs.player.security || []).length;
+  let best = null;
+  const consider = (v, atkIdx, tgt) => { if (!best || v > best.v) best = { v, atkIdx, tgt }; };
+  for (const i of idxs) {
+    const c = area[i];
+    const atkDp = _dpOf(c);
+    if (defense && isBlocker(c)) continue;
+    if (!_aiCantHitPlayer(c)) {
+      const checks = _aiChecksOf(c);
+      if (lethal) consider(1000000 + checks * 10 - atkDp / 1000, i, { mode: 'security' });
+      else if (!_aiPlayerBlockersFor(c, -1).some(b => _dpOf(b) >= atkDp)) {
+        consider(checks * (secLeft <= 2 ? 6000 : 2500) - atkDp * 0.05, i, { mode: 'security' });
+      }
+    }
+    if (lethal) continue;
+    for (let j = 0; j < pa.length; j++) {
+      const d = pa[j];
+      if (!_aiIsDigi(d)) continue;
+      const ok = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(c, d, bs, 'ai') : d.suspended;
+      if (!ok) continue;
+      const win = _dpOf(d) < atkDp, tie = _dpOf(d) === atkDp;
+      if (!win && !tie) continue;
+      if (_aiPlayerBlockersFor(c, j).some(b => _dpOf(b) >= atkDp)) continue;
+      let v = _aiThreat(d) + (isBlocker(d) ? 2500 : 0);
+      if (tie) v -= _aiOwnValue(c);
+      consider(v - atkDp * 0.05, i, { mode: 'digimon', idx: j, def: d });
+    }
+  }
+  return best && best.v > 0 ? { atkIdx: best.atkIdx, tgt: best.tgt } : null;
+}
+// 高のブロック: 勝てるなら一番価値の低い勝てるデジモンで。相打ちは相手の脅威が上なら。
+// 負けるブロックは、プレイヤーへのアタックでチェック数が残りのセキュリティ以上・セキュリティ2枚以下・Sアタック+のときに、
+// 一番価値の低いデジモン（【消滅時】持ちは身代わりに向く）で。自分のデジモンが狙われたときは、そのデジモンの方がずっと価値が高いなら身代わりを出す
+function _aiHighChooseBlocker(atk, cands, targetIdx) {
+  const area = bs.ai.battleArea;
+  const atkDp = _dpOf(atk);
+  const val = (i) => _aiOwnValue(area[i]);
+  const cheap = cands.slice().sort((a, b) => val(a) - val(b));
+  if (targetIdx >= 0 && area[targetIdx] && _dpOf(area[targetIdx]) > atkDp) return -1; // 狙われたデジモンが勝つ
+  const win = cheap.filter(i => _dpOf(area[i]) > atkDp);
+  if (win.length) return win[0];
+  const tie = cheap.filter(i => _dpOf(area[i]) === atkDp);
+  if (tie.length && _aiThreat(atk) >= val(tie[0])) return tie[0];
+  if (cheap.length === 0) return -1;
+  if (targetIdx < 0) {
+    const sec = (bs.ai.security || []).length;
+    const checks = _aiChecksOf(atk);
+    if (sec === 0 || checks >= sec || sec <= 2 || (checks >= 2 && val(cheap[0]) < 9000)) return cheap[0];
+    return -1;
+  }
+  return _aiOwnValue(area[targetIdx]) > val(cheap[0]) + 3000 ? cheap[0] : -1;
+}
+// 高: 相手のデジモンを取り除くオプションは、弱い相手には使わず強い相手が出るまで手札に残す（負けそうなら今使う）
+function _aiHighHoldOption(c) {
+  if (!c || c.type !== 'オプション') return false;
+  if ((bs.ai.security || []).length <= 2) return false;
+  let r = c.recipe;
+  if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
+  const steps = (r && Array.isArray(r.main)) ? r.main.filter(Boolean) : [];
+  const removal = steps.some(st => /^opp/.test(String(st.target || '')) && /^(destroy|bounce|return_deck|dedigivolve|return_hand)$/.test(String(st.action || '')))
+    || (steps.some(st => st.action === 'select' || st.action === 'select_multi') && steps.some(st => st.card && /^(destroy|bounce|return_deck)$/.test(String(st.action || ''))));
+  if (!removal) return false;
+  const maxThreat = Math.max(0, ...(bs.player.battleArea || []).filter(_aiIsDigi).map(_aiThreat));
+  return maxThreat < 9000;
+}
+// 高: 考えている間「👑 デジモンマスターが考え中...」を出す（行動の前に少し待つ）
+function _aiThink(cb) {
+  if (!_aiIsHigh() || typeof document === 'undefined') { cb(); return; }
+  let el = document.getElementById('ai-think-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'ai-think-banner';
+    el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:59000;pointer-events:none;'
+      + 'background:rgba(20,0,30,0.88);border:1px solid #ff00fb;color:#fff;font-size:13px;font-weight:bold;'
+      + 'padding:6px 16px;border-radius:20px;box-shadow:0 0 12px rgba(255,0,251,0.5);white-space:nowrap;';
+    document.body.appendChild(el);
+  }
+  el.innerText = (window._aiIcon || '👑') + ' ' + (window._aiName || 'デジモンマスター') + 'が考え中...';
+  el.style.display = 'block';
+  setTimeout(() => {
+    el.style.display = 'none';
+    if (bs._battleAborted) return;
+    cb();
+  }, 700);
+}
+
+// 高（デジモンマスター）はアタックのたびに「考え中」を出してから決める
 export function aiAttackPhase(callback) {
+  if (_aiIsHigh() && !bs._battleAborted && !(bs.memory > 0 && !bs._aiScriptInProgress)) { _aiThink(() => _aiAttackPhaseBody(callback)); return; }
+  _aiAttackPhaseBody(callback);
+}
+function _aiAttackPhaseBody(callback) {
   hideCombatBackdrop();
   if (bs._battleAborted) return;
   if (_onlineMode) { callback && callback(); return; }
@@ -5252,11 +5396,17 @@ export function aiAttackPhase(callback) {
     return { mode: 'security' };
   };
   let atkIdx = -1, _tgt = null;
-  for (let i = 0; i < bs.ai.battleArea.length; i++) {
-    const c = bs.ai.battleArea[i];
-    if (!_aiCanAttack(c)) continue;
-    const t = _aiPickTarget(c);
-    if (t) { atkIdx = i; _tgt = t; break; }
+  if (_aiIsHigh()) {
+    // 高: アタッカーとアタック先の組み合わせを全部見積もって選ぶ（勝ち切り・守り・脅威の大きい相手から）
+    const _hp = _aiHighPickAttack(_aiCanAttack);
+    if (_hp) { atkIdx = _hp.atkIdx; _tgt = _hp.tgt; }
+  } else {
+    for (let i = 0; i < bs.ai.battleArea.length; i++) {
+      const c = bs.ai.battleArea[i];
+      if (!_aiCanAttack(c)) continue;
+      const t = _aiPickTarget(c);
+      if (t) { atkIdx = i; _tgt = t; break; }
+    }
   }
   if (atkIdx === -1) { callback(); return; }
 
@@ -5705,7 +5855,8 @@ if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowO
 // 中（ベテランテイマー）: 相手に渡すのは3まで（普通のプレイヤーと同じく、出したいカードを出してターンを終える。
 // 先攻1ターン目はメモリー0から始まるので、相手に渡さないと何もできない）。低は10まで（できることは全てやる）
 function aiAvailableMemory(card) {
-  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? Math.min(10, 3 + _aiMidMemoryBonus(card)) : 10) : 0;
+  // 高（デジモンマスター）は基本2まで（相手に渡すメモリーが少ないほど良い）。得な効果のカードはその分多く渡す
+  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? Math.min(10, (_aiIsHigh() ? 2 : 3) + _aiMidMemoryBonus(card)) : 10) : 0;
   return Math.abs(bs.memory) + over;
 }
 // 中: このカードを使うために、相手に3より多くメモリーを渡してもよいか（損得）。カードの効果から得の大きさを見積もる。
@@ -5883,6 +6034,9 @@ function _aiCarryEvolveState(evo, base) {
 // CPU: base に進化できる手札のカードと、その進化コスト（進化条件の色・特徴・名称どおり。払えるものだけ）
 function _aiFindEvolve(base) {
   if (!base || base.cantEvolve || (Array.isArray(base.buffs) && base.buffs.some(b => b && b.type === 'cant_evolve'))) return null;
+  // 高: 進化できるカードを全部比べて、進化後に一番良くなるもの（DP・Lv・【進化時】等の得な効果、安いコスト）を選ぶ
+  let _best = null;
+  const _high = _aiIsHigh();
   for (const c of bs.ai.hand) {
     if (!c || c.type !== 'デジモン') continue;
     // 進化できるか・コストはプレイヤーの進化（doEvolve の _normalEvolve）と同じ判定（代替進化・常在の進化コスト増減も含む）
@@ -5894,9 +6048,11 @@ function _aiFindEvolve(base) {
     if (cost === null || cost === undefined) continue;
     try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
     if (cost > aiAvailableMemory(c)) continue;
-    return { card: c, cost, alt: !!alt };
+    if (!_high) return { card: c, cost, alt: !!alt };
+    const score = _dpOf(c) + _lvOf(c) * 1500 + _aiMidMemoryBonus(c) * 1500 - cost * 300;
+    if (!_best || score > _best.score) _best = { card: c, cost, alt: !!alt, score };
   }
-  return null;
+  return _best;
 }
 
 // 育成フェイズの判断用（battle-phase.js）: この CPU のデジモンを、今のメモリーで手札から進化させられるか
@@ -6023,7 +6179,12 @@ function _aiMidOptionIsWasted(c) {
   return targeted > 0;
 }
 
+// 高（デジモンマスター）は1つ行動するたびに「考え中」を出してから決める
 function aiPlayAuto(callback) {
+  if (_aiIsHigh() && aiCanAct() && !bs._battleAborted) { _aiThink(() => _aiPlayAutoBody(callback)); return; }
+  _aiPlayAutoBody(callback);
+}
+function _aiPlayAutoBody(callback) {
   if (!aiCanAct()) { callback(); return; }
 
   // ① 育成エリアで進化（プレイヤーの doEvolveIku と同じ処理: 代替進化・進化コスト-の予約 → 状態を引き継いだ新しい1体 →
@@ -6065,7 +6226,10 @@ function aiPlayAuto(callback) {
   //    共通の doEvolveFromEffect（状態の引き継ぎ・コスト支払い・進化ドロー・【進化時】）
   // 中: レベルの高いデジモンから進化させる（1体を大きく育てる）。低は並び順のまま
   const _evoOrder = bs.ai.battleArea.map((_, i) => i);
-  if (_aiIsMid()) _evoOrder.sort((a, b) => _lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a]));
+  // 高: このターンにアタックできるデジモン（アクティブで、登場したターンでない）を先に進化させる
+  const _canSwing = (c) => (c && !c.suspended && !c.summonedThisTurn ? 1 : 0);
+  if (_aiIsHigh()) _evoOrder.sort((a, b) => (_canSwing(bs.ai.battleArea[b]) - _canSwing(bs.ai.battleArea[a])) || (_lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a])));
+  else if (_aiIsMid()) _evoOrder.sort((a, b) => _lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a]));
   for (const i of _evoOrder) {
     const base = bs.ai.battleArea[i];
     if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
@@ -6082,12 +6246,16 @@ function aiPlayAuto(callback) {
   const available = aiAvailableMemory();
 
   // ③ オプション/テイマー/デュアル（オプション・デュアルは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
-  const optionOrTamer = bs.ai.hand.find(c =>
+  const _otCands = bs.ai.hand.filter(c =>
     (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
     c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c) &&
     (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai')) &&
-    !(_aiIsMid() && _aiMidOptionIsWasted(c))
+    !(_aiIsMid() && _aiMidOptionIsWasted(c)) &&
+    !(_aiIsHigh() && _aiHighHoldOption(c))
   );
+  // 高: メモリーを増やすテイマーを優先して出す
+  if (_aiIsHigh()) _otCands.sort((a, b) => ((b.type === 'テイマー' && /メモリー/.test(String(b.effect || ''))) ? 1 : 0) - ((a.type === 'テイマー' && /メモリー/.test(String(a.effect || ''))) ? 1 : 0));
+  const optionOrTamer = _otCands[0];
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);
     aiPlayCard(optionOrTamer, handIdx, (turnEnded) => {

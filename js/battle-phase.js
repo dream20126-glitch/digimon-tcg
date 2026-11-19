@@ -1139,6 +1139,14 @@ function _aiMidHoldInNursery(iku) {
   const isDigi = (c) => c && (c.type === 'デジモン' || c.type === 'デュアル');
   if (!(bs.ai.battleArea || []).some(isDigi)) return false;
   if (lv >= 5) return false;
+  // 高（デジモンマスター）: 出してもすぐ倒されそう（相手にこのデジモンよりDPの高いデジモンがいて、ブロッカーでもない）で、
+  // セキュリティに余裕があるなら、今は進化できなくても育成エリアで育て続ける
+  if (window._aiLevel === 'high' && (bs.ai.security || []).length > 2) {
+    const _ikuBlk = !!(iku._permEffects && iku._permEffects.blocker) || /【ブロッカー】|≪ブロッカー≫/.test(String(iku.effect || ''));
+    const _oppMax = Math.max(0, ...(bs.player.battleArea || []).filter(isDigi).map(c => parseInt(c.dp) || 0));
+    // 育たないまま残り続けて孵化できなくならないよう、続けて残すのは2ターンまで
+    if (!_ikuBlk && _oppMax > (parseInt(iku.dp) || 0) && (iku._aiHighHold = (iku._aiHighHold || 0) + 1) <= 2) return true;
+  }
   if (!(window._aiCanEvolveNow && window._aiCanEvolveNow(iku))) return false;
   const oppDigi = (bs.player.battleArea || []).filter(isDigi);
   if ((bs.ai.security || []).length <= 2 && oppDigi.length > 0) {
@@ -1177,7 +1185,7 @@ function aiPhaseBreed() {
   // 育成エリアにLv3以上 → バトルエリアへ移動
   // 中（ベテランテイマー）は状況を見て決める（_aiMidHoldInNursery）。低は Lv3 以上ならすぐ出す
   const _ikuLv = bs.ai.ikusei ? (parseInt(bs.ai.ikusei.level) || 0) : 0;
-  const _midHold = !!(window._aiBattleActive && window._aiLevel === 'mid' && _ikuLv >= 3 && _aiMidHoldInNursery(bs.ai.ikusei));
+  const _midHold = !!(window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && _ikuLv >= 3 && _aiMidHoldInNursery(bs.ai.ikusei));
   if (bs.ai.ikusei && _ikuLv >= 3 && !_midHold) {
     let slot = bs.ai.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }

@@ -4614,14 +4614,37 @@ function _boardCardOf(bs, v) {
 //       'rest'＝相手のデジモンのレスト・ブロックできない等 → アクティブの【ブロッカー】→ アクティブの強い順
 //       'dpminus'＝DPマイナス（opt＝マイナス値）→ 倒しきれる中で強い順 → 倒しきれなければ強い順
 function _cpuMidActive() {
-  return typeof window !== 'undefined' && !!window._aiBattleActive && window._aiLevel === 'mid'
+  return typeof window !== 'undefined' && !!window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high')
     && !(window._isOnlineMode && window._isOnlineMode());
+}
+// 高（デジモンマスター）: 中の判断に加えて、対象の強さを「脅威」で測る（_cpuStrength）
+function _cpuHighActive() {
+  return _cpuMidActive() && window._aiLevel === 'high';
 }
 if (typeof window !== 'undefined') window._cpuMidActive = _cpuMidActive;
 function _cpuStrength(c) {
   if (!c) return -1;
+  if (_cpuHighActive()) return _cpuThreat(c);
   return (parseInt(c.level, 10) || 0) * 100000 + (parseInt(c.dp, 10) || 0) + ((c.stack && c.stack.length) || 0);
 }
+// 高: デジモンの脅威（大きいほど危ない／価値が高い）。DP・Lv に、【ブロッカー】・Sアタック+・≪速攻≫等のキーワード、
+// 進化元の枚数（進化元効果）・持っている効果の多さを足す。プレイヤーにも見える情報だけを使う
+function _cpuThreat(c) {
+  if (!c) return -1;
+  const pe = c._permEffects || {};
+  const txt = String(c.effect || '') + String(c.evoSourceEffect || '');
+  let v = (parseInt(c.dp, 10) || 0) + (parseInt(c.level, 10) || 0) * 1500;
+  if (_cpuIsBlocker(c)) v += 2500;
+  v += (parseInt(pe.securityAttackPlus, 10) || 0) * 4000;
+  ((c.buffs) || []).forEach(b => { if (b && b.type === 'security_attack_plus') v += (parseInt(b.value, 10) || 0) * 4000; });
+  if (pe.rush || /≪速攻≫|【速攻】/.test(txt)) v += 1500;
+  if (pe.piercing || /≪貫通≫|【貫通】/.test(txt)) v += 1500;
+  if (/≪再起動≫|【再起動】/.test(txt)) v += 1000;
+  if (/【アタック時】|【自分のターン開始時】|【相手のターン】/.test(txt)) v += 1000;
+  v += ((c.stack && c.stack.length) || 0) * 600;
+  return v;
+}
+if (typeof window !== 'undefined') window._cpuThreat = _cpuThreat;
 function _cpuIsBlocker(c) {
   if (!c) return false;
   if (c._permEffects && c._permEffects.blocker) return true;

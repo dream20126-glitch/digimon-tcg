@@ -1254,8 +1254,8 @@ function aiPhaseMain() {
         _hooks.aiMainPhase(() => {
           _hooks.aiAttackPhase(() => {
             // AI対戦: アタックの後、残りのメモリー（相手側に渡る分も含めて）で使えるものを使ってからターン終了
-            // 中（ベテランテイマー）はメモリーを相手に渡してまで使わない（自分側の残りで止める）
-            if (window._aiBattleActive && window._aiLevel !== 'mid' && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
+            // 中（ベテランテイマー）も行う（相手に渡すメモリーは3まで。battle-combat.js aiAvailableMemory）
+            if (window._aiBattleActive && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
               window._aiSetOverflow(true);
               _hooks.aiMainPhase(() => { window._aiSetOverflow(false); endAiTurn(); });
               return;

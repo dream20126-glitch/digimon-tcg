@@ -431,6 +431,17 @@ window.acceptHand = function() {
   addLog('🛡 セキュリティをセットしています...');
   animateSecuritySet(() => {
     addLog('🛡 セキュリティセット完了！');
+    // AI対戦「中」: 相手（AI）がマリガンしたかを画面に出してから始める
+    if (window._aiBattleActive && window._aiLevel === 'mid' && !bs._aiMullAnnounced) {
+      bs._aiMullAnnounced = true;
+      showPhaseAnnounce(bs._aiMulliganed ? '🔄 相手はマリガンしました' : '✋ 相手はマリガンしませんでした', '#ff00fb', () => window._aiAfterSecuritySet());
+      return;
+    }
+    window._aiAfterSecuritySet();
+  });
+};
+window._aiAfterSecuritySet = function() {
+  {
     if (isOnlineMode() && !bs.isPlayerTurn) {
       showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
         addLog('⏳ 相手のターン（操作待ち）'); renderAll();
@@ -445,7 +456,7 @@ window.acceptHand = function() {
     } else {
       startFirstTurn();
     }
-  });
+  }
 };
 
 window.doMulligan = function() {
@@ -636,6 +647,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   drawCards('ai', 5);
   // AI対戦「中」（ベテランテイマー）のマリガン: 序盤に出せるデジモン（Lv.3 か登場コスト3以下）が1枚も無ければ、
   // プレイヤーの引き直し（doMulligan）と同じく手札をデッキに戻してシャッフルし、5枚引き直す（1回だけ）。低はしない
+  bs._aiMulliganed = false; bs._aiMullAnnounced = false;
   if (window._aiBattleActive && window._aiLevel === 'mid') {
     const _early = (c) => c && c.type === 'デジモン'
       && (String(c.level) === '3' || (c.playCost !== null && c.playCost !== undefined && c.playCost !== '' && (parseInt(c.playCost, 10) || 0) <= 3));
@@ -643,6 +655,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
       bs.ai.deck = shuffle(bs.ai.deck.concat(bs.ai.hand));
       bs.ai.hand = [];
       drawCards('ai', 5);
+      bs._aiMulliganed = true;
       addLog('🔄 相手がマリガン！手札を引き直しました');
     }
   }

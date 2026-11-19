@@ -5702,7 +5702,12 @@ function aiCanAct() { return bs.memory <= 0; }
 // 払ってメモリーが相手側に移ればターン終了
 let _aiOverflowOK = false;
 if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowOK = !!v; };
-function aiAvailableMemory() { return Math.abs(bs.memory) + (_aiOverflowOK && bs.memory <= 0 ? 10 : 0); }
+// 中（ベテランテイマー）: 相手に渡すのは3まで（普通のプレイヤーと同じく、出したいカードを出してターンを終える。
+// 先攻1ターン目はメモリー0から始まるので、相手に渡さないと何もできない）。低は10まで（できることは全てやる）
+function aiAvailableMemory() {
+  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? 3 : 10) : 0;
+  return Math.abs(bs.memory) + over;
+}
 
 export function aiMainPhase(callback) {
   if (!aiCanAct()) { callback(); return; }

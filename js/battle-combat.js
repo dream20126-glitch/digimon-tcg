@@ -3139,6 +3139,28 @@ if (typeof window !== 'undefined') {
 // callback(ok): アタック宣言そのものの成否を非同期で通知する。when_opp_rest 誘発
 // （オンラインでは相手機への委譲を含む）が完全に解決してからでないと、対象選択・
 // バトル進行に進めない（効果発動ポップアップのOKを待たずバトルが進んでしまう不具合の修正）
+// AI対戦（オフライン）: プレイヤーのアタックを CPU がブロックできるなら、先頭のブロッカーでブロックする。
+// ブロックしたら true（バトルまで進める）。できなければ false（呼び出し元がそのまま続ける）
+function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
+  if (!window._aiBattleActive || _onlineMode || !atk) return false;
+  if ((atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk)) return false;
+  const noEvoOnly = !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo);
+  const blockerIdx = bs.ai.battleArea.findIndex((c, i) => c && i !== targetIdx && _canBlockNow(c) && isBlocker(c)
+    && !(noEvoOnly && (!c.stack || c.stack.length === 0)));
+  if (blockerIdx < 0) return false;
+  const blocker = bs.ai.battleArea[blockerIdx];
+  blocker.suspended = true;
+  addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
+  renderAll();
+  // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
+  fireBlockReactionThen('ai', () => {
+    afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+      resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+    });
+  });
+  return true;
+}
+
 export function startAttack(card, slotIdx, callback) {
   // ≪進撃≫: メモリーが相手側のとき（bs.memory < 0）でも進撃持ちならアタック可（公式ルール 18-16）
   var chargeAllowed = card && hasCharge(card) && bs.memory < 0;
@@ -3431,6 +3453,8 @@ export function resolveAttackTarget(target, targetIdx) {
         // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai'); return; }
+        // AI対戦: CPU はブロックできるならブロックする
+        if (_aiBattleTryBlock(atk, atkSlotIdx, -1)) return;
         resolveSecurityCheck(atk, atkSlotIdx);
       });
     }
@@ -3508,6 +3532,8 @@ export function resolveAttackTarget(target, targetIdx) {
     } else {
       afterAtkEffect(atk, atkSlotIdx, () => { if (_attackerLeftField(atk, atkSlotIdx)) return; atk = _evolvedAttacker(atk, atkSlotIdx);
         const _rt = _consumeRedirectedAttack('digimon', targetIdx);
+        // AI対戦: CPU はブロックできるならブロックする（効果でアタック先が変わったときはブロックの確認をしない）
+        if (!_rt.redirected && _aiBattleTryBlock(atk, atkSlotIdx, _rt.idx)) return;
         resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai');
       });
     }
@@ -5097,17 +5123,34 @@ export function aiAttackPhase(callback) {
   // メモリーが相手（プレイヤー）側に移っていれば AI のターンは終わっている（公式ルール）。アタックしない
   if (bs.memory > 0 && !bs._aiScriptInProgress) { callback(); return; }
   // アタックできるデジモン（自分のメインと同じ条件）: アクティブ・登場したターンでない（≪速攻≫は可）・
-  // 「アタックできない」「レストできない」でない。AI はセキュリティ（プレイヤー）にだけアタックするので、
-  // 「プレイヤーにアタックできない」デジモンはアタックしない
+  // 「アタックできない」「レストできない」でない
   const _aiCanAttack = (c) => {
     if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || c.suspended) return false;
     const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
     if (c.summonedThisTurn && !rush) return false;
     if (c.cantAttack || c.cantRest) return false;
-    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player')) return false;
     return true;
   };
-  const atkIdx = bs.ai.battleArea.findIndex(_aiCanAttack);
+  // アタック先: アタックできる相手のデジモンがいればそのデジモン（先頭から）。いなければプレイヤー（セキュリティ）。
+  // 「プレイヤーにアタックできない」ならプレイヤーは選べない
+  const _aiPickTarget = (c) => {
+    const pa = bs.player.battleArea || [];
+    for (let i = 0; i < pa.length; i++) {
+      const d = pa[i];
+      if (!d || (d.type !== 'デジモン' && d.type !== 'デュアル')) continue;
+      const ok = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(c, d, bs, 'ai') : d.suspended;
+      if (ok) return { mode: 'digimon', idx: i, def: d };
+    }
+    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_attack_player')) return null;
+    return { mode: 'security' };
+  };
+  let atkIdx = -1, _tgt = null;
+  for (let i = 0; i < bs.ai.battleArea.length; i++) {
+    const c = bs.ai.battleArea[i];
+    if (!_aiCanAttack(c)) continue;
+    const t = _aiPickTarget(c);
+    if (t) { atkIdx = i; _tgt = t; break; }
+  }
   if (atkIdx === -1) { callback(); return; }
 
   const atk = bs.ai.battleArea[atkIdx];
@@ -5115,7 +5158,11 @@ export function aiAttackPhase(callback) {
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._attackEndRequested = false;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
-  addLog('🤖 「' + atk.name + '」でアタック！');
+  // アタック対象（cond_attack_target_digimon 等の条件で参照。プレイヤーのアタックと同じ記録）
+  bs._lastAttackTarget = _tgt.mode;
+  bs._lastAttackTargetIdx = _tgt.mode === 'digimon' ? _tgt.idx : -1;
+  bs._lastAttackIsDirect = _tgt.mode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
+  addLog('🤖 「' + atk.name + '」でアタック！ → ' + (_tgt.mode === 'digimon' ? '「' + _tgt.def.name + '」' : 'プレイヤー'));
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
   renderAll();
@@ -5132,7 +5179,7 @@ export function aiAttackPhase(callback) {
         _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
           // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果をプレイヤー側で反応させる
           _hooks.fireOnAttackOppSubjectTriggers('ai', () => {
-            if (window._fireWhenOppAttack) {
+            if (_tgt.mode === 'security' && window._fireWhenOppAttack) {
               window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
             } else { cb(); }
           });
@@ -5140,6 +5187,25 @@ export function aiAttackPhase(callback) {
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
       _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
+    };
+
+    // ブロックされなかったときの続き: デジモンへのアタックならそのデジモンとバトル、プレイヤーならセキュリティチェック
+    const _aiProceed = () => {
+      if (_tgt.mode === 'digimon') {
+        const _defNow = bs.player.battleArea[_tgt.idx];
+        if (!_defNow || !_isSameDigimon(_defNow, _tgt.def)) {
+          // アタック対象がバトルエリアを離れた: バトルは起きずアタック終了
+          addLog('⚔ アタック対象の「' + _tgt.def.name + '」がいないので、バトルは発生しない');
+          renderAll();
+          setTimeout(() => aiAttackPhase(callback), 800);
+          return;
+        }
+        resolveBattleAI(atk, atkIdx, _defNow, _tgt.idx, () => {
+          if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+        });
+        return;
+      }
+      doAiSecurityCheck(atk, atkIdx, callback);
     };
 
     const _afterAnnounce = () => {
@@ -5234,18 +5300,18 @@ export function aiAttackPhase(callback) {
                     });
                   });
                 } else {
-                  doAiSecurityCheck(atk, atkIdx, callback);
+                  _aiProceed();
                 }
               });
             }
           } else {
-            doAiSecurityCheck(atk, atkIdx, callback);
+            _aiProceed();
           }
-        }, { type: 'security' }); };
+        }, _tgt.mode === 'digimon' ? { type: 'digimon', name: _tgt.def.name } : { type: 'security' }); };
         _showBlock();
         return;
       }
-      doAiSecurityCheck(atk, atkIdx, callback);
+      _aiProceed();
     });
     };
 
@@ -5455,7 +5521,8 @@ function aiAvailableMemory() { return Math.abs(bs.memory); }
 
 export function aiMainPhase(callback) {
   if (!aiCanAct()) { callback(); return; }
-  const script = AI_SCRIPTS[bs.turn];
+  // AI_SCRIPTS は昔のデモ用（1ターン目にベムモンを出す）。AI対戦では使わない
+  const script = window._aiBattleActive ? null : AI_SCRIPTS[bs.turn];
   if (script && script.play && script.play.length > 0) {
     aiPlayScript([...script.play], callback);
   } else {

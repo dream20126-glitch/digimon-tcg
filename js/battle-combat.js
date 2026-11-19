@@ -3146,7 +3146,11 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
   if (!window._aiBattleActive || _onlineMode || !atk) return false;
   if ((atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk)) return false;
   const noEvoOnly = !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo);
-  const blockerIdx = bs.ai.battleArea.findIndex((c, i) => c && i !== targetIdx && _canBlockNow(c) && isBlocker(c)
+  // 【衝突】: このデジモンのアタック中、相手（CPU）のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない
+  // （オンラインの防御側 checkOnlineBlock と同じ判定）
+  const forced = _hasCollision(atk, 'player');
+  const blockerIdx = bs.ai.battleArea.findIndex((c, i) => c && i !== targetIdx && _canBlockNow(c)
+    && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))
     && !(noEvoOnly && (!c.stack || c.stack.length === 0)));
   if (blockerIdx < 0) return false;
   const blocker = bs.ai.battleArea[blockerIdx];
@@ -3241,11 +3245,12 @@ function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
 
 // 【衝突】を持つか（このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない）。
 // オンラインではブロックするかどうかは防御側の端末が決めるので、アタック宣言コマンドに載せて伝える（巨神兵器 BT26-085）
-function _hasCollision(card) {
+// side: アタックしているデジモンの側（省略時 'player'。CPU のアタックでは 'ai'）
+function _hasCollision(card, side) {
   if (!card) return false;
   if (card._permEffects && card._permEffects.collision) return true;
   if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_collision')) return true;
-  try { return !!_cardHasActivePassiveFlag(card, 'collision', bs, 'player'); } catch (_) { return false; }
+  try { return !!_cardHasActivePassiveFlag(card, 'collision', bs, side || 'player'); } catch (_) { return false; }
 }
 
 // オンライン対戦: デジモンアタックの宣言送信 → ブロック応答待ち → バトル解決。
@@ -3649,7 +3654,13 @@ function _afterAtkEffectBody(atk, atkSlotIdx, callback) {
       // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
       _hooks.fireOnAttackBothSubjectTriggers('player', () => {
         // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果を相手側で反応させる
-        _hooks.fireOnAttackOppSubjectTriggers('player', () => callback());
+        _hooks.fireOnAttackOppSubjectTriggers('player', () => {
+          // オフライン（CPU 戦）: プレイヤーへのアタックなら CPU 側の「相手のデジモンがプレイヤーにアタックしたとき」
+          // （when_opp_attack）を発揮する。CPU のアタックでプレイヤー側に出しているのと同じ。オンラインは相手の端末が発揮する
+          if (!_onlineMode && bs._lastAttackTarget === 'security' && !bs._attackEndRequested && window._fireWhenOppAttack) {
+            window._fireWhenOppAttack('player', bs, { bs, addLog, renderAll, updateMemGauge }, () => callback());
+          } else callback();
+        });
       });
     };
     try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, _afterKw); }
@@ -4049,20 +4060,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
           // セキュリティ効果を発揮させずトラッシュへ。★オンライン分岐より前に判定する
           // （オンライン時は下の return で素通りしてしまうため）。
           // _permEffects 優先・未評価でも recipe.passive を直接スキャンしてフォールバック。
-          const _atkSuppressOptSE = !!(atk && (
-            (atk._permEffects && atk._permEffects.suppressOptSecurityEffect) ||
-            (function () {
-              try {
-                const r = typeof atk.recipe === 'string'
-                  ? JSON.parse(atk.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
-                  : atk.recipe;
-                const ps = r && r.passive;
-                return Array.isArray(ps) && ps.some(function (p) {
-                  return p && (p.flag === 'suppress_opt_security_effect' || p.flag === 'security_effect');
-                });
-              } catch (_) { return false; }
-            })()
-          ));
+          const _atkSuppressOptSE = _atkSuppressesOptSecurityEffect(atk);
           if (_atkSuppressOptSE && sec.type === 'オプション') {
             addLog('🚫 ≪オプションSE無効化≫:「' + sec.name + '」のセキュリティ効果は発揮しない');
             // オンライン: P2 のセキュリティカードは既に security_remove で除去済。
@@ -4151,6 +4149,25 @@ export function resolveSecurityCheck(atk, atkIdx) {
 }
 // 貫通効果のオンライン処理用: ブロック解決(防御側)から攻撃側へ追加セキュリティチェックを依頼するため公開
 if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurityCheck;
+
+// ≪オプションのセキュリティ効果無効化≫（ウォーグレイモン等）をアタッカーが持つか（プレイヤー・CPU のアタック共通）。
+// _permEffects 優先・未評価でも recipe.passive を直接スキャンしてフォールバック
+function _atkSuppressesOptSecurityEffect(atk) {
+  return !!(atk && (
+    (atk._permEffects && atk._permEffects.suppressOptSecurityEffect) ||
+    (function () {
+      try {
+        const r = typeof atk.recipe === 'string'
+          ? JSON.parse(atk.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
+          : atk.recipe;
+        const ps = r && r.passive;
+        return Array.isArray(ps) && ps.some(function (p) {
+          return p && (p.flag === 'suppress_opt_security_effect' || p.flag === 'security_effect');
+        });
+      } catch (_) { return false; }
+    })()
+  ));
+}
 
 // チェックしたセキュリティがデジモンで【セキュリティ】効果を持つなら、セキュリティデジモンとのバトルの前に発揮する
 // （公式ルール 13-1-8-2: チェックによって誘発した効果を解決してから 13-1-8-3 のバトルへ）。オンラインは持ち主（防御側）の端末で
@@ -4647,7 +4664,19 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                 });
                 return;
               }
-              _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk }, { player: def });
+              _fireDestroyChain(['player'], () => {
+                // 防御側（CPU）が atk を撃破して生存 →「バトルに勝ったとき」（on_battle_win）。CPU のアタックで
+                // プレイヤーの防御側が勝ったとき（resolveBattleAI）と同じ。オンラインは相手の端末が発揮するのでここでは出さない
+                if (_onlineMode || !def || bs.ai.battleArea.indexOf(def) < 0) { checkPendingTurnEnd(); return; }
+                bs._lastBattleWinner = def;
+                bs._lastBattleDefeatedCard = atk;
+                const winCtx = _hooks.makeEffectContext(def, 'ai');
+                _hooks.triggerEffect('on_battle_win', def, 'ai', winCtx, () => {
+                  bs._lastBattleWinner = null;
+                  bs._lastBattleDefeatedCard = null;
+                  checkPendingTurnEnd();
+                });
+              }, { player: atk }, { player: def });
             });
           }, 'Win!!', '#00ff88');
         },
@@ -4667,6 +4696,8 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
   _beginAttackResolution();
   atk = _evolvedInSlot(atk, 'ai', atkIdx);
   def = _evolvedInSlot(def, 'player', defIdx);
+  // 比べるDPは付与中のバフから計算し直した値にする（プレイヤーのアタックの resolveBattle と同じ）
+  try { if (window._recalcDp) { window._recalcDp(atk); window._recalcDp(def); } } catch (_) {}
   showCombatBackdrop();
   const origCb = callback;
   callback = () => { hideCombatBackdrop(); origCb(); };
@@ -5112,6 +5143,8 @@ export function aiAttackPhase(callback) {
   hideCombatBackdrop();
   if (bs._battleAborted) return;
   if (_onlineMode) { callback && callback(); return; }
+  // 前の CPU のアタックは終わっている（_aiAttackEnd で外す。保険）
+  _attackInProgress = false;
   // 前のアタックのセキュリティチェック・バトルの解決が終わった: 保留していた DP0 の消滅（ルールチェック）を行ってから次へ
   if (bs._attackResolving) {
     bs._attackResolving = false;
@@ -5154,7 +5187,23 @@ export function aiAttackPhase(callback) {
   }
   if (atkIdx === -1) { callback(); return; }
 
-  const atk = bs.ai.battleArea[atkIdx];
+  // アタック中に進化（アーツ進化等）したら、進化後のカードを同じデジモンのアタッカーとして扱う（プレイヤーの _evolvedAttacker と同じ）
+  let atk = bs.ai.battleArea[atkIdx];
+  const _evolvedAiAttacker = () => {
+    const cur = bs.ai.battleArea[atkIdx];
+    if (cur && cur !== atk && _isSameDigimon(cur, atk)) atk = cur;
+    return atk;
+  };
+  // このアタックが終わった後: 次のアタッカーへ（チュートリアルのスクリプトなら呼び出し元へ）
+  const _nextAttacker = () => {
+    if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+  };
+  // アタックの終了: 【アタック終了時】・「アタック終了まで」の期限切れ・保留していた DP0 の消滅等（プレイヤーの checkAttackEnd と同じ）
+  const _endAiAttack = () => _aiAttackEnd(atk, atkIdx, _nextAttacker);
+  // プレイヤーのアタック（startAttack）と同じく、アタックの処理中の印を立てる（アタック終了の _attackEndCommon で外す）。
+  // アタック中は保留中の DP0 の消滅・【衝突】のブロッカー等がアタック中として扱われる
+  _attackInProgress = true;
+  if (typeof window !== 'undefined') window._destroyFxBatch = null;
   atk.suspended = true;
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._attackEndRequested = false;
@@ -5175,16 +5224,23 @@ export function aiAttackPhase(callback) {
     const doAfterAtkEffect = (cb) => {
       // アタッカーの【アタック時】効果 → その後に防御側の
       // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
-      const _afterAtkTime = () => {
+      const _afterKw = () => {
         // subject:"both"（お互いのターンでアタック時発動）の進化元効果をプレイヤー側で反応させる
         _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
           // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果をプレイヤー側で反応させる
           _hooks.fireOnAttackOppSubjectTriggers('ai', () => {
-            if (_tgt.mode === 'security' && window._fireWhenOppAttack) {
+            if (_tgt.mode === 'security' && window._fireWhenOppAttack && !bs._attackEndRequested) {
               window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
             } else { cb(); }
           });
         });
+      };
+      // アタックしたデジモンのキーワード（【突進】【衝突】【プログレス】等の on_attack 型）は、【アタック時】の後、
+      // 相手の「アタックしたとき」より先に処理する（プレイヤーのアタックの _afterAtkEffectBody と同じ。CPU は任意効果を自動で使う）
+      const _afterAtkTime = () => {
+        const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+        try { _fireKeywordAttackEffects(_evolvedAiAttacker(), 'ai', bs, ctxBase, _afterKw); }
+        catch (e) { console.error('[aiAttack keyword]', e); _afterKw(); }
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
       _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
@@ -5192,21 +5248,37 @@ export function aiAttackPhase(callback) {
 
     // ブロックされなかったときの続き: デジモンへのアタックならそのデジモンとバトル、プレイヤーならセキュリティチェック
     const _aiProceed = () => {
+      _evolvedAiAttacker();
       if (_tgt.mode === 'digimon') {
         const _defNow = bs.player.battleArea[_tgt.idx];
         if (!_defNow || !_isSameDigimon(_defNow, _tgt.def)) {
           // アタック対象がバトルエリアを離れた: バトルは起きずアタック終了
           addLog('⚔ アタック対象の「' + _tgt.def.name + '」がいないので、バトルは発生しない');
           renderAll();
-          setTimeout(() => aiAttackPhase(callback), 800);
+          _endAiAttack();
           return;
         }
-        resolveBattleAI(atk, atkIdx, _defNow, _tgt.idx, () => {
-          if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
-        });
+        resolveBattleAI(atk, atkIdx, _defNow, _tgt.idx, _endAiAttack);
         return;
       }
-      doAiSecurityCheck(atk, atkIdx, callback);
+      doAiSecurityCheck(atk, atkIdx, _endAiAttack);
+    };
+    // プレイヤーがブロックした: プレイヤー側ブロッカーがレストした → AI 側 when_opp_rest + プレイヤー側 when_own_block 発火
+    // → 「ブロックされたとき」→ バトル
+    const _aiBlocked = (blockerIdx) => {
+      const blocker = bs.player.battleArea[blockerIdx];
+      if (!blocker) { _aiProceed(); return; }
+      blocker.suspended = true;
+      addLog('🛡 「' + blocker.name + '」でブロック！');
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
+      }
+      renderAll();
+      fireBlockReactionThen('player', () => {
+        afterBlockedEffect(_evolvedAiAttacker(), atkIdx, 'ai', () => {
+          resolveBattleAI(_evolvedAiAttacker(), atkIdx, blocker, blockerIdx, _endAiAttack);
+        });
+      });
     };
 
     const _afterAnnounce = () => {
@@ -5219,19 +5291,24 @@ export function aiAttackPhase(callback) {
         addLog(_aiEnded ? '✋ 「' + atk.name + '」のアタックは効果で終了した' : '⚔ アタック中の「' + atk.name + '」がバトルエリアにいないので、アタックは成立しない');
         bs._redirectedAttack = null;
         renderAll();
-        if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+        // プレイヤーのアタック（_attackerLeftField → checkAttackEnd）と同じくアタック終了の処理をする
+        _endAiAttack();
         return;
       }
-      // こちらの効果（【カウンター】の「アタックの対象を自分のデジモン1体に変更できる」等）でアタックの対象が変わっていれば、
-      // ブロックの確認は出さずに変更先とバトルする（変更先はもう選んでいる。ユーザー決定事項）
+      // アタック時の効果の間に進化していれば、進化後のカードがアタッカー（同じデジモン）
+      _evolvedAiAttacker();
+      // こちらの効果（【カウンター】の「アタックの対象を自分のデジモン1体に変更できる」等）や CPU の【突進】でアタックの対象が
+      // 変わっていれば、ブロックの確認は出さずに変更先とバトルする（変更先はもう選んでいる。ユーザー決定事項）
       {
         const _ra = bs._redirectedAttack;
         bs._redirectedAttack = null;
-        const _raDef = _ra && _ra.side === 'player' ? bs.player.battleArea[_ra.idx] : null;
+        // 「アタックの対象は変更されない」: アタッカー自身か元の宣言先のデジモンが持つなら変更しない
+        // （プレイヤーのアタックの _consumeRedirectedAttack と同じ）
+        const _origDef = _tgt.mode === 'digimon' ? bs.player.battleArea[_tgt.idx] : null;
+        const _raLocked = _cantRedirectAttack(atk) || !!(_origDef && _origDef.cantRedirectAttack);
+        const _raDef = (!_raLocked && _ra && _ra.side === 'player') ? bs.player.battleArea[_ra.idx] : null;
         if (_raDef) {
-          resolveBattleAI(atk, atkIdx, _raDef, _ra.idx, () => {
-            if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
-          });
+          resolveBattleAI(atk, atkIdx, _raDef, _ra.idx, _endAiAttack);
           return;
         }
       }
@@ -5253,53 +5330,39 @@ export function aiAttackPhase(callback) {
       const atkCantBeBlocked = (atk && atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk);
       // 「進化元を持たないデジモンにはブロックされない」(イッカクモン等)
       const atkCantBeBlockedByNoEvo = atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo;
+      // 【衝突】: CPU のデジモンのアタック中、プレイヤーのデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない
+      // （オンラインの防御側 checkOnlineBlock と同じ判定。ブロックするデジモンはプレイヤーが選ぶ）
+      const forcedBlock = _hasCollision(atk, 'ai');
       bs.player.battleArea.forEach((c, i) => {
-        if (c && _canBlockNow(c) && isBlocker(c)) {
+        if (c && _canBlockNow(c) && (forcedBlock ? (!c.type || c.type === 'デジモン') : isBlocker(c))) {
           if (atkCantBeBlocked) return; // ブロックされない: スキップ
           if (atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
           blockerIndices.push(i);
         }
       });
 
+      if (forcedBlock && blockerIndices.length > 0) {
+        // 【衝突】のブロックは強制: 「ブロックしますか？」は出さず、ブロックするデジモンを選ぶだけ（1体なら自動）。
+        // 選択をキャンセルしても必ずどれかでブロックする（選び直し）
+        addLog('💥 相手の「' + atk.name + '」の【衝突】: ブロックしなければならない');
+        if (blockerIndices.length === 1) { _aiBlocked(blockerIndices[0]); return; }
+        const _pickForced = () => showBlockerSelection(blockerIndices, atk, (selectedIdx) => {
+          if (selectedIdx !== null && blockerIndices.includes(selectedIdx)) _aiBlocked(selectedIdx);
+          else _pickForced();
+        });
+        _pickForced();
+        return;
+      }
       if (blockerIndices.length > 0) {
         // チュートリアル: ブロック確認画面の前に割り込み
-        // aiAttackPhase: 常にセキュリティアタック
         const _showBlock = () => { window._blockConfirmCands = blockerIndices; return showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
           if (doBlock) {
             if (blockerIndices.length === 1) {
-              const blockerIdx = blockerIndices[0];
-              const blocker = bs.player.battleArea[blockerIdx];
-              blocker.suspended = true;
-              addLog('🛡 「' + blocker.name + '」でブロック！');
-              if (window._tutorialRunner && window._tutorialRunner.active) {
-                try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
-              }
-              renderAll();
-              // プレイヤー側ブロッカーがレストした → AI 側 when_opp_rest + プレイヤー側 when_own_block 発火
-              fireBlockReactionThen('player', () => {
-                afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                  resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
-                    if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
-                  });
-                });
-              });
+              _aiBlocked(blockerIndices[0]);
             } else {
               showBlockerSelection(blockerIndices, atk, (selectedIdx) => {
                 if (selectedIdx !== null) {
-                  const blocker = bs.player.battleArea[selectedIdx];
-                  blocker.suspended = true;
-                  addLog('🛡 「' + blocker.name + '」でブロック！');
-                  if (window._tutorialRunner && window._tutorialRunner.active) {
-                    try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
-                  }
-                  renderAll();
-                  fireBlockReactionThen('player', () => {
-                    afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                      resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
-                        if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
-                      });
-                    });
-                  });
+                  _aiBlocked(selectedIdx);
                 } else {
                   _aiProceed();
                 }
@@ -5334,9 +5397,12 @@ export function aiAttackPhase(callback) {
 
 // ===== AIセキュリティチェック =====
 
-export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
+// callback: このセキュリティチェックが全て終わったら呼ぶ（次のアタッカーへ進むのは呼び出し側。以前は中で aiAttackPhase を
+// 呼んでいたため、≪貫通≫のセキュリティチェックの後の「バトルに勝ったとき」・消滅時効果の順番が崩れていた）
+export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks, _checksDone) {
   _beginAttackResolution();
   showCombatBackdrop();
+  _checksDone = _checksDone || 0;
   // Sアタック+Nのチェック枚数は最初の呼び出し時にセットし、各チェックで -1
   if (_remainingChecks === undefined) {
     _remainingChecks = getSecurityAttackCount(atk);
@@ -5344,7 +5410,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
       addLog('⚔ AI「' + atk.name + '」のセキュリティチェック x' + _remainingChecks + '！');
       // プレイヤーと同じく「⚔ セキュリティアタック+N！！」アナウンス演出を挟んでから開始
       showSAttackPlusAnnounce(_remainingChecks - 1, () =>
-        doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks)
+        doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks, _checksDone)
       );
       return;
     }
@@ -5354,13 +5420,34 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
     showBattleResult('チェックなし', '#3399ff', _saMinusLabel(atk) + 'のため、セキュリティチェックできません', () => {
       hideCombatBackdrop();
-      if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+      callback && callback();
     });
     return;
   }
-  // _remainingChecks -1 にしてから1枚めくる。0になったら次のアタッカー/callback へ、残があればこの関数を再帰
+  // プレイヤーのアタック（resolveSecurityCheck の doNextCheck）と同じく、1枚ごとにアタッカーを確かめる:
+  // 進化していれば進化後のカードでアタックを続け、場を離れていればアタック終了。Sアタック+が失われていれば終了
+  {
+    const _curAtk = bs.ai.battleArea[atkIdx];
+    if (_curAtk && _curAtk !== atk && _isSameDigimon(_curAtk, atk)) {
+      addLog('⬆ アタッカー「' + atk.name + '」が「' + _curAtk.name + '」になった（同じデジモンなのでアタック継続）');
+      atk = _curAtk;
+    }
+    if (bs.ai.battleArea[atkIdx] !== atk) {
+      addLog('⚔ アタッカーが場を離れたためセキュリティチェックを終了');
+      hideCombatBackdrop();
+      callback && callback();
+      return;
+    }
+    if (_checksDone > 0 && _checksDone + 1 > getSecurityAttackCount(atk)) {
+      addLog('⚔ Sアタック+効果が失われたためセキュリティチェック終了');
+      hideCombatBackdrop();
+      callback && callback();
+      return;
+    }
+  }
+  // _remainingChecks -1 にしてから1枚めくる。0になったら callback へ、残があればこの関数を再帰
   const _nextRemaining = Math.max(0, _remainingChecks - 1);
-  const _checkNumber = (getSecurityAttackCount(atk) - _nextRemaining);
+  const _checkNumber = _checksDone + 1;
   // Sアタック+表示ラベル (複数チェックのみ)
   if (getSecurityAttackCount(atk) > 1) {
     const labelText = _checkNumber + '枚目';
@@ -5377,14 +5464,14 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
       setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2800);
     }
   }
-  // 次の接続: 残があれば同じアタッカーで続ける、なければ aiAttackPhase or callback
+  // 次の接続: 残があれば同じアタッカー（進化していれば進化後）で続ける、なければ callback
   const _afterOne = () => {
-    if (_nextRemaining > 0 && bs.ai.battleArea[atkIdx] === atk && bs.player.security.length > 0) {
-      setTimeout(() => doAiSecurityCheck(atk, atkIdx, callback, _nextRemaining), 500);
-    } else if (bs._aiScriptInProgress) {
-      callback && callback();
+    const _curA = bs.ai.battleArea[atkIdx];
+    if (_nextRemaining > 0 && _curA && _isSameDigimon(_curA, atk) && bs.player.security.length > 0) {
+      setTimeout(() => doAiSecurityCheck(atk, atkIdx, callback, _nextRemaining, _checkNumber), 500);
     } else {
-      setTimeout(() => aiAttackPhase(callback), 800);
+      hideCombatBackdrop();
+      callback && callback();
     }
   };
   if (bs.player.security.length > 0) {
@@ -5402,6 +5489,16 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
           // CPU のデジモンが負けた（相打ち含む）: 消滅回避（キーワード・「消滅するとき〜消滅しない」）を先に確認する
           // （以前は確認しておらず、CPU の【防壁】【フラグメント】等が発動しなかった）
           const _aiTie = atk.dp === sec.dp;
+          // ≪ジャミング≫: セキュリティデジモンとのバトルでは消滅しない（プレイヤーのアタックと同じ）
+          if (hasJamming(atk)) {
+            const _secToHandJ = _secDigimonToZone(sec, bs.player, false);
+            renderAll();
+            addLog('🛡 【ジャミング】「' + atk.name + '」がセキュリティバトルで消滅回避');
+            showBattleResult('ジャミング！', '#ff00fb', '相手「' + atk.name + '」が消滅を回避', () => {
+              showSecurityDigimonLeave(sec, _aiTie, _secToHandJ, 'player', () => { renderAll(); _afterOne(); });
+            }, 'ジャミング！', '#ff00fb');
+            return;
+          }
           _avoidBattleDestroy('ai', atk, (canceledAi) => {
             if (canceledAi) {
               const _secToHand = _secDigimonToZone(sec, bs.player, false);
@@ -5460,6 +5557,16 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         addLog('✦ セキュリティ効果：「' + sec.name + '」');
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
         const hasSecInEffect = _hasRecipeTrigger(sec, 'security');
+        // ≪オプションのセキュリティ効果無効化≫: CPU のアタッカーが持つなら、チェックしたオプションの【セキュリティ】は発揮しない
+        // （プレイヤーのアタックと同じ）
+        if ((hasSecField || hasSecInEffect) && sec.type === 'オプション' && _atkSuppressesOptSecurityEffect(atk)) {
+          addLog('🚫 ≪オプションSE無効化≫:「' + sec.name + '」のセキュリティ効果は発揮しない');
+          bs.player.trash.push(sec);
+          renderAll();
+          hideCombatBackdrop();
+          _showEffectAnnounce(atk, 'チェックしたオプションカード「' + sec.name + '」の【セキュリティ】効果は発揮しない', 'ai', () => _afterOne());
+          return;
+        }
         if (hasSecField || hasSecInEffect) {
           const secText = hasSecField ? sec.securityEffect : sec.effect;
           const originalEffect = sec.effect || '';
@@ -5912,39 +6019,7 @@ export async function checkPendingTurnEnd() {
   }
   // ≪貫通≫のセキュリティチェック中にアタックしたデジモンが消滅した等でここに来たら、キューの残りに戻る
   if (_resumeAfterPenetrate()) return;
-  // 保険: 後回しにした非ターンプレイヤー側の効果が残っていれば、アタックを終える前に発揮する
-  if (typeof window !== 'undefined' && window._hasNonTurnDeferred && window._hasNonTurnDeferred()) {
-    await new Promise((resolve) => window._flushNonTurnDeferred(resolve));
-  }
-  _attackInProgress = false;
-  bs._attackResolving = false;
-  // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
-  _expireBuffs(bs, 'dur_until_attack_end');
-  // アタックが終わればバトルも終わっている: 「バトル終了まで」（≪プログレス≫の「アタック中、相手の効果を受けない」等）も外す
-  // （セキュリティデジモンとのバトルやバトルの無いアタックでは外れずに残っていた）
-  _expireBuffs(bs, 'dur_until_battle_end');
-  hideCombatBackdrop();
-  // アタック中に保留していた DP0 の消滅（ルールチェック）を、アタックの処理が全て終わったここで行う
-  if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {
-    await new Promise((resolve) => window._runRuleDestroyCheckNow(resolve));
-  }
-  // バトル中の「離れるとき」等で保留した「〜したとき」の反応（【デコード】で登場したデジモンの【登場時】等）を処理する
-  if (typeof window !== 'undefined' && typeof window._drainPendingReactions === 'function') {
-    await new Promise((resolve) => window._drainPendingReactions(resolve));
-  }
-  // 相手の端末にもアタックの終了を伝える（相手側で保留している DP0 の消滅をここで行ってもらう）
-  if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'attack_end' }); } catch (_) {} }
-  // アタックが終わったので【衝突】のブロッカーを外す
-  if (typeof window !== 'undefined' && window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
-  renderAll();
-  // バトル中の「離れるとき」で進化して保留していた【進化時】を、バトルの消滅処理が終わったここで発揮する
-  // （ターンプレイヤー＝自分の分を先に、相手の端末に残っている分を後に）
-  if (Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0) {
-    await new Promise((resolve) => flushDeferredEvoTriggers(resolve));
-  }
-  if (bs._oppDeferredEvoPending && typeof window._flushOppDeferredEvo === 'function') {
-    await new Promise((resolve) => window._flushOppDeferredEvo(resolve));
-  }
+  await _attackEndCommon();
   // チュートリアル通知: バトル解決完了（attack_resolved 条件用）
   if (window._tutorialRunner && window._tutorialRunner.active) {
     try {
@@ -5982,6 +6057,63 @@ export async function checkPendingTurnEnd() {
     bs._pendingTurnEnd = false;
     checkAutoTurnEnd();
   }
+}
+
+// アタックの終了（公式ルール 11-6）のルールの処理。プレイヤーのアタック（checkPendingTurnEnd）と CPU のアタック（_aiAttackEnd）で共通:
+// 後回しにした非ターンプレイヤー側の効果 → 「アタック終了まで」「バトル終了まで」の期限切れ → 保留していた DP0 の消滅 →
+// 保留した「〜したとき」の反応 → 【衝突】のブロッカーを外す → 保留していた【進化時】
+async function _attackEndCommon() {
+  // 保険: 後回しにした非ターンプレイヤー側の効果が残っていれば、アタックを終える前に発揮する
+  if (typeof window !== 'undefined' && window._hasNonTurnDeferred && window._hasNonTurnDeferred()) {
+    await new Promise((resolve) => window._flushNonTurnDeferred(resolve));
+  }
+  _attackInProgress = false;
+  bs._attackResolving = false;
+  // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
+  _expireBuffs(bs, 'dur_until_attack_end');
+  // アタックが終わればバトルも終わっている: 「バトル終了まで」（≪プログレス≫の「アタック中、相手の効果を受けない」等）も外す
+  // （セキュリティデジモンとのバトルやバトルの無いアタックでは外れずに残っていた）
+  _expireBuffs(bs, 'dur_until_battle_end');
+  hideCombatBackdrop();
+  // アタック中に保留していた DP0 の消滅（ルールチェック）を、アタックの処理が全て終わったここで行う
+  if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {
+    await new Promise((resolve) => window._runRuleDestroyCheckNow(resolve));
+  }
+  // バトル中の「離れるとき」等で保留した「〜したとき」の反応（【デコード】で登場したデジモンの【登場時】等）を処理する
+  if (typeof window !== 'undefined' && typeof window._drainPendingReactions === 'function') {
+    await new Promise((resolve) => window._drainPendingReactions(resolve));
+  }
+  // 相手の端末にもアタックの終了を伝える（相手側で保留している DP0 の消滅をここで行ってもらう）
+  if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'attack_end' }); } catch (_) {} }
+  // アタックが終わったので【衝突】のブロッカーを外す
+  if (typeof window !== 'undefined' && window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
+  renderAll();
+  // バトル中の「離れるとき」で進化して保留していた【進化時】を、バトルの消滅処理が終わったここで発揮する
+  // （ターンプレイヤー＝自分の分を先に、相手の端末に残っている分を後に）
+  if (Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0) {
+    await new Promise((resolve) => flushDeferredEvoTriggers(resolve));
+  }
+  if (bs._oppDeferredEvoPending && typeof window._flushOppDeferredEvo === 'function') {
+    await new Promise((resolve) => window._flushOppDeferredEvo(resolve));
+  }
+}
+
+// CPU のアタックの終了: プレイヤーのアタックの checkAttackEnd → checkPendingTurnEnd と同じ処理を side='ai' で行う。
+// アタックしたデジモン（進化していれば進化後）が場に残っていれば【アタック終了時】を発揮し、アタック終了のルールの処理
+// （_attackEndCommon）をしてから next（次のアタッカーへ）
+function _aiAttackEnd(atk, atkIdx, next) {
+  const finish = () => {
+    _attackEndCommon().catch((e) => console.error('[_aiAttackEnd]', e)).then(() => { next && next(); });
+  };
+  const cur = bs.ai.battleArea[atkIdx];
+  if (cur && _isSameDigimon(cur, atk)) {
+    hideCombatBackdrop();
+    renderAll();
+    try { _hooks.checkAndTriggerEffect(cur, '【アタック終了時】', finish, 'ai'); }
+    catch (e) { console.error('[_aiAttackEnd]', e); finish(); }
+    return;
+  }
+  finish();
 }
 
 // checkPendingTurnEnd からアタック解決の付随処理（_attackInProgress解除・

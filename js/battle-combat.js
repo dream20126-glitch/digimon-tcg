@@ -1507,17 +1507,32 @@ function _pickCostFromList(raw, typeIdx, sameTypeCount) {
 // （evolveCostNameRaw）のいずれかから値を選ぶ（「登場コストNの『XXX』」クローズも
 // name種別としてこの名称列を共用する）。列ごとに単一値/同種別クローズ数分だけ・区切り、
 // を選べる。他の種別の列数は互いに影響しない。
+// カードごとに、各クローズがどのコスト列の何番目を使うかを決める。
+// 名称と特徴の両方を指定したクローズ（「名称に「アグモン」を含み特徴「恐竜型」を持つLv.3」ST24-05）は、
+// 名称列に値があれば名称列、名称列が空（なし）なら特徴列を使う（どちらに書いてもよい。2026-11-21 ユーザー指定）。
+// 戻り値: [{ entry, type, typeIdx }]（進化条件の並び順）と counts（種別ごとのクローズ数）
+function _evoCostPlan(card) {
+  const entries = _parseEvolveCond(card && card.evolveCond);
+  const nameEmpty = _pickCostFromList(card && card.evolveCostNameRaw, 0, 1) == null;
+  const counts = { color: 0, feature: 0, name: 0 };
+  const plan = entries.map((entry) => {
+    let type = entry.type;
+    if (type === 'name' && nameEmpty && entry.kinds.includes('name') && entry.kinds.includes('feature')) type = 'feature';
+    return { entry, type, typeIdx: counts[type]++ };
+  });
+  return { plan, counts };
+}
+function _evoCostRawByType(card) {
+  return { color: card.evolveCostRaw, feature: card.evolveCostFeatureRaw, name: card.evolveCostNameRaw };
+}
+
 export function getEvolveCostFor(evoCard, baseCard) {
   const match = _resolveEvolveMatch(evoCard, baseCard);
   if (!match) return evoCard.evolveCost; // フォールバック（代替進化等）
-
-  const sameTypeCount = _parseEvolveCond(evoCard.evolveCond).filter(e => e.type === match.type).length;
-
-  const RAW_BY_TYPE = {
-    color: evoCard.evolveCostRaw, feature: evoCard.evolveCostFeatureRaw,
-    name: evoCard.evolveCostNameRaw,
-  };
-  const picked = _pickCostFromList(RAW_BY_TYPE[match.type], match.typeIdx, sameTypeCount);
+  const { plan, counts } = _evoCostPlan(evoCard);
+  const p = plan.find((x) => x.entry === match);
+  if (!p) return evoCard.evolveCost;
+  const picked = _pickCostFromList(_evoCostRawByType(evoCard)[p.type], p.typeIdx, counts[p.type]);
   return picked != null ? picked : evoCard.evolveCost;
 }
 // カード詳細の「進化コスト：」表示用の文字列（エスケープ前、進化不可なら null）。
@@ -1530,12 +1545,11 @@ export function formatEvolveCostDetail(card) {
   if (!card || card.evolveCost == null) return null;
   const cond = String(card.evolveCond || '').trim();
   if (!cond || cond === 'なし') return card.evolveCost + 'コスト';
-  const entries = _parseEvolveCond(cond);
-  const RAW_BY_TYPE = { color: card.evolveCostRaw, feature: card.evolveCostFeatureRaw, name: card.evolveCostNameRaw };
-  const counts = { color: 0, feature: 0, name: 0 };
-  entries.forEach(e => { counts[e.type]++; });
+  const { plan, counts } = _evoCostPlan(card);
+  const RAW_BY_TYPE = _evoCostRawByType(card);
   const groups = [];
-  entries.forEach(({ c, type, typeIdx }) => {
+  plan.forEach(({ entry, type, typeIdx }) => {
+    const c = entry.c;
     let cost = _pickCostFromList(RAW_BY_TYPE[type], typeIdx, counts[type]);
     if (cost == null) cost = card.evolveCost;
     const last = groups[groups.length - 1];

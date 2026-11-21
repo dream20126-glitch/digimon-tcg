@@ -81,6 +81,12 @@ function normalizeCard(card) {
       card[normalized] = card[key];
     }
   }
+  // Lv が「Lv.4」の形で入っている行（BT27・ST26 等）は数字だけにする（進化条件・Lv の判定は数字で比べるため）
+  ["Lv", "レベル"].forEach((k) => {
+    if (typeof card[k] === 'string') { const m = card[k].trim().match(/^Lv\.?\s*(\d+)$/i); if (m) card[k] = Number(m[1]); }
+  });
+  // デュアルカードの「色（下段）」は「なし」＝デジモン側の色と同じ（空欄扱い）
+  if (card["色（下段）"] === 'なし' || card["色（下段）"] === '-') card["色（下段）"] = '';
   // 新列名 → 旧列名にコピー（parseDeckや他のコードが旧名を参照するため）
   if (!card["効果"] && card["効果テキスト"]) card["効果"] = card["効果テキスト"];
   if (!card["進化元効果"] && card["進化元テキスト"]) card["進化元効果"] = card["進化元テキスト"];

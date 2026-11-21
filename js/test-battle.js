@@ -180,6 +180,8 @@ function findCardByName(idOrName) {
     imgSrc: getCardImageUrl(card) || '',
     type,
     color: card['色'] || '',
+    // デュアルカードのオプション側（下段）の色。空ならデジモン側の「色」と同じ
+    optionColor: card['色（下段）'] || '',
     feature: card['特徴'] || '',
     isLink: hasLink,
     stack: [],

@@ -1224,7 +1224,10 @@ function _afterOptionUsed(side, cb) {
 function hasMatchingColorInPlay(optionCard, side) {
   const p = side === 'player' ? bs.player : bs.ai;
   if (!p) return true;
-  const optColors = String(optionCard.color || '').split('').filter(Boolean);
+  // デュアルカードはオプション側（下段）の色で判定する（「色（下段）」が空ならデジモン側の色と同じ）。
+  // 区切りの「/」は色ではないので除く（「黄/緑」の「/」が場の多色カードに一致していた）
+  const _useColor = (optionCard.type === 'デュアル' && optionCard.optionColor) ? optionCard.optionColor : optionCard.color;
+  const optColors = String(_useColor || '').split('').filter(ch => '赤青黄緑黒紫白'.includes(ch));
   if (optColors.length === 0) return true; // 色情報が無いカードはチェック対象外
   // 「このカードは黒でも色条件を満たせる」（メモリーブースト LM-033〜053 の passive alt_use_color）: その色も持つものとして判定
   try { _getAltUseColors(optionCard, bs, side).forEach(c => { if (!optColors.includes(c)) optColors.push(c); }); } catch (e) { console.error('[alt_use_color]', e); }

@@ -7197,19 +7197,24 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (Array.isArray(filter.type_in) && !filter.type_in.some(_isAnyType) && !filter.type_in.some(_typeIs)) return false;
   // 色: カンマ区切り文字列でOR指定に対応（例: "青,赤" → 青 or 赤）。カード側が
   // "青/赤" のような複合色の場合もあるため部分一致（indexOf）で判定する
+  // デュアルカードをオプションカードとして見る（種別の指定がオプションだけ）ときは、オプション側（下段）の色で判定する
+  // （公式 4-6-6-2。スプシ「色（下段）」→ card.optionColor。空ならデジモン側の「色」と同じ）
+  const _asOptionOnly = card.type === 'デュアル' && !!card.optionColor
+    && (filter.type === 'オプション' || (Array.isArray(filter.type_in) && filter.type_in.includes('オプション') && !filter.type_in.includes('デジモン')));
+  const _cardColorStr = String((_asOptionOnly ? card.optionColor : card.color) || '');
   if (filter.color) {
     const wantedColors = String(filter.color).split(',').map(s => s.trim()).filter(Boolean);
-    if (wantedColors.length > 0 && !wantedColors.some(w => String(card.color || '').indexOf(w) >= 0)) return false;
+    if (wantedColors.length > 0 && !wantedColors.some(w => _cardColorStr.indexOf(w) >= 0)) return false;
   }
   // 色以外: カンマ区切りで複数指定可（列挙した色をいずれも含まない場合のみ一致）
   if (filter.color_not) {
     const excludedColors = String(filter.color_not).split(',').map(s => s.trim()).filter(Boolean);
-    if (excludedColors.some(w => String(card.color || '').indexOf(w) >= 0)) return false;
+    if (excludedColors.some(w => _cardColorStr.indexOf(w) >= 0)) return false;
   }
   // 色の数（filter.color_count）: カードの色の数がちょうど N（「1色の〜オプションカード」サクヤモン：巫女モードACE LM-023）。
   // 多色は「紫/赤」のようにスラッシュ区切り
   if (filter.color_count != null && filter.color_count !== '') {
-    const _cc = String(card.color || '').split(/[/／]/).map(s => s.trim()).filter(Boolean).length;
+    const _cc = _cardColorStr.split(/[/／]/).map(s => s.trim()).filter(Boolean).length;
     if (_cc !== Number(filter.color_count)) return false;
   }
   // 「選んだカードと同じ（色等）」（filter.same_as_picked。「選んだテイマーと同じ色の〜デジモンカード」未来への可能性‼ P-156）。
@@ -7220,7 +7225,7 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   }
   // 色の数の以上/以下（「黒/黄を含む2色以上のカード」P-121・P-122）
   if ((filter.color_count_ge != null && filter.color_count_ge !== '') || (filter.color_count_le != null && filter.color_count_le !== '')) {
-    const _cc = String(card.color || '').split(/[/／,、・]/).map(s => s.trim()).filter(Boolean).length;
+    const _cc = _cardColorStr.split(/[/／,、・]/).map(s => s.trim()).filter(Boolean).length;
     if (filter.color_count_ge != null && filter.color_count_ge !== '' && _cc < Number(filter.color_count_ge)) return false;
     if (filter.color_count_le != null && filter.color_count_le !== '' && _cc > Number(filter.color_count_le)) return false;
   }

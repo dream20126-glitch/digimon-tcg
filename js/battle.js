@@ -123,6 +123,8 @@ function parseDeck(deckData) {
       securityEffect: obj["セキュリティテキスト"] || obj["セキュリティ効果"] || '', recipe: obj["レシピ"] || obj["効果レシピ"] || null,
       imageUrl: obj["ImageURL"] || '', imgSrc: getCardImageUrl(obj) || '',
       type, color: obj["色"] || '', feature: obj["特徴"] || '',
+      // デュアルカードのオプション側（下段）の色。空ならデジモン側の「色」と同じ
+      optionColor: obj["色（下段）"] || '',
       isLink: hasLink,
       stack: [], suspended: false, buffs: [],
       cantBeActive: false, cantAttack: false, cantBlock: false,
@@ -394,6 +396,7 @@ window.acceptHand = function() {
               recipe: obj['レシピ'] || obj['効果レシピ'] || null,
               imageUrl: obj['ImageURL'] || '', imgSrc: getCardImageUrl(obj) || '',
               type, color: obj['色'] || '', feature: obj['特徴'] || '',
+              optionColor: obj['色（下段）'] || '',
               isLink: hasLink,
               stack: [], suspended: false, buffs: [],
               cantBeActive: false, cantAttack: false, cantBlock: false,

@@ -661,6 +661,9 @@ export interface AltAction {
   targetFilter?: ConditionPair[];
   // 効果1と同じ意味（step.attack_target_filter）
   attackTargetFilter?: ConditionPair[];
+  // 直前の効果の期間・発動条件を引き継ぐ（セッカモン BT27-029「…【ブロッカー】を得て、バトル以外で消滅しない」の後半）。
+  // 保存時に直前の効果の duration / condition / when / extra_conditions / condition_op / condition_chain を写し、step.inherit_prev:true を付ける
+  inheritPrev?: boolean;
   // targetFilterのAND内包OR版条件チェーン（EffectBlock.targetFilterChainと同じ意味・変換）
   targetFilterChain?: ConditionChainEntry[];
   fromFilter?: ConditionPair[];

@@ -1986,6 +1986,18 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 実装されているため）。thenBreak:true の効果でセグメントを区切ることで、「AとBをANDで
   // 行い、その後C」のように、AND/OR区間の後ろにだけ「その後」を続けることができる
   const rawAltActions = Array.isArray(b.altActions) ? b.altActions.filter((a) => a && a.action) : [];
+  // 「直前の効果の期間・発動条件を引き継ぐ」（inheritPrev）: 前から順に、直前の効果（効果1は step）の期間・発動条件を写した出力を作っておく
+  const _altObjMap = new Map<AltAction, any>();
+  {
+    let _prevObj: any = step;
+    rawAltActions.forEach((a) => {
+      const o = altActionToStepObject(a, keywordDict);
+      if (a.inheritPrev) applyInheritPrev(o, _prevObj);
+      _altObjMap.set(a, o);
+      _prevObj = o;
+    });
+  }
+  const altObjOf = (a: AltAction) => JSON.parse(JSON.stringify(_altObjMap.get(a) || altActionToStepObject(a, keywordDict)));
   const altSegments: AltAction[][] = [[]];
   if (rawAltActions.length > 0) {
     const legacyAllThen = b.altActionsOp === 'then';
@@ -1995,7 +2007,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     });
   }
   if (altSegments[0].length > 0) {
-    step.alt_actions = altSegments[0].map((a) => altActionToStepObject(a, keywordDict));
+    step.alt_actions = altSegments[0].map((a) => altObjOf(a));
     step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
@@ -2217,13 +2229,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   altSegments.slice(1).forEach((seg) => {
     if (seg.length === 0) return;
     const [head, ...rest] = seg;
-    const thenStep = altActionToStepObject(head, keywordDict);
+    const thenStep = altObjOf(head);
     delete thenStep.__chain_prev;
     const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
     if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
     thenStep.options = opts;
     if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
-    const restObjs = rest.length > 0 ? embedPrevMods(thenStep, rest, rest.map((a) => altActionToStepObject(a, keywordDict))) : [];
+    const restObjs = rest.length > 0 ? embedPrevMods(thenStep, rest, rest.map((a) => altObjOf(a))) : [];
     if (restObjs.length > 0) {
       thenStep.alt_actions = nestChainedAltObjs(restObjs);
       // thenBreakOpが明示されていればそちらを優先（「その後」区間だけ独自のAND/ORにできる）。
@@ -2636,7 +2648,29 @@ function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link'
 // レシピJSONのstepオブジェクト（'then'連結の後続要素）を AltAction に変換する
 // （altActionToStepObjectの逆変換。continue_on_failは'then'モードで暗黙付与されるため、
 // UI上のoptions一覧には出さないよう除去する）
-function stepObjectToAltAction(step: any): AltAction {
+function stepObjectToAltAction(step0: any): AltAction {
+  // 直前の効果から引き継いだ期間・発動条件は、この効果の設定としては読まない（保存時に写し直す）
+  const _inh = !!(step0 && step0.inherit_prev);
+  const step = _inh ? stripInheritedFields(step0) : step0;
+  const _altOut = stepObjectToAltActionBase(step);
+  if (_inh) _altOut.inheritPrev = true;
+  return _altOut;
+}
+const INHERIT_PREV_KEYS = ['duration', 'condition', 'when', 'extra_conditions', 'condition_op', 'condition_chain'];
+function stripInheritedFields(step: any): any {
+  const o = { ...step };
+  INHERIT_PREV_KEYS.forEach((k) => { delete o[k]; });
+  delete o.inherit_prev;
+  return o;
+}
+function applyInheritPrev(o: any, src: any): void {
+  INHERIT_PREV_KEYS.forEach((k) => {
+    delete o[k];
+    if (src && src[k] !== undefined) o[k] = JSON.parse(JSON.stringify(src[k]));
+  });
+  o.inherit_prev = true;
+}
+function stepObjectToAltActionBase(step: any): AltAction {
   const conditionsRaw: ConditionPair[] = [];
   if (step?.condition) conditionsRaw.push(stringToPair(String(step.condition)));
   if (step?.when) conditionsRaw.push(stringToPair(String(step.when)));
@@ -3059,6 +3093,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     // value_step→valueStep、ref_count→refCount へ復元済み（同上の理由で素通しにしない）
     value_step: true,
     value_step_cap: true,
+    inherit_prev: true,
     attack_target_filter: true,
     ref_count: true,
     designated: true,
@@ -3300,7 +3335,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     rules: _restoredRules ? _restoredRules.rules : [],
     // 代替アクション復元
     altActions: Array.isArray(step?.alt_actions)
-      ? step.alt_actions.map((a: any) => {
+      ? step.alt_actions.map((a0: any) => {
+          // 直前の効果から引き継いだ期間・発動条件（inherit_prev）は、この効果の設定としては読まない
+          const a: any = a0 && a0.inherit_prev ? stripInheritedFields(a0) : a0;
           const condArr: ConditionPair[] = collapseRefExistsAttributeFilters((() => {
             const raw: ConditionPair[] = [];
             if (a?.condition) raw.push(stringToPair(String(a.condition)));
@@ -3413,6 +3450,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             valueStep: a?.per_count_mode === 'step' && a?.value_step != null ? Number(a.value_step) : undefined,
             valueStepCap: a?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(a?.value_step_cap) ? a.value_step_cap : undefined,
             attackTargetFilter: a?.attack_target_filter ? parseFilterObject(a.attack_target_filter) : undefined,
+            inheritPrev: a0 && a0.inherit_prev ? true : undefined,
             refCount: a?.ref_count === 'colors' ? 'colors' as const : undefined,
             perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,

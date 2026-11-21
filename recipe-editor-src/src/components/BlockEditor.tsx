@@ -8792,6 +8792,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* 効果2以降: 直前の効果の期間・発動条件を引き継ぐ（「〜いないなら、相手のターン終了まで、【ブロッカー】を得て、バトル以外で消滅しない」の後半。BT27-029）。
+            保存時に直前の効果の期間・発動条件をこの効果へ写す（inherit_prev）。ONの間、この効果自身の期間・発動条件は使わない */}
+        {isEditingAlt && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, marginTop: 6, padding: '4px 8px', background: '#f1f8e9', border: '1px solid #aed581', borderRadius: 4 }}>
+            <input
+              type="checkbox"
+              checked={!!editingAlt!.inheritPrev}
+              onChange={(e) => updateEffect({ inheritPrev: e.target.checked || undefined })}
+            />
+            <b>直前の効果の期間・発動条件を引き継ぐ</b>
+            <span style={{ fontSize: 10, color: '#666' }}>（ONの間、この効果の期間・発動条件の設定は使わず、直前の効果と同じになります）</span>
+          </label>
+        )}
         {/* 新しいアクション専用の項目（支払うコスト-の登場/進化、効果の上限の種類 等）。効果1・効果2以降共通 */}
         <ActionParamsPanel
           action={effectAction}

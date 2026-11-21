@@ -1306,7 +1306,9 @@ function _cardHasEvolveName(baseCard, reqName, exact) {
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
   // 「としても扱う」名称（エイリアス）もチェックする。「〜を含むものとしても扱う」は部分一致のときだけ
   // （公式ルール 2-3-4-4-1: 名称「X」を含むものとしても扱うカードは、名称が「X」のカードではない）
-  const matches = (c) => test(_baseCardName(c.name)) || cardAliasHasName(c, reqName, exact);
+  // 「：」を含む名称（「ジャスティモン：ブリッツアーム」P-203）・「：」以降の部分一致（名称「巫女モード」を含む P-223）は
+  // 「：」以降も含めた名前でも比べる
+  const matches = (c) => test(_baseCardName(c.name)) || test(String(c.name || '')) || cardAliasHasName(c, reqName, exact);
   return matches(baseCard);
 }
 
@@ -1319,158 +1321,148 @@ function _cardHasDescription(baseCard, reqText) {
   return fields.some(f => String(f || '').includes(reqText));
 }
 
-// クローズ末尾の「カード名」指定を読み取る。"「アイギオモン」を含む" のように末尾に
-// "を含む" が付いていれば部分一致、無ければ完全一致（デフォルト）として扱う。
-// 戻り値: マッチが無ければ null、あれば { name, exact }
-function _parseNameSuffix(text) {
-  const m = text.match(/「(.+?)」\s*(を含む)?\s*$/);
-  if (!m) return null;
-  return { name: m[1], exact: !m[2] };
+// ===== 進化条件の読み取り（部品ごと） =====
+// 進化条件列は「/」区切りの条件（クローズ）の並び。1つのクローズを、前に付く条件・特徴・名称・記述・
+// 登場コスト・色・Lv・テイマー等の部品に分けて読み、全ての部品を満たす進化元にだけ進化できる。
+// 部品は前から順に読むので、「自分の「X」がいる間、名称「Y」」「特徴「A」を持つ名称「B」」
+// 「3色以外の「C」」「特徴に「D」を持たない「E」を含むLv.4」のように、名称の前に条件をいくつ付けてもよい。
+// 読めない文字が残ったクローズは「どの進化元にも一致しない」扱いにする（以前は一部だけ読んで
+// 「「ジェムモン」記述Lv.2」が全ての Lv.2 から進化できる等、広く一致してしまっていた）。
+//
+// クローズの種別（どの進化コスト列を使うか）:
+//   feature … 進化元自身の特徴を「持つ」指定がある（特徴「A」Lv.5／特徴「A」を持つ名称「B」／特徴「A」を持つテイマー）
+//   name    … 名称・記述・登場コスト・進化元/下のカード・色の数などの指定がある（特徴を「持たない」も含む）
+//   color   … 色・Lv だけ
+const _EVO_COLOR_CHARS = '赤青黄緑黒紫白';
+
+// 表記ゆれをそろえる（全角数字・空白・「L.4」「Lv4」・「含む」の「を」抜け・「特徴:X」「特徴X」「名称:X」）
+function _normalizeEvoClause(raw) {
+  let s = String(raw || '').replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  s = s.replace(/[\s　]+/g, '');
+  s = s.replace(/特徴[:：]?(?!に「|「)([^「」\/:：]+?)(?=L[vV]?[.．]?\d|を持|$)/g, '特徴「$1」');
+  s = s.replace(/名称[:：](?!「)([^「」\/]+?)(?=L[vV]?[.．]?\d|を含|$)/g, '名称「$1」');
+  s = s.replace(/L[vV]?[.．]?(\d+)/g, 'Lv.$1');
+  s = s.replace(/([^を])含([むみ])/g, '$1を含$2');
+  return s;
 }
 
-// 特徴クローズ（例: "特徴:グローイングドーンLv.5" / "特徴「グローイングドーン」Lv.5"）が
-// baseCardに一致するか判定する。
-function _matchFeatureClause(c, baseCard) {
-  const featureMatch = c.match(/特徴[:：「]\s*(.+?)」?\s*Lv\.(\d+)/);
-  if (!featureMatch) return false;
-  const reqFeature = featureMatch[1].trim();
-  const reqLevel = featureMatch[2];
-  const baseLevel = String(baseCard.level).trim();
-  if (baseLevel !== reqLevel) return false;
-  const baseFeature = String(baseCard.feature || '');
-  if (!baseFeature.includes(reqFeature)) return false;
-  // カード名の追加指定（例: "特徴:XLv.5「カード名」"）。特徴名自体の「」と混同しない
-  // よう、featureMatch本体より後ろの残り文字列だけを対象に判定する
-  const remainder = c.slice(featureMatch.index + featureMatch[0].length);
-  const nameSuffix = _parseNameSuffix(remainder);
-  if (nameSuffix && !_cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
-  return true;
+function _evoColorsOf(card) {
+  return String((card && card.color) || '').split('').filter((ch) => _EVO_COLOR_CHARS.includes(ch));
+}
+function _evoHasFeature(card, f) {
+  return String((card && card.feature) || '').split(/[\/／]/).map((x) => x.trim()).includes(f);
+}
+function _evoCmp(v, n, mode) {
+  if (mode === '以下') return v <= n;
+  if (mode === '以上') return v >= n;
+  return v === n;
 }
 
-// 色クローズ（例: "赤Lv.5" / "Lv.5"=色不問）がbaseCardに一致するか判定する。
-function _matchColorClause(c, baseCard, ignoreColor) {
-  const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
-  if (!m) return false;
-  const reqColor = m[1] || '';
-  const reqLevel = m[2];
-  // baseCard.level にスプレッドシート由来の前後空白（全角スペース含む）が
-  // 混入していると文字列比較が外れるため trim で正規化する
-  const baseLevel = String(baseCard.level).trim();
-  const baseColor = baseCard.color || '';
-  if (baseLevel !== reqLevel) return false;
-  // 進化先が「色条件を無視できる」（ignore_evolve_color）なら色の部分は判定しない
-  if (reqColor && !ignoreColor && !baseColor.includes(reqColor)) return false;
-  const remainder = c.slice(m.index + m[0].length);
-  const nameSuffix = _parseNameSuffix(remainder);
-  if (nameSuffix && !_cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
-  return true;
-}
+// 部品の読み方。re は残りの文字列の先頭に当てる。fn は { kind, test(base, ctx) } を返す（kind が無い部品はつなぎ言葉）
+const _EVO_TOKENS = [
+  // --- 前に付く条件（進化元ではなく自分の状況を見る） ---
+  { re: /^自分の(?:場に)?「(.+?)」(を含むカード)?がいる間、/, fn: (m) => ({ kind: 'cond', test: (b, ctx) => {
+    const p = bs && bs[ctx.side]; if (!p) return false;
+    const cards = [...(p.battleArea || []), ...(p.tamerArea || [])].filter(Boolean);
+    return cards.some((c) => _cardHasEvolveName(c, m[1], !m[2]));
+  } }) },
+  { re: /^自分のセキュリティが(\d+)枚(以下|以上)?の間、/, fn: (m) => ({ kind: 'cond', test: (b, ctx) => {
+    const p = bs && bs[ctx.side]; if (!p) return false;
+    return _evoCmp((p.security || []).length, Number(m[1]), m[2]);
+  } }) },
+  // --- 進化元の下のカード ---
+  { re: /^進化元に「(.+?)」(を含むカード)?がある/, fn: (m) => ({ kind: 'stack', test: (b) =>
+    (Array.isArray(b.stack) ? b.stack : []).some((c) => c && _cardHasEvolveName(c, m[1], !m[2])) }) },
+  { re: /^特徴「(.+?)」を持つカードが(?:下|進化元)に(\d+)枚(以上|以下)?ある/, fn: (m) => ({ kind: 'stack', test: (b) =>
+    _evoCmp((Array.isArray(b.stack) ? b.stack : []).filter((c) => c && _evoHasFeature(c, m[1])).length, Number(m[2]), m[3]) }) },
+  // --- 特徴 ---
+  { re: /^特徴に?「(.+?)」を持たない/, fn: (m) => ({ kind: 'notfeature', test: (b) => !_evoHasFeature(b, m[1]) }) },
+  { re: /^名称に「(.+?)」を含[みむ]/, fn: (m) => ({ kind: 'name', test: (b) => _cardHasEvolveName(b, m[1], false) }) },
+  // 「特徴「水棲」を含む」（BT24-028 等）・「特徴「三銃士」記述」（LM-067）＝特徴のどれかにその文字を含む
+  { re: /^特徴に?「(.+?)」(?:を含[むみ]|の?記述(?:がある)?)/, fn: (m) => ({ kind: 'feature', test: (b) =>
+    String(b.feature || '').split(/[\/／]/).some((x) => x.trim().includes(m[1])) }) },
+  { re: /^特徴に?「(.+?)」(?:を持つ|を持ち)?/, fn: (m) => ({ kind: 'feature', test: (b) => _evoHasFeature(b, m[1]) }) },
+  // --- 色の数・色以外 ---
+  { re: /^(\d+)色以外の/, fn: (m) => ({ kind: 'colorcount', test: (b) => _evoColorsOf(b).length !== Number(m[1]) }) },
+  { re: /^(\d+)色(以上|以下)?の/, fn: (m) => ({ kind: 'colorcount', test: (b) => _evoCmp(_evoColorsOf(b).length, Number(m[1]), m[2]) }) },
+  { re: /^([赤青黄緑黒紫白]+)以外の/, fn: (m) => ({ kind: 'colornot', test: (b) => !_evoColorsOf(b).some((c) => m[1].includes(c)) }) },
+  // --- 登場コスト ---
+  { re: /^登場コストを持たない/, fn: () => ({ kind: 'playcost', test: (b) => b.playCost == null }) },
+  { re: /^登場コスト(\d+)(以下|以上)?の?/, fn: (m) => ({ kind: 'playcost', test: (b) => b.playCost != null && _evoCmp(Number(b.playCost), Number(m[1]), m[2]) }) },
+  // --- 記述・名称 ---
+  { re: /^「(.+?)」の?記述(?:がある)?/, fn: (m) => ({ kind: 'desc', test: (b) => _cardHasDescription(b, m[1]) }) },
+  { re: /^(?:名称)?「(.+?)」(を含む)?/, fn: (m) => ({ kind: 'name', test: (b) => _cardHasEvolveName(b, m[1], !m[2]) }) },
+  { re: /^([^「」]+?)：コスト\d+$/, fn: (m) => ({ kind: 'name', test: (b) => _cardHasEvolveName(b, m[1], true) }) },
+  // --- 色・Lv・カードの種類 ---
+  { re: /^([赤青黄緑黒紫白]+)(?=Lv\.)/, fn: (m) => ({ kind: 'color', test: (b, ctx) => ctx.ignoreColor || _evoColorsOf(b).some((c) => m[1].includes(c)) }) },
+  { re: /^Lv\.(\d+)/, fn: (m) => ({ kind: 'lv', test: (b) => String(b.level == null ? '' : b.level).trim() === m[1] }) },
+  { re: /^テイマー/, fn: () => ({ kind: 'tamer', test: (b) => b.type === 'テイマー' }) },
+  { re: /^デジモン/, fn: () => ({ kind: 'digimon', test: (b) => b.type !== 'テイマー' }) },
+  // --- つなぎ言葉 ---
+  { re: /^(?:を持つ|を持ち|かつ|の|、)/, fn: () => ({}) },
+];
+// これらのどれかが無いクローズ（「赤」だけ等）は進化元を決められないので不成立
+const _EVO_HEAD_KINDS = ['lv', 'name', 'tamer', 'digimon', 'feature', 'desc', 'playcost', 'stack'];
 
-// 名称クローズ（例: "名称「アイギオモン」"=完全一致 / "名称「アイギオモン」を含む"=部分一致）が
-// baseCardに一致するか判定する。色クローズ・特徴クローズと違ってLv指定が無い（レベル不問）。
-// コロン記法（"名称:アイギオモン"）はブラケット無しなので常に完全一致扱い。
-function _matchNameClause(c, baseCard) {
-  // 末尾に Lv 指定が付くこともある（"名称「ガンマモン」を含むLv.4"。レグルスモンACE LM-017）。付いていれば Lv も一致が必要
-  const bracket = c.match(/名称[:：]?\s*「(.+?)」\s*(を含む)?\s*(?:の)?\s*(?:Lv\.?\s*(\d+))?\s*$/);
-  if (bracket) {
-    if (bracket[3] != null && String(baseCard.level).trim() !== bracket[3]) return false;
-    return _cardHasEvolveName(baseCard, bracket[1].trim(), !bracket[2]);
+// 1クローズを読む。戻り値 { c, ok, kinds, tests, type }
+function _parseEvoClause(raw) {
+  const c = String(raw || '').trim();
+  let s = _normalizeEvoClause(c);
+  const kinds = [], tests = [];
+  let ok = s.length > 0;
+  while (ok && s.length > 0) {
+    let hit = false;
+    for (const t of _EVO_TOKENS) {
+      const m = s.match(t.re);
+      if (!m || m[0].length === 0) continue;
+      const part = t.fn(m);
+      if (part.kind) { kinds.push(part.kind); tests.push(part.test); }
+      s = s.slice(m[0].length);
+      hit = true;
+      break;
+    }
+    if (!hit) ok = false;
   }
-  const plain = c.match(/名称[:：]\s*(.+?)\s*$/);
-  if (!plain) return false;
-  return _cardHasEvolveName(baseCard, plain[1].trim(), true);
+  if (ok && !kinds.some((k) => _EVO_HEAD_KINDS.includes(k))) ok = false;
+  // テイマーも名称も指定していないクローズはデジモンからだけ（「特徴「A」」だけのクローズがテイマーに一致しないように）
+  if (ok && !kinds.includes('tamer') && !kinds.includes('name')) tests.push((b) => b.type !== 'テイマー');
+  const type = kinds.includes('feature') ? 'feature'
+    : kinds.some((k) => k === 'name' || k === 'desc' || k === 'playcost' || k === 'stack' || k === 'notfeature' || k === 'colorcount') ? 'name'
+    : 'color';
+  return { c, ok, kinds, tests, type };
 }
 
-// 登場コスト＋名称クローズ（例: "登場コスト12の「ケレスモン」"）がbaseCardに一致するか判定する。
-// Lv・色は問わず、進化元の「登場コスト」の値とカード名の両方で絞り込む特殊パターン。
-// 名称部分は「を含む」の有無で完全一致/部分一致を切り分ける（他のクローズと同様）。
-function _matchPlayCostClause(c, baseCard) {
-  const m = c.match(/登場コスト(\d+)の/);
-  if (!m) return false;
-  const reqCost = parseInt(m[1], 10);
-  const baseCost = (baseCard.playCost != null) ? baseCard.playCost : (baseCard.cost || 0);
-  if (baseCost !== reqCost) return false;
-  const remainder = c.slice(m.index + m[0].length);
-  const nameSuffix = _parseNameSuffix(remainder);
-  if (!nameSuffix) return false; // 名称指定が無いと進化元を絞りきれないため不成立
-  return _cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact);
-}
-
-// 名称＋登場コストクローズ（例: "巨神兵器：コスト5" = "名称：巨神兵器"と同義で、
-// 「：コストN」部分はbaseCardの絞り込みには使わない（進化コスト（名称）列に転記済みの
-// 値を条件文中でも明示しているだけ）。名前一致のみで判定する。
-function _matchNameCostClause(c, baseCard) {
-  const m = c.match(/^(.+?)：コスト\d+$/);
-  if (!m) return false;
-  return _cardHasEvolveName(baseCard, m[1].trim(), true);
-}
-
-// 「「XXX」の記述があるLvN」クローズ（例: "「クロノモン」の記述があるLv.6"）が
-// baseCardに一致するか判定する。「記述がある」はカード情報一覧の各テキスト列の
-// いずれかにXXXがあればOKという公式ルール。色指定が無いことが多く名称クローズに近い
-// ため 'name' 種別に含める（コスト列は進化コスト（名称）列を共用）。
-function _matchDescriptionClause(c, baseCard, ignoreColor) {
-  const m = c.match(/^([赤青黄緑黒紫白]+)?「(.+?)」の記述がある(?:Lv\.(\d+))?$/);
-  if (!m) return false;
-  const reqColor = m[1] || '';
-  const reqText = m[2];
-  const reqLevel = m[3];
-  if (reqLevel != null && String(baseCard.level).trim() !== reqLevel) return false;
-  if (reqColor && !ignoreColor && !String(baseCard.color || '').includes(reqColor)) return false;
-  return _cardHasDescription(baseCard, reqText);
-}
-
-// クローズの文字列から種別（'feature'|'name'|'color'）を判定する。
-// 「登場コストNの『XXX』」（登場コスト＋名称の複合クローズ）「XXX：コストN」
-// （名称＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）「「XXX」の記述がある」
-// （記述クローズ）も、いずれも色指定が無い（or 必須ではない）クローズなので、コスト列は
-// 名称クローズと共用する（進化コスト列を増やしすぎないため）ので 'name' に含める。
-function _clauseType(c) {
-  if (/特徴[:：「]/.test(c)) return 'feature';
-  if (/登場コスト\d+の/.test(c) || /名称[:：「]/.test(c) || /^.+：コスト\d+$/.test(c) || /「.+」の記述がある/.test(c)) return 'name';
-  return 'color';
-}
-
-// 種別が'name'のクローズは、実際には「登場コスト＋名称」「名称＋登場コスト」「記述」
-// 「名称のみ」の4パターンがあるので、書かれている内容によって判定関数を振り分ける
-function _matchNameTypeClause(c, baseCard, ignoreColor) {
-  if (/登場コスト\d+の/.test(c)) return _matchPlayCostClause(c, baseCard);
-  if (/^.+：コスト\d+$/.test(c)) return _matchNameCostClause(c, baseCard);
-  if (/「.+」の記述がある/.test(c)) return _matchDescriptionClause(c, baseCard, ignoreColor);
-  return _matchNameClause(c, baseCard);
-}
-
-// 進化条件マッチング本体。evolveCond（進化条件列）1本に色クローズ・特徴クローズ・
-// 名称クローズを混在させて書く（今まで通り）。各クローズはテキストから自動で種別判定
-// され、マッチしたクローズについて { type, typeIdx } を返す（typeIdxは「同じ種別の
-// クローズの中で何番目に書かれているか」＝0始まりの通し番号。書かれている順序で
-// 振るため、種別が入り混じっていても種別ごとに独立して数える）。
-// getEvolveCostForはこのtypeIdxを使って、進化コスト（色）/進化コスト（特徴）/
-// 進化コスト（名称）のどの列の何番目の値を引くかを決める。
-// 優先順位: 名称・特徴クローズを色クローズより先に判定する（書かれている順序に関わらず）。
-// 例: 進化先が「黄Lv.5」かつ「特徴:グローイングドーンLv.5」の両方に当てはまる場合でも、
-// 特徴側（グローイングドーン）を優先して採用する
-function _resolveEvolveMatch(evoCard, baseCard) {
-  const cond = evoCard.evolveCond || '';
-  if (!cond || cond === 'なし') return null;
-  const clauses = cond.split('/').map(s => s.trim());
-
+// 進化条件列を読む（同じ文字列は使い回す）。空のクローズ（「//」）は飛ばす。typeIdx は同じ種別の中で何番目か
+const _evoCondCache = new Map();
+function _parseEvolveCond(cond) {
+  const key = String(cond || '').trim();
+  if (!key || key === 'なし') return [];
+  if (_evoCondCache.has(key)) return _evoCondCache.get(key);
   const seen = { color: 0, feature: 0, name: 0 };
-  const entries = clauses.map((c) => {
-    const type = _clauseType(c);
-    const typeIdx = seen[type]++;
-    return { c, type, typeIdx };
+  const entries = key.split('/').map((x) => x.trim()).filter(Boolean).map((x) => {
+    const e = _parseEvoClause(x);
+    e.typeIdx = seen[e.type]++;
+    if (!e.ok) console.warn('[進化条件] 読めない条件のため、この条件では進化できません: 「' + x + '」');
+    return e;
   });
+  _evoCondCache.set(key, entries);
+  return entries;
+}
+if (typeof window !== 'undefined') window._parseEvolveCond = _parseEvolveCond;
 
-  const order = entries.slice().sort((a, b) => {
-    const aFirst = a.type !== 'color', bFirst = b.type !== 'color';
-    return (aFirst === bFirst) ? 0 : (aFirst ? -1 : 1);
-  });
-  const MATCHERS = { color: _matchColorClause, feature: _matchFeatureClause, name: _matchNameTypeClause };
-  // 進化先が「色条件を無視できる」（ignore_evolve_color・gate 成立中）なら色クローズの色を無視する
-  const ignoreColor = _ignoresColorCondition(evoCard, _ownerSideOfCard(evoCard));
-  for (const entry of order) {
-    if (MATCHERS[entry.type](entry.c, baseCard, ignoreColor)) return entry;
+// 進化条件マッチング本体。一致したクローズ { c, type, typeIdx, ... } を返す（無ければ null）。
+// getEvolveCostFor は type と typeIdx で、進化コスト（色）/（特徴）/（名称）列のどの値を使うかを決める。
+// 優先順位: 名称・特徴等のクローズを色クローズより先に判定する（書かれている順序に関わらず）
+function _resolveEvolveMatch(evoCard, baseCard) {
+  if (!evoCard || !baseCard) return null;
+  const entries = _parseEvolveCond(evoCard.evolveCond);
+  if (entries.length === 0) return null;
+  const side = _ownerSideOfCard(evoCard);
+  // 進化先が「色条件を無視できる」（ignore_evolve_color・gate 成立中）なら色の部品を判定しない
+  const ctx = { side, ignoreColor: _ignoresColorCondition(evoCard, side) };
+  const order = entries.slice().sort((a, b) => (a.type === 'color' ? 1 : 0) - (b.type === 'color' ? 1 : 0));
+  for (const e of order) {
+    if (e.ok && e.tests.every((t) => t(baseCard, ctx))) return e;
   }
   return null;
 }
@@ -1515,8 +1507,7 @@ export function getEvolveCostFor(evoCard, baseCard) {
   const match = _resolveEvolveMatch(evoCard, baseCard);
   if (!match) return evoCard.evolveCost; // フォールバック（代替進化等）
 
-  const clauses = String(evoCard.evolveCond || '').split('/').map(s => s.trim()).filter(Boolean);
-  const sameTypeCount = clauses.filter(c => _clauseType(c) === match.type).length;
+  const sameTypeCount = _parseEvolveCond(evoCard.evolveCond).filter(e => e.type === match.type).length;
 
   const RAW_BY_TYPE = {
     color: evoCard.evolveCostRaw, feature: evoCard.evolveCostFeatureRaw,
@@ -1535,15 +1526,13 @@ export function formatEvolveCostDetail(card) {
   if (!card || card.evolveCost == null) return null;
   const cond = String(card.evolveCond || '').trim();
   if (!cond || cond === 'なし') return card.evolveCost + 'コスト';
-  const clauses = cond.split('/').map(s => s.trim()).filter(Boolean);
+  const entries = _parseEvolveCond(cond);
   const RAW_BY_TYPE = { color: card.evolveCostRaw, feature: card.evolveCostFeatureRaw, name: card.evolveCostNameRaw };
   const counts = { color: 0, feature: 0, name: 0 };
-  clauses.forEach(c => { counts[_clauseType(c)]++; });
-  const seen = { color: 0, feature: 0, name: 0 };
+  entries.forEach(e => { counts[e.type]++; });
   const groups = [];
-  clauses.forEach(c => {
-    const type = _clauseType(c);
-    let cost = _pickCostFromList(RAW_BY_TYPE[type], seen[type]++, counts[type]);
+  entries.forEach(({ c, type, typeIdx }) => {
+    let cost = _pickCostFromList(RAW_BY_TYPE[type], typeIdx, counts[type]);
     if (cost == null) cost = card.evolveCost;
     const last = groups[groups.length - 1];
     if (last && String(last.cost) === String(cost)) last.clauses.push(c);

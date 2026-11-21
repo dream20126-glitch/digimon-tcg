@@ -5102,7 +5102,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                       {refSubject === 'self_dp' && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
-                          このデジモンのDPを左の数で割った数（切り捨て）を数えます（「このデジモンのDP8000ごとに」→ 8000）。⚠ エンジン未実装
+                          このデジモンのDPを左の数で割った数（切り捨て）を数えます（「このデジモンのDP8000ごとに」→ 8000）
                         </div>
                       )}
                       {refSubject === 'self_card' && (
@@ -5273,7 +5273,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <span style={{ color: '#666', fontSize: 10 }}>
                   値欄の数値は基準値のまま（例: 8000）。カードの文言どおりの符号で入力（「数値-3000」→ -3000）
                 </span>
-                <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
                 {/* 何を増減するか: 効果の数値（DP-8000 の 8000 等）か、対象の上限（「DP合計7000まで」「DP4000以下の」の数値）か */}
                 <div style={{ flexBasis: '100%', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ color: '#1a4f8a', fontWeight: 'bold' }}>増減するもの:</span>

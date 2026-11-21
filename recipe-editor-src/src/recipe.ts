@@ -746,6 +746,8 @@ function applyRefZoneCond(f: Record<string, any>, c: ConditionPair): boolean {
   if (m) { zone = m[1]; quant = m[2]; }
   else if (c.base === 'cond_has_evo') { zone = 'evo_source'; quant = 'ge'; }
   else if (/^cond_has_evo_(le|eq|gt|lt)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_has_evo_', ''); }
+  // 対象の条件「進化元の枚数 → 以上/以下/完全一致」（参照「進化元」と同じ filter.evo_source_ge/le/eq に保存）
+  else if (/^cond_evo_count_(ge|le|eq)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_evo_count_', ''); }
   else return false;
   const n = parseInt(String(c.value), 10);
   if (!isNaN(n)) f[`${zone}_${quant}`] = n;
@@ -1056,7 +1058,9 @@ function parseFilterObject(f: any): ConditionPair[] {
   REF_QUANTS.forEach((quant) => {
     const v = f[`evo_source_${quant}`];
     if (v !== undefined) {
-      out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
+      // 数値で比べる以上/以下/完全一致は、対象の条件「進化元の枚数」として読む（比べる先の参照つき・より多い/少ないは従来の参照「進化元」）
+      if (['ge', 'le', 'eq'].includes(quant) && /^\d+$/.test(String(v)) && f.evo_source_subject !== 'opp') out.push({ base: 'cond_evo_count_' + quant, value: String(v) });
+      else out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
     }
   });
   // filter.lv（Lv完全一致の旧形式。手書きレシピ）は Lv「完全一致」として読む（以前は読み込みで消えていた）

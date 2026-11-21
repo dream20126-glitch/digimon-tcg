@@ -120,7 +120,7 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_during_opp_turn', 'cond_during_own_turn', 'cond_exists',
   // 参照〔DP〕〔Lv〕（保存は cond_exists ＋ cond_dp_ge 等）
   'cond_ref_dp_ge', 'cond_ref_dp_le', 'cond_ref_lv_ge', 'cond_ref_lv_le',
-  'cond_feature', 'cond_feature_contains', 'cond_has_evo',
+  'cond_feature', 'cond_feature_contains', 'cond_has_evo', 'cond_evo_count_ge', 'cond_evo_count_le', 'cond_evo_count_eq',
   'cond_in_battle', 'cond_jogress', 'cond_link_eligible', 'cond_link_state',
   'cond_lv_ge', 'cond_lv_le', 'cond_memory_opponent',
   'cond_name_contains', 'cond_no_evo', 'cond_no_tamer_evo',

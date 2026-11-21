@@ -11201,7 +11201,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'ref', label: '参照' },
   { value: 'decrease', label: '減少' },
   { value: 'designated', label: '指定' },
-  // 進化元の枚数が最も少ない／多い（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。filter.evo_extreme。⚠ エンジン未実装）
+  // 進化元の枚数: 以上/以下/完全一致（filter.evo_source_ge/le/eq。エンジン対応済み）、最も少ない／多い（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。filter.evo_extreme。⚠ エンジン未実装）
   { value: 'evo_count', label: '進化元の枚数' },
   // 進化元/重ねられているカードは「対象の条件」パネルではなく、対象欄（デジモン選択後の
   // サブ選択肢）側に移設済み（cond_target_evo_source/cond_target_stackのデータ形式は
@@ -11482,7 +11482,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   decrease: 'cond_security_decreased',
   designated: DESIGNATED_NAME_COND,
   evo_source: 'cond_target_evo_source',
-  evo_count: 'cond_evo_lowest',
+  evo_count: 'cond_evo_count_ge',
   stacked: 'cond_target_stack',
 };
 
@@ -11532,6 +11532,9 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_cost_sum_le', label: '合計〜まで' },
   ],
   evo_count: [
+    { value: 'cond_evo_count_ge', label: '以上' },
+    { value: 'cond_evo_count_le', label: '以下' },
+    { value: 'cond_evo_count_eq', label: '完全一致' },
     { value: 'cond_evo_lowest', label: '最も少ない' },
     { value: 'cond_evo_highest', label: '最も多い' },
   ],
@@ -11632,7 +11635,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   if (base === 'cond_target_evo_source') return 'evo_source';
-  if (base === 'cond_evo_lowest' || base === 'cond_evo_highest') return 'evo_count';
+  if (base === 'cond_evo_lowest' || base === 'cond_evo_highest' || /^cond_evo_count_(ge|le|eq)$/.test(base)) return 'evo_count';
   return 'other';
 }
 

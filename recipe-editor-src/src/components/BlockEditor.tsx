@@ -5220,7 +5220,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <input
                   type="radio"
                   name={`perCountMode_${index}_${forEffect ? 'alt' : 'main'}`}
-                  checked={curPerCountMode !== 'repeat'}
+                  // 「1つごとに数値を増減する」（step）のときに選ばれている扱いにしない（以前は step でも ON 扱いで、
+                  // 押しても変更として受け付けられず「値 × N」に戻せなかった。ST25-05）
+                  checked={curPerCountMode !== 'repeat' && curPerCountMode !== 'step'}
                   onChange={() => setFields({ perCountMode: undefined })}
                   style={{ margin: 0 }}
                 />

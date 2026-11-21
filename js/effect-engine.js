@@ -4218,8 +4218,8 @@ export function runWhenDestroyLocal(card, cause, cb) {
     if (bs._ddDodgePlan === plan) bs._ddDodgePlan = null;
     bs._lastDestroyCause = prevCause;
     const cur = card._armorPurgedTo || card;
-    const prevented = !!(cur.buffs && cur.buffs.some((b) => b && b.type === 'keyword_prevent_destroy'));
-    if (Array.isArray(cur.buffs)) cur.buffs = cur.buffs.filter(b => before.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+    const prevented = !!(cur.buffs && cur.buffs.some((b) => b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')));
+    if (Array.isArray(cur.buffs)) cur.buffs = cur.buffs.filter(b => before.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')));
     if (!prevented) { done(false); return; }
     if (plan.shown) { done(true); return; }
     _ddPlayDodge(plan, cur, () => done(true)); return;
@@ -4300,7 +4300,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // cant_destroy（消滅できない付与）: keyword_prevent_destroyは原因を問わず常にブロック。
   // keyword_prevent_battle_destroyはバトル起因(causeType==='battle')の消滅のみブロックする
   if (destroyed.buffs && destroyed.buffs.some((b) =>
-    b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
+    b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle') || (b.type === 'keyword_prevent_nonbattle_destroy' && causeType !== 'battle')
   )) {
     ctx.addLog('🛡 「' + destroyed.name + '」は消滅しない！');
     if (causeType !== 'battle') { _ddDodgeFx(ctx, destroyed, (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai', { label: '消滅しない！', sub: '消滅しない', shield: true }, () => { callback && callback(); }); return; }
@@ -4347,10 +4347,10 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       if (ctx.bs && ctx.bs._ddDodgePlan === _wdPlan) ctx.bs._ddDodgePlan = null;
       const _wdCur = destroyed._armorPurgedTo || destroyed;
       const prevented = !!(_wdCur.buffs && _wdCur.buffs.some((b) =>
-        b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
+        b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle') || (b.type === 'keyword_prevent_nonbattle_destroy' && causeType !== 'battle')
       ));
       if (Array.isArray(_wdCur.buffs)) {
-        _wdCur.buffs = _wdCur.buffs.filter(b => _wdBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+        _wdCur.buffs = _wdCur.buffs.filter(b => _wdBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')));
       }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
@@ -4521,7 +4521,7 @@ function _returnOwnFieldCardToDeck(owner, card, toTop, ctx, done) {
 function _doDestroyTamer(targetSide, tamerIdx, ctx, callback) {
   const destroyed = (targetSide.tamerArea || [])[tamerIdx];
   if (!destroyed) { callback && callback(); return; }
-  if (destroyed.buffs && destroyed.buffs.some((b) => b.type === 'keyword_prevent_destroy')) {
+  if (destroyed.buffs && destroyed.buffs.some((b) => b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')) {
     ctx.addLog && ctx.addLog('🛡 「' + destroyed.name + '」は消滅しない！');
     callback && callback();
     return;
@@ -9487,6 +9487,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // 「〜の間、このデジモンは（バトルで／効果で）消滅しない」（ポコモン ST26-01 の進化元
             // 「特徴『氷雪型』を持つこのデジモンはバトルで消滅しない」）: 消滅を防ぐ印を常時効果のバフとして付ける
             if (step.action === 'cant_destroy' && (!step.target || step.target === 'self' || step.target === 'self_card')) {
+              // 「バトル以外で消滅しない」（not_battle。セッカモン BT27-029）: 効果・ルール（DP0 等）での消滅だけ防ぐ
+              if (step.cause === 'not_battle') { if (!card.buffs) card.buffs = []; card.buffs.push({ type: 'keyword_prevent_nonbattle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' }); return; }
               const _cdCause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
               if (!card.buffs) card.buffs = [];
               if (!_cdCause || _cdCause === 'battle') card.buffs.push({ type: 'keyword_prevent_battle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
@@ -9657,6 +9659,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // 「〜の間、このデジモンは（バトルで／効果で）消滅しない」（ポコモン ST26-01 の進化元
             // 「特徴『氷雪型』を持つこのデジモンはバトルで消滅しない」）: 消滅を防ぐ印を常時効果のバフとして付ける
             if (step.action === 'cant_destroy' && (!step.target || step.target === 'self' || step.target === 'self_card')) {
+              // 「バトル以外で消滅しない」（not_battle。セッカモン BT27-029）: 効果・ルール（DP0 等）での消滅だけ防ぐ
+              if (step.cause === 'not_battle') { if (!card.buffs) card.buffs = []; card.buffs.push({ type: 'keyword_prevent_nonbattle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' }); return; }
               const _cdCause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
               if (!card.buffs) card.buffs = [];
               if (!_cdCause || _cdCause === 'battle') card.buffs.push({ type: 'keyword_prevent_battle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
@@ -23211,9 +23215,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 消滅させたのにダークドラモンACE LM-043 も消滅していた）
       const cause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
       const flags = [];
-      if (!cause || cause === 'battle') flags.push('prevent_battle_destroy');
-      if (!cause || cause === 'effect') flags.push('prevent_destroy');
-      const causeJp = cause === 'battle' ? 'バトルで' : cause === 'effect' ? '効果で' : 'バトルでも効果でも';
+      // 「バトル以外で消滅しない」（cause:'not_battle'。セッカモン BT27-029「相手のターン終了まで、このデジモンは【ブロッカー】を得て、
+      // バトル以外で消滅しない」）: 効果・ルール（DP0 等）での消滅だけ防ぐ。ただし「〜で消滅するとき」の置換効果（【スケープゴート】等）では
+      // 原因はいつ発動するかの条件なので、従来どおりこの消滅をそのまま防ぐ
+      const _cdTrigNb = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+      const _cdNonBattle = step.cause === 'not_battle' && !(_cdTrigNb === 'when_destroy' || _cdTrigNb === 'when_battle_destroy' || step._kwFlag === 'fragment');
+      if (_cdNonBattle) flags.push('prevent_nonbattle_destroy');
+      else {
+        if (!cause || cause === 'battle') flags.push('prevent_battle_destroy');
+        if (!cause || cause === 'effect') flags.push('prevent_destroy');
+      }
+      const causeJp = _cdNonBattle ? 'バトル以外で' : cause === 'battle' ? 'バトルで' : cause === 'effect' ? '効果で' : 'バトルでも効果でも';
       const applyFlagsTo = (tgt) => {
         if (!tgt) return;
         flags.forEach((f) => addBuffDirect(tgt, 'keyword_' + f, 0, dur, ctx));

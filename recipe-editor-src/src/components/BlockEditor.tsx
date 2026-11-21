@@ -4167,6 +4167,8 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   self: [
     { code: 'self_card', label: '本体（このデジモン）' },
     { code: 'evo_source', label: '進化元' },
+    // このデジモンのDP（「このデジモンのDP8000ごとに」ST25-05。枚数ではなくDPを N で割った数。⚠ エンジン未実装）
+    { code: 'self_dp', label: 'DP' },
   ],
   // 直前の効果: 「処理した枚数」(last_action_count・既存)と「処理したカード」(last_action_cards)。
   // 後者はカード自体を参照するため、数え方「色の種類の数」と組み合わせて
@@ -4241,9 +4243,11 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
 // メモリーはカードの枚数ではなくメモリーゲージの数値そのものを数える特殊対象。
 // 「N枚ごと」ではなく「Nごと」と表示するため、枚数系（ゾーン/カード）と区別する
 const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
+// 枚数ではなく数値（DP）を数えるもの: 「8000ごと」の単位・数え方（色）を出さない
+const PERREF_DP_CODES = new Set(['self_dp']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
-  if (code === 'evo_source' || code === 'self_card') return 'self';
+  if (code === 'evo_source' || code === 'self_card' || code === 'self_dp') return 'self';
   if (code === 'last_action_count' || code === 'last_action_cards') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
@@ -4578,6 +4582,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
   const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
   const effectValueStep = isEditingAlt ? editingAlt!.valueStep : block.valueStep;
+  const effectValueStepCap = isEditingAlt ? editingAlt!.valueStepCap : block.valueStepCap;
   const effectRefCount = isEditingAlt ? editingAlt!.refCount : block.refCount;
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
   const effectPerRefFilterChain = isEditingAlt ? editingAlt!.perRefFilterChain : block.perRefFilterChain;
@@ -4850,6 +4855,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     const curPerCount = forEffect ? effectPerCount : block.perCount;
     const curPerCountMode = forEffect ? effectPerCountMode : block.perCountMode;
     const curValueStep = forEffect ? effectValueStep : block.valueStep;
+    const curValueStepCap = forEffect ? effectValueStepCap : block.valueStepCap;
     const curRefCount = forEffect ? effectRefCount : block.refCount;
     const curPerRefFilter = forEffect ? effectPerRefFilter : (block.perRefFilter || []);
     const curPerRefFilterChain = forEffect ? effectPerRefFilterChain : block.perRefFilterChain;
@@ -4939,7 +4945,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               if (e.target.checked) {
                 setFields({ perCount: curPerCount || 1, perRef: curPerRef || 'opp_digimon' });
               } else {
-                setFields({ perCount: undefined, perRef: '', perCountMode: undefined, valueStep: undefined, refCount: undefined });
+                setFields({ perCount: undefined, perRef: '', perCountMode: undefined, valueStep: undefined, valueStepCap: undefined, refCount: undefined });
               }
             }}
           />
@@ -4955,11 +4961,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <input
                   type="number"
                   min={1}
+                  step={PERREF_DP_CODES.has(refSubject) ? 1000 : 1}
                   value={curPerCount || 1}
                   onChange={(e) => setFields({ perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                  style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                  style={{ width: PERREF_DP_CODES.has(refSubject) ? 80 : 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
                 />
-                <span style={{ fontSize: 11, color: '#555' }}>{PERREF_MEMORY_CODES.has(refSubject) ? 'ごと、' : curRefCount === 'colors' ? '色ごと、' : '枚ごと、'}</span>
+                <span style={{ fontSize: 11, color: '#555' }}>{PERREF_MEMORY_CODES.has(refSubject) || PERREF_DP_CODES.has(refSubject) ? 'ごと、' : curRefCount === 'colors' ? '色ごと、' : '枚ごと、'}</span>
               </div>
               {/* 対象（2段ボタン方式: このカード/自分/相手/両方/直前の効果 → 進化元/デジモン/
                   テイマー/手札/トラッシュ/セキュリティ/バトルエリア）。「直前の効果」はL1単独で
@@ -5093,6 +5100,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           このカード（本体）と、自分/相手側で選んだものを合わせて数えます（例: 数え方「色の種類の数」で「このデジモンとテイマーの色1色ごとに」）。⚠ エンジン未実装
                         </div>
                       )}
+                      {refSubject === 'self_dp' && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
+                          このデジモンのDPを左の数で割った数（切り捨て）を数えます（「このデジモンのDP8000ごとに」→ 8000）。⚠ エンジン未実装
+                        </div>
+                      )}
                       {refSubject === 'self_card' && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
                           このデジモン自身を数えます（数え方「色の種類の数」で「このデジモンの色1色ごとに」）
@@ -5173,7 +5185,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 メモリーはカードではなく数値そのものを数えるため出さない。
                 例: EX12-076 スサノオモン「このデジモンの進化元の色1色ごとにDP-3000」(このカード→進化元＋色)、
                 EX12-047 アマテラスモン「戻したカードの色1色ごとにDP-5000」(直前の効果→処理したカード＋色) */}
-            {!PERREF_MEMORY_CODES.has(refSubject) && (
+            {!PERREF_MEMORY_CODES.has(refSubject) && !PERREF_DP_CODES.has(refSubject) && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, fontSize: 11, flexWrap: 'wrap' }}>
                 <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>数え方:</span>
                 <ButtonGroup
@@ -5260,6 +5272,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   値欄の数値は基準値のまま（例: 8000）。カードの文言どおりの符号で入力（「数値-3000」→ -3000）
                 </span>
                 <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
+                {/* 何を増減するか: 効果の数値（DP-8000 の 8000 等）か、対象の上限（「DP合計7000まで」「DP4000以下の」の数値）か */}
+                <div style={{ flexBasis: '100%', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#1a4f8a', fontWeight: 'bold' }}>増減するもの:</span>
+                  <ButtonGroup
+                    options={[
+                      { code: '', label: '効果の数値' },
+                      { code: 'dp', label: '上限（DP）' },
+                      { code: 'cost', label: '上限（コスト）' },
+                      { code: 'lv', label: '上限（Lv）' },
+                    ]}
+                    value={curValueStepCap || ''}
+                    onChange={(v) => setFields({ valueStepCap: v === 'dp' || v === 'cost' || v === 'lv' ? v : undefined })}
+                    accentColor="#1a4f8a"
+                  />
+                  {curValueStepCap && (
+                    <span style={{ color: '#666', fontSize: 10 }}>
+                      対象の条件の「{curValueStepCap === 'dp' ? 'DP' : curValueStepCap === 'cost' ? 'コスト' : 'Lv'}合計N以下」「{curValueStepCap === 'dp' ? 'DP' : curValueStepCap === 'cost' ? 'コスト' : 'Lv'} N以下」の N に足します（例: DP合計7000まで、DP8000ごとに上限+4000 → 4000）
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {/* フィルタ: カウント時に追加で絞り込み（発動条件と同じボタン式のConditionsHybridEditorを再利用） */}

@@ -20,6 +20,8 @@ export const COST_LIMIT_MOD_ACTIONS = new Set(['cost_limit_plus', 'cost_limit_mi
 // 「効果の上限/数値を修正」(effect_cap_modify) も、基準が DP/コスト/Lv（cap_attr）のときは「直前の効果に適用」できる。
 // 埋め込み先は直前の効果の filter.<基準>_le_mod（例: LM-001「進化元の色1色ごとに、このDP消滅効果の上限+1000」→ dp_le_mod）
 const CAP_MOD_ATTRS = new Set(['dp', 'cost', 'lv']);
+// 「1つごとに数値を増減する」で増減するのが対象の上限のときの基準（value_step_cap。ST25-05）
+const STEP_CAP_ATTRS = new Set<any>(['dp', 'cost', 'lv']);
 // 直前の効果へ埋め込める修正か。埋め込み先キー（cost_le_mod / dp_le_mod / lv_le_mod）を返す
 function prevModKeyOf(a: AltAction): string | null {
   if (!a.applyCostModToPrev) return null;
@@ -621,6 +623,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     if (a.perCountMode === 'step') {
       out.per_count_mode = 'step';
       if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) out.value_step = Number(a.valueStep);
+      if (a.valueStepCap) out.value_step_cap = a.valueStepCap;
     }
     if (a.refCount === 'colors') out.ref_count = 'colors';
     if (a.perRefStateCond && a.perRefStateCond.base) {
@@ -1618,6 +1621,7 @@ function embedPrevMods(headObj: any, seg: AltAction[], altObjs: any[]): any[] {
       if (a.perCountMode === 'step') {
         mod.per_count_mode = 'step';
         if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) mod.value_step = Number(a.valueStep);
+        if (a.valueStepCap) mod.value_step_cap = a.valueStepCap;
       }
       if (a.refCount === 'colors') mod.ref_count = 'colors';
       if (a.perRefStateCond && a.perRefStateCond.base) {
@@ -1945,6 +1949,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (b.perCountMode === 'step') {
       step.per_count_mode = 'step';
       if (b.valueStep !== undefined && b.valueStep !== null && !isNaN(Number(b.valueStep))) step.value_step = Number(b.valueStep);
+      // 増減するのが対象の上限（「DP合計7000まで」の 7000 等）のとき、その基準（ST25-05）
+      if (b.valueStepCap) step.value_step_cap = b.valueStepCap;
     }
     step.ref = b.perRef;
     // 数え方: 'colors' = 数えたカードの色の種類の数（未指定=枚数。既存出力は変えない）
@@ -2720,6 +2726,7 @@ function stepObjectToAltAction(step: any): AltAction {
     perRef: step?.ref || '',
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
     valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
+    valueStepCap: step?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(step?.value_step_cap) ? step.value_step_cap : undefined,
     refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     // 「～ごとに」の参照条件・参照状態（「その後」の後続stepでも、開き直して保存したときに
     // 消えないよう復元する。altActionToStepObject の ref_filter / ref_state 出力の逆変換）
@@ -2862,6 +2869,7 @@ function costModToAltAction(mod: any, key = 'cost_le_mod', prevAction = ''): Alt
     if (mod.per_count_mode === 'step') {
       alt.perCountMode = 'step';
       if (mod.value_step != null) alt.valueStep = Number(mod.value_step);
+      if (STEP_CAP_ATTRS.has(mod.value_step_cap)) alt.valueStepCap = mod.value_step_cap;
     }
     if (mod.ref_count === 'colors') alt.refCount = 'colors';
     if (mod.per_ref_state) {
@@ -3033,6 +3041,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     per_count_mode: true,
     // value_step→valueStep、ref_count→refCount へ復元済み（同上の理由で素通しにしない）
     value_step: true,
+    value_step_cap: true,
     ref_count: true,
     designated: true,
     designated_groups: true,
@@ -3256,6 +3265,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     perCount: step?.per_count !== undefined && step?.per_count !== null ? Number(step.per_count) : undefined,
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
     valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
+    valueStepCap: step?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(step?.value_step_cap) ? step.value_step_cap : undefined,
     refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     perRef: step?.ref || '',
     perRefStateCond: (() => {
@@ -3382,6 +3392,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             })(),
             perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : a?.per_count_mode === 'step' ? 'step' as const : undefined,
             valueStep: a?.per_count_mode === 'step' && a?.value_step != null ? Number(a.value_step) : undefined,
+            valueStepCap: a?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(a?.value_step_cap) ? a.value_step_cap : undefined,
             refCount: a?.ref_count === 'colors' ? 'colors' as const : undefined,
             perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,

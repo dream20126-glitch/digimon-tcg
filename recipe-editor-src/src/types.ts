@@ -418,6 +418,10 @@ export interface EffectBlock {
   perCountMode?: 'repeat' | 'step';
   // perCountMode==='step' のときの1つあたりの増減値（符号付き）。JSON では step.value_step
   valueStep?: number;
+  // perCountMode==='step' で増減するのが「効果の数値」ではなく「対象の上限」のとき、その基準（DP/コスト/Lv）。
+  // JSON では step.value_step_cap。対象の条件の「DP合計N以下」「DP N以下」等の N に足す
+  // （ST25-05「DP合計7000まで消滅。このデジモンのDP8000ごとに、このDP消滅効果の上限+4000」）。⚠ エンジン未実装
+  valueStepCap?: 'dp' | 'cost' | 'lv';
   // 数え方。未指定=枚数（既存動作）、'colors'=数えたカードの色の種類の数。
   // JSON では step.ref_count:'colors'（EX12-076 スサノオモン「進化元の色1色ごとに」）。⚠ エンジン未実装
   refCount?: 'colors';
@@ -609,8 +613,9 @@ export interface AltAction {
   perRef?: string;
   perRefStateCond?: ConditionPair; // 効果1と同じ意味。JSONではstep.ref_stateに出力
   perCountMode?: 'repeat' | 'step';
-  // 効果1と同じ意味（value_step / ref_count）
+  // 効果1と同じ意味（value_step / value_step_cap / ref_count）
   valueStep?: number;
+  valueStepCap?: 'dp' | 'cost' | 'lv';
   refCount?: 'colors';
   perRefFilter?: ConditionPair[];
   // perRefFilterのAND内包OR版条件チェーン（EffectBlock.perRefFilterChainと同じ意味・変換）

@@ -16674,9 +16674,15 @@ export function canAttackDigimonTarget(atk, def, bs, atkSide) {
   if (isProtectedFromAttack(def, bs, defSide)) return false;
   if (def.suspended) return true;
   if (atk && atk._executeAttacking) return true;
-  return _continuousStepsOf(atk, ['during_own_turn', 'during_any_turn']).some((st) => st.action === 'attack'
+  const _allowsDef = (st) => st && st.action === 'attack'
     && /^opponent/.test(String(st.target || '')) && _evalStepConditionGate(st, atk, bs, atkSide)
-    && (!st.filter || cardMatchesFilter(def, st.filter, bs, atkSide, atk)));
+    && (!st.filter || cardMatchesFilter(def, st.filter, bs, atkSide, atk));
+  return _continuousStepsOf(atk, ['during_own_turn', 'during_any_turn']).some((st) => _allowsDef(st)
+    // 効果2以降（alt_actions、AND/その後）の「アタックできる」も見る。効果1の発動条件を満たすときだけ
+    // （ルビウスドラモン BD01-10「自分の『本堂カナタ』がいる間、このデジモンは【貫通】を得て、
+    //  アクティブ状態の相手のデジモンにもアタックできる」＝効果1【貫通】＋効果2 アタック）
+    || (Array.isArray(st.alt_actions) && st.alt_actions_op !== 'or' && _evalStepConditionGate(st, atk, bs, atkSide)
+      && st.alt_actions.some(_allowsDef)));
 }
 if (typeof window !== 'undefined') window._canAttackDigimonTarget = canAttackDigimonTarget;
 

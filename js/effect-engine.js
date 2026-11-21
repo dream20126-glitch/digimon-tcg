@@ -18811,6 +18811,10 @@ function _collectEffectCapMods(ctx) {
     (Array.isArray(steps) ? steps : (steps ? [steps] : [])).forEach((st) => {
       if (!st || st.action !== 'effect_cap_modify') return;
       if (st.condition && !checkConditions(parseRecipeCondition(String(st.condition)), carrier, bs, side)) return;
+      // 対象がこのデジモン自身のときの対象の条件（filter）も「〜を持つこのデジモン」の条件として見る
+      // （リスクモン SD01-03・ジェムモン BD01-02「特徴『アリシオン』を持つこのデジモンのDP消滅効果の上限+1000」）
+      if (st.filter && (!st.target || /^self(_card)?$/.test(String(st.target)))
+          && !cardMatchesFilter(carrier, st.filter, bs, side, carrier)) return;
       out.push({ step: st, carrier });
     });
   };

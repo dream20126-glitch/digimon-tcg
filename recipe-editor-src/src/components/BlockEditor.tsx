@@ -6995,6 +6995,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           function onOtherActionPick(newCode: string) {
             if (!newCode) return;
             const code = flaggedBases.has(newCode) ? newCode + '_top' : newCode;
+            if (isEditingAlt && editingAlt && editingAlt.action && editingAlt.action !== code) {
+              if (toggleMultiAction(code)) return;
+            }
             if (!isEditingAlt && block.action && block.action !== code) {
               const d = CANT_TO_DOABLE_LIVE[code] || code;
               if (DOABLE_TO_CANT_LIVE[d] && selectedSet.length > 0 && bundleAlts.length === 0) {
@@ -7138,7 +7141,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 効果1が「できない」以外（例: キーワード付与）のときは、同じ対象の「できない」（bundle なしで保存されたもの）も
           // 効果1にまとめた効果として扱う（P-135: キーワード付与＋アタックできない。開き直すとどこにも出なかった）
           const _primaryIsCant = !!CANT_TO_DOABLE_LIVE[block.action || ''] || block.action === 'cant_attack_block' || block.action === CANT_BE_ATTACKED;
-          const bundleAlts = isEditingAlt ? [] : altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && (a.bundle || !_primaryIsCant));
+          // 効果2以降のアクションの複数選択: 編集中の効果のすぐ後ろに続く「直前の効果の設定を引き継ぐ」（inheritPrev）効果を、
+          // この効果にまとめたアクションとして扱う（対象・対象の条件・期間・発動条件は編集中の効果と同じ。BT27-029・BT27-033）
+          const _curAltIdx = isEditingAlt ? editingEffect - 1 : -1;
+          const altFollowers: { a: AltAction; i: number }[] = (() => {
+            if (!isEditingAlt) return [];
+            const r: { a: AltAction; i: number }[] = [];
+            for (let k = _curAltIdx + 1; k < altActions.length; k++) { const a = altActions[k]; if (!a || !a.inheritPrev) break; r.push({ a, i: k }); }
+            return r;
+          })();
+          const bundleAlts = isEditingAlt ? altFollowers : altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && (a.bundle || !_primaryIsCant));
           // まとめた効果のアクションがボタン code に当たるか（「できない」形もそのボタン）
           const bundleMatches = (a: AltAction, code: string) => a.action === code || CANT_TO_DOABLE_LIVE[a.action || ''] === code;
           const bundleBlocked = !isEditingAlt && altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
@@ -7151,13 +7163,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               setEditingEffect(leadBundleCount + 1);
               return;
             }
-            const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
+            // 効果1の対象が「全て」や「このデジモン」なら、同じ対象（same_target）ではなく効果1の設定を引き継ぐ（相手のデジモン全ては進化できず、レストできない）
+            const _b1Tgt = String(block.target || '');
+            const _b1Inh = !BUNDLE_VALUE_ONLY.has(code) && (/:all$/.test(_b1Tgt) || /^self(_card)?$/.test(_b1Tgt));
+            const na: AltAction = { action: code, value: '', target: (BUNDLE_VALUE_ONLY.has(code) || _b1Inh) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true, ...(_b1Inh ? { inheritPrev: true } : {}) };
             const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
             onChange({ ...block, altActions: next, altActionsOp: 'and' });
           }
           // 処理したら true（false なら従来の単一選択/できないの処理に任せる）
           function toggleMultiAction(code: string): boolean {
-            if (isEditingAlt || !block.action) return false;
+            if (isEditingAlt) {
+              const cur = editingAlt;
+              if (!cur || !cur.action) return false;
+              const inF = altFollowers.find((x) => bundleMatches(x.a, code));
+              if (inF) { removeAltAction(inF.i); return true; }
+              if (cur.action === code || CANT_TO_DOABLE_LIVE[cur.action || ''] === code) return altFollowers.length > 0;
+              // 編集中の効果が「できない」なら、追加するものも「できない」にする（進化できず、レストできない）
+              const _addCode = (CANT_TO_DOABLE_LIVE[cur.action || ''] && DOABLE_TO_CANT_LIVE[code]) ? DOABLE_TO_CANT_LIVE[code] : code;
+              const na: AltAction = { action: _addCode, value: '', target: '', conditions: [], options: [], fromZones: [], inheritPrev: true, thenBreak: true };
+              const pos = _curAltIdx + 1 + altFollowers.length;
+              onChange({ ...block, altActions: [...altActions.slice(0, pos), na, ...altActions.slice(pos)] });
+              return true;
+            }
+            if (!block.action) return false;
             const inB = bundleAlts.find((x) => bundleMatches(x.a, code));
             if (inB) { removeAltAction(inB.i); return true; }
             if (block.action === code) {
@@ -8037,15 +8065,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
                   const buttonCodes = new Set(COMMON_ACTIONS.map((x) => x.code));
                   const isCantMulti = selectedSet.length >= 2;
-                  const doCodes = (!isEditingAlt && block.action && bundleAlts.length > 0) ? [block.action, ...bundleAlts.map((x) => x.a.action || '')] : [];
+                  const _mainAction = isEditingAlt ? (editingAlt && editingAlt.action) : block.action;
+                  const doCodes = (_mainAction && bundleAlts.length > 0) ? [_mainAction, ...bundleAlts.map((x) => x.a.action || '')] : [];
                   const chipCodes = isCantMulti ? selectedSet.filter((c) => !buttonCodes.has(c)) : doCodes.filter((c) => !buttonCodes.has(c));
                   const removeChip = (c: string) => { if (isCantMulti) toggleCantAction(c); else if (!toggleMultiAction(c)) changeEffectAction(''); };
                   const needsValue = (c: string) => BUNDLE_NEEDS_VALUE.has(c) || !!findActionEntry(c)?.valueLabel;
                   const valueRows = doCodes.length >= 2 ? [
-                    ...(needsValue(block.action || '') ? [{ key: 'main', code: block.action || '', value: block.value, set: (v: any) => updateEffect({ value: v }) }] : []),
+                    ...(needsValue(_mainAction || '') ? [{ key: 'main', code: _mainAction || '', value: effectValue, set: (v: any) => updateEffect({ value: v }) }] : []),
                     ...bundleAlts.filter((x) => needsValue(x.a.action || '')).map((x) => ({ key: 'b' + x.i, code: x.a.action || '', value: x.a.value, set: (v: any) => updateAltAction(x.i, { value: v }) })),
                   ] : [];
-                  if (chipCodes.length === 0 && valueRows.length === 0 && !(bundleBlocked && block.action)) return null;
+                  if (chipCodes.length === 0 && valueRows.length === 0 && !(bundleBlocked && block.action) && altFollowers.length === 0) return null;
                   return (
                     <div style={{ marginTop: 6 }}>
                       {chipCodes.length > 0 && (
@@ -8071,6 +8100,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                                 style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
                               />
                             </label>
+                          ))}
+                        </div>
+                      )}
+                      {/* 効果2以降でまとめたアクション: 原因・キーワード等そのアクション固有の設定は「⚙」から開いて入れる */}
+                      {altFollowers.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4, fontSize: 11 }}>
+                          <span style={{ color: '#558b2f', fontWeight: 'bold' }}>まとめたアクション:</span>
+                          {altFollowers.map((x) => (
+                            <span key={x.i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#f1f8e9', border: '1px solid #aed581', borderRadius: 12 }}>
+                              {labelOf(x.a.action || '')}
+                              <button type="button" title="このアクション固有の設定（原因・キーワード等）を開く" onClick={() => setEditingEffect(x.i + 1)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontSize: 12 }}>⚙</button>
+                              <button type="button" title="外す" onClick={() => removeAltAction(x.i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                            </span>
                           ))}
                         </div>
                       )}
@@ -8460,7 +8502,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <button type="button" onClick={() => setEditingEffect(0)} style={altBtnStyle(editingEffect === 0)}>
                 効果1
               </button>
-              {altActions.map((a, i) => i < leadBundleCount ? null : (
+              {altActions.map((a, i) => (i < leadBundleCount || (i > 0 && a.inheritPrev && i > leadBundleCount)) ? null : (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                   <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
                     {effectTabLabel(i)}
@@ -8792,19 +8834,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* 効果2以降: 直前の効果の期間・発動条件を引き継ぐ（「〜いないなら、相手のターン終了まで、【ブロッカー】を得て、バトル以外で消滅しない」の後半。BT27-029）。
-            保存時に直前の効果の期間・発動条件をこの効果へ写す（inherit_prev）。ONの間、この効果自身の期間・発動条件は使わない */}
-        {isEditingAlt && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, marginTop: 6, padding: '4px 8px', background: '#f1f8e9', border: '1px solid #aed581', borderRadius: 4 }}>
-            <input
-              type="checkbox"
-              checked={!!editingAlt!.inheritPrev}
-              onChange={(e) => updateEffect({ inheritPrev: e.target.checked || undefined })}
-            />
-            <b>直前の効果の設定を引き継ぐ（アクション以外同じ）</b>
-            <span style={{ fontSize: 10, color: '#666' }}>（ONの間、対象・対象の条件・期間・発動条件は直前の効果と同じになります。直前の効果が「〜1体」を選ぶ形なら、同じデジモンに行います）</span>
-          </label>
-        )}
+        {/* 効果2以降で、直前の効果にまとめたアクション（inheritPrev）を編集しているとき: 対象・期間・発動条件は直前の効果と同じ */}
+        {isEditingAlt && editingAlt!.inheritPrev && editingEffect > 1 && (() => {
+          let h = editingEffect - 2;
+          while (h >= 0 && altActions[h] && altActions[h].inheritPrev) h--;
+          const parentEff = h + 2; // 効果番号（効果1=1）
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, marginTop: 6, padding: '4px 8px', background: '#f1f8e9', border: '1px solid #aed581', borderRadius: 4 }}>
+              <b>効果{parentEff}にまとめたアクションです</b>
+              <span style={{ fontSize: 10, color: '#666' }}>（対象・対象の条件・期間・発動条件は効果{parentEff}と同じ。ここではこのアクション固有の設定〈数値・キーワード・原因など〉だけを入れてください）</span>
+              <button type="button" onClick={() => setEditingEffect(parentEff - 1)} style={{ padding: '2px 8px', border: '1px solid #7cb342', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}>← 効果{parentEff}に戻る</button>
+            </div>
+          );
+        })()}
         {/* 新しいアクション専用の項目（支払うコスト-の登場/進化、効果の上限の種類 等）。効果1・効果2以降共通 */}
         <ActionParamsPanel
           action={effectAction}

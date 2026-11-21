@@ -4583,7 +4583,7 @@ function _collectSideTargets(ctx, opts) {
   if (opts.own) scan(player, true);
   if (opts.opp) scan(opponent, false);
   // 「最もLv/DP/登場コストの高い（低い）〜」: 候補が揃ってから極値で絞る
-  if (opts.filter && (opts.filter.dp_extreme || opts.filter.cost_extreme || opts.filter.lv_extreme)) {
+  if (opts.filter && (opts.filter.dp_extreme || opts.filter.cost_extreme || opts.filter.lv_extreme || opts.filter.evo_extreme)) {
     const keep = new Set(applyExtremeFilter(out.map(e => e.card), opts.filter));
     return out.filter(e => keep.has(e.card));
   }
@@ -7345,13 +7345,15 @@ function applyExtremeFilter(cards, filter) {
   // Lvを持たないカード（巨神兵器 BT26-085 等）は「最もLvの低い／高い」の候補にしない（Lv.0 扱いにしない）
   if (filter.lv_extreme === 'highest' || filter.lv_extreme === 'lowest') out = out.filter(c => !isNaN(parseInt(c.level)));
   pick('lv_extreme', (c) => parseInt(c.level) || 0);
+  // 進化元の枚数が最も多い／少ない（「最も進化元枚数が少ない相手のデジモン1体」AD1-013・ST26-02。filter.evo_extreme）
+  pick('evo_extreme', (c) => (Array.isArray(c.stack) ? c.stack.length : 0));
   return out;
 }
 // applyExtremeFilter の添字版（area[idx] のカードで判定し、残った添字を返す）。
 // 常に新しい配列を返す（呼び出し側が元の配列を length=0 で空にしてから push し直すため、
 // 同じ配列を返すと候補が全て消えてしまう）
 function applyExtremeFilterIdxs(idxs, area, filter) {
-  if (!filter || !filter.dp_extreme && !filter.cost_extreme && !filter.lv_extreme) return idxs.slice();
+  if (!filter || !filter.dp_extreme && !filter.cost_extreme && !filter.lv_extreme && !filter.evo_extreme) return idxs.slice();
   const keep = new Set(applyExtremeFilter(idxs.map(i => area[i]), filter));
   return idxs.filter(i => keep.has(area[i]));
 }
@@ -9470,7 +9472,11 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               }
               return;
             }
-            if (step.condition) {
+            // 発動条件（condition に加えて when・extra_conditions も。「進化元を持つ相手のデジモンがいない間」
+            // = cond_not_exists@opp ＋ when:cond_has_evo:1。ポコモン ST26-01。when が無視されていた）
+            if (_stepHasGateConditions(step)) {
+              if (!_evalStepConditionGate(step, card, bs, side)) return;
+            } else if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
             }
@@ -9478,6 +9484,15 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // （スナリザモン P-033 の進化元効果で、DP11000 のムゲンドラモンも【Sアタック+1】を得ていた）
             if (step.filter && (!step.target || step.target === 'self' || step.target === 'self_card')
                 && !cardMatchesFilter(card, step.filter, bs, side, card)) return;
+            // 「〜の間、このデジモンは（バトルで／効果で）消滅しない」（ポコモン ST26-01 の進化元
+            // 「特徴『氷雪型』を持つこのデジモンはバトルで消滅しない」）: 消滅を防ぐ印を常時効果のバフとして付ける
+            if (step.action === 'cant_destroy' && (!step.target || step.target === 'self' || step.target === 'self_card')) {
+              const _cdCause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
+              if (!card.buffs) card.buffs = [];
+              if (!_cdCause || _cdCause === 'battle') card.buffs.push({ type: 'keyword_prevent_battle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
+              if (!_cdCause || _cdCause === 'effect') card.buffs.push({ type: 'keyword_prevent_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
+              return;
+            }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = _refWithCountMode(step);
@@ -9627,7 +9642,11 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               }
               return;
             }
-            if (step.condition) {
+            // 発動条件（condition に加えて when・extra_conditions も。「進化元を持つ相手のデジモンがいない間」
+            // = cond_not_exists@opp ＋ when:cond_has_evo:1。ポコモン ST26-01。when が無視されていた）
+            if (_stepHasGateConditions(step)) {
+              if (!_evalStepConditionGate(step, card, bs, side)) return;
+            } else if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
             }
@@ -9635,6 +9654,15 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             // （スナリザモン P-033 の進化元効果で、DP11000 のムゲンドラモンも【Sアタック+1】を得ていた）
             if (step.filter && (!step.target || step.target === 'self' || step.target === 'self_card')
                 && !cardMatchesFilter(card, step.filter, bs, side, card)) return;
+            // 「〜の間、このデジモンは（バトルで／効果で）消滅しない」（ポコモン ST26-01 の進化元
+            // 「特徴『氷雪型』を持つこのデジモンはバトルで消滅しない」）: 消滅を防ぐ印を常時効果のバフとして付ける
+            if (step.action === 'cant_destroy' && (!step.target || step.target === 'self' || step.target === 'self_card')) {
+              const _cdCause = /^not_/.test(String(step.cause || '')) ? null : step.cause;
+              if (!card.buffs) card.buffs = [];
+              if (!_cdCause || _cdCause === 'battle') card.buffs.push({ type: 'keyword_prevent_battle_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
+              if (!_cdCause || _cdCause === 'effect') card.buffs.push({ type: 'keyword_prevent_destroy', value: 0, duration: 'permanent', source: 'evo_recipe_perm' });
+              return;
+            }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = _refWithCountMode(step);
@@ -10158,6 +10186,25 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_own_security_ge': if (bs && bs[side] && bs[side].security && bs[side].security.length < (cond.value || 0)) return false; break;
       // === 「直前の効果」ゾーン: bs._lastActionCount（security_trash_top/bottom/select・
       // deck_trash_top・destroyのみ対応）との比較。手札/トラッシュ等と違いsideを問わない単一値 ===
+      // 進化元の枚数（条件の種類「進化元の枚数」以上/以下/完全一致/より多い/より少ない）。比べる値は数値か、
+      // 'self_card'＝この効果を持つデジモン（トリガー条件では _condRefSelfCard）／'opp'・'own_digimon'＝相手・自分のデジモンのどれか1体
+      // （ユキナモン ED01-02「このデジモンの進化元枚数以下の相手のデジモンが消滅したとき」= trigger_conditions cond_evo_count_le:self_card）
+      case 'cond_evo_count_ge': case 'cond_evo_count_le': case 'cond_evo_count_eq': case 'cond_evo_count_gt': case 'cond_evo_count_lt': {
+        const _q = cond.code.slice('cond_evo_count_'.length);
+        const _n = card && Array.isArray(card.stack) ? card.stack.length : 0;
+        const _cmp = (m) => _q === 'ge' ? _n >= m : _q === 'le' ? _n <= m : _q === 'eq' ? _n === m : _q === 'gt' ? _n > m : _n < m;
+        const _v = cond.value;
+        let _refs = [];
+        if (typeof _v === 'number' || /^\d+$/.test(String(_v))) _refs = [Number(_v)];
+        else if (_v === 'self_card') { const _sc = _condRefSelfCard || card; _refs = [_sc && Array.isArray(_sc.stack) ? _sc.stack.length : 0]; }
+        else if (bs && (_v === 'opp' || _v === 'own_digimon')) {
+          const _ownP = side === 'ai' ? bs.ai : bs.player;
+          const _oppP = side === 'ai' ? bs.player : bs.ai;
+          _refs = ((_v === 'opp' ? _oppP : _ownP).battleArea || []).filter((x) => x && x !== card).map((x) => (Array.isArray(x.stack) ? x.stack.length : 0));
+        }
+        if (!_refs.some(_cmp)) return false;
+        break;
+      }
       case 'cond_last_action_le': { if (!bs) break; if ((bs._lastActionCount || 0) > (cond.value || 0)) return false; break; }
       case 'cond_last_action_ge': { if (!bs) break; if ((bs._lastActionCount || 0) < (cond.value || 0)) return false; break; }
       case 'cond_last_action_eq': { if (!bs) break; if ((bs._lastActionCount || 0) !== Number(cond.value || 0)) return false; break; }
@@ -16620,8 +16667,15 @@ function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side, chai
 // step.trigger_conditions[] を評価（イベント発火元カードに対して AND、trigger_conditions_op:'or'指定時はOR）
 // trigger_conditions: ["cond_color:黄", "cond_lv:3", "cond_type:デジモン"] のような string 配列
 // eventCard: トリガー発火元カード（ctx.block._eventSourceCard or fallback ctx.card）
+// トリガー条件の評価中に「この効果を持つデジモン」を指す（cond_evo_count_*:self_card。判定するカードは発生元のカード）
+let _condRefSelfCard = null;
 function checkStepTriggerConditions(step, ctx) {
   if (!step || !Array.isArray(step.trigger_conditions) || step.trigger_conditions.length === 0) return true;
+  const _prevRefSelf = _condRefSelfCard;
+  _condRefSelfCard = (ctx && ctx.card) || null;
+  try { return _checkStepTriggerConditionsImpl(step, ctx); } finally { _condRefSelfCard = _prevRefSelf; }
+}
+function _checkStepTriggerConditionsImpl(step, ctx) {
   const reactingName = (ctx && ctx.card && ctx.card.name) || '?';
   const eventCard = (ctx && ctx.block && ctx.block._eventSourceCard) || (ctx && ctx.card);
   if (!eventCard) {
@@ -18522,6 +18576,17 @@ function _resolveValueFrom(vf, ctx) {
 // （宣言した場合、バトルの解決は battle-combat.js の通常のアタック処理が続けて行う）
 // opts.preselect: 確認と対象の選択だけ行い、宣言しない（done(true, { type, card }) で選んだ対象を返す）
 // opts.preTarget: 先に選んでおいた対象（{ type, card }）でそのまま宣言する（確認はしない。対象がもう選べなければ選び直す）
+// アタック先の条件の比べる値 'attacker'（アタックするデジモン）を、そのデジモンの値に置き換えた filter を返す
+// （evo_source_ge/le/eq/gt/lt＝進化元の枚数、dp_le/dp_ge 等＝DP）
+function _resolveAttackerRefs(filter, atkCard) {
+  const out = Object.assign({}, filter);
+  Object.keys(out).forEach((k) => {
+    if (out[k] !== 'attacker') return;
+    if (/^evo_source_(ge|le|eq|gt|lt)$/.test(k)) out[k] = atkCard && Array.isArray(atkCard.stack) ? atkCard.stack.length : 0;
+    else if (/^(dp|lv|cost)(_le|_ge)?$/.test(k)) out[k] = atkCard ? (parseInt(k.startsWith('dp') ? atkCard.dp : k.startsWith('lv') ? atkCard.level : atkCard.playCost, 10) || 0) : 0;
+  });
+  return out;
+}
 function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
   opts = opts || {};
   const finish = (v, pre) => { try { done && done(v, pre); } catch (_) {} };
@@ -18540,6 +18605,11 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
   const trig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
   const waitResolve = /turn_end$/.test(String(trig || ''));
   const isExecute = !!(step && step._executeAttack);
+  // 「この効果では、アクティブ状態の相手のデジモンにもアタックできる」（options:['allow_active']。雪片の絆 ED01-10）
+  const allowActive = isExecute || !!(step && Array.isArray(step.options) && step.options.includes('allow_active'));
+  // アタック先の条件（step.attack_target_filter）。比べる値 'attacker'＝アタックするデジモン（「進化元枚数が選んだデジモンより少ない」）
+  const _atf = (step && step.attack_target_filter && typeof step.attack_target_filter === 'object') ? _resolveAttackerRefs(step.attack_target_filter, atkCard) : null;
+  const _atkTargetOk = (c) => !_atf || cardMatchesFilter(c, _atf, ctx.bs, ctx.side, ctx.card);
   const declare = (targetType, targetIdx) => {
     if (opts.preselect) {
       const _tc = targetType === 'digimon' ? opponent.battleArea[targetIdx] : null;
@@ -18597,11 +18667,11 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     // ≪エグゼキュート≫はアクティブ状態の相手のデジモンも選べる。対象を選ばずに離したら、アタックするか確認し直す
     if (ctx.side === 'player' && typeof window !== 'undefined' && typeof window.startAttackMode === 'function'
         && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
-      const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || isExecute) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')));
+      const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || allowActive) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && _atkTargetOk(c));
       const _anySec = !digimonOnly && (opponent.security || []).length > 0;
       if (!_anyDigi && !_anySec) { finish(false); return; }
       window.startAttackMode(slotIdx, {
-        allowActive: isExecute, noSecurity: digimonOnly,
+        allowActive: allowActive, noSecurity: digimonOnly, targetOk: _atf ? _atkTargetOk : undefined,
         onPick: (type, idx) => declare(type === 'digimon' ? 'digimon' : 'security', type === 'digimon' ? idx : -1),
         onCancel: () => {
           setTimeout(() => showConfirmDialog(atkCard, '対象を選ばずに離しました。「' + atkCard.name + '」でアタックしますか？', (yes) => {
@@ -18615,7 +18685,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     }
     // ≪エグゼキュート≫は「アクティブ状態の相手のデジモンにもアタックできる」
     const restTargets = [];
-    (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || isExecute) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル'))) restTargets.push(i); });
+    (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || allowActive) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && _atkTargetOk(c)) restTargets.push(i); });
     const hasSecurity = !digimonOnly && (opponent.security || []).length > 0;
     if (restTargets.length === 0) {
       if (!hasSecurity) { finish(false); return; }
@@ -20916,7 +20986,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       //     「最もDPが低い/高い相手のデジモン全て」、filter.cost_extreme指定時は
       //     「最も登場コストが低い/高い相手のデジモン全て」、filter.lv_extreme指定時は
       //     「最もLvが低い/高い相手のデジモン全て」を対象にする。redirect_attackと同じ規約） ===
-      if ((step.target === 'opponent:all' || step.target === 'own:all') && (step.condition || (step.filter && (step.filter.dp_extreme || step.filter.cost_extreme || step.filter.lv_extreme)))) {
+      if ((step.target === 'opponent:all' || step.target === 'own:all') && (step.condition || (step.filter && (step.filter.dp_extreme || step.filter.cost_extreme || step.filter.lv_extreme || step.filter.evo_extreme)))) {
         const isOwnAll = step.target === 'own:all';
         const tgtPlayer = isOwnAll ? player : opponent;
         const tgtSideTag = isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai') : (ctx.side === 'player' ? 'ai' : 'player');
@@ -20944,6 +21014,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           const costs = matchedIdxs.map(i => parseInt(costOf(tgtPlayer.battleArea[i])) || 0);
           const extreme = step.filter.cost_extreme === 'lowest' ? Math.min(...costs) : Math.max(...costs);
           matchedIdxs = matchedIdxs.filter(i => (parseInt(costOf(tgtPlayer.battleArea[i])) || 0) === extreme);
+        }
+        // 進化元の枚数が最も多い／少ない（filter.evo_extreme）
+        if (step.filter && step.filter.evo_extreme && matchedIdxs.length > 0) {
+          const _evN = (i) => (Array.isArray(tgtPlayer.battleArea[i].stack) ? tgtPlayer.battleArea[i].stack.length : 0);
+          const evs = matchedIdxs.map(_evN);
+          const extreme = step.filter.evo_extreme === 'lowest' ? Math.min(...evs) : Math.max(...evs);
+          matchedIdxs = matchedIdxs.filter(i => _evN(i) === extreme);
         }
         // Lvを持たないカードは「最もLvの低い／高い」の候補にしない
         if (step.filter && step.filter.lv_extreme) matchedIdxs = matchedIdxs.filter(i => !isNaN(parseInt(tgtPlayer.battleArea[i] && tgtPlayer.battleArea[i].level)));
@@ -25063,7 +25140,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       // （以前はこのデジモンでのアタック確認になっていた）。選んだら「〜でアタックしますか？」は出さない
       if (ctx._forceTargetIdx === undefined && /^own(:\d+)?$/.test(String(step.target || ''))) {
         const _acands = [];
-        (player.battleArea || []).forEach((c, i) => { if (c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type) && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c)) _acands.push(i); });
+        (player.battleArea || []).forEach((c, i) => { if (c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type) && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c)
+          // アタックするデジモンの条件（対象の条件。雪片の絆 ED01-10「特徴『アリシオン』を持つ青の自分のデジモン1体」）
+          && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _acands.push(i); });
         if (_acands.length === 0) { ctx.addLog('💨 アタックできるデジモンがいません'); callback(); break; }
         const _goAtk = (idx) => executeRecipeStep(Object.assign({}, step, { target: 'own:1' }), Object.assign({}, ctx, { _forceTargetIdx: idx, _attackerChosen: true }), store, callback);
         showTargetSelection('pl', _acands, null, '#ffd54f', (idx) => {
@@ -25221,6 +25300,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const costs = _raCands.map(i => parseInt(costOf(_raPool.battleArea[i])) || 0);
         const extreme = _raFilter.cost_extreme === 'lowest' ? Math.min(...costs) : Math.max(...costs);
         _raCands = _raCands.filter(i => (parseInt(costOf(_raPool.battleArea[i])) || 0) === extreme);
+      }
+      // evo_extreme: 進化元の枚数が最大/最小のものだけに絞る（レナモン ST26-02「最も進化元枚数の少ないアクティブ状態の相手のデジモン」）
+      if (_raFilter && _raFilter.evo_extreme && _raCands.length > 0) {
+        const _evN = (i) => (Array.isArray(_raPool.battleArea[i].stack) ? _raPool.battleArea[i].stack.length : 0);
+        const evs = _raCands.map(_evN);
+        const extreme = _raFilter.evo_extreme === 'lowest' ? Math.min(...evs) : Math.max(...evs);
+        _raCands = _raCands.filter(i => _evN(i) === extreme);
       }
       // lv_extreme: 同様にLvが最大/最小のものだけに絞る
       if (_raFilter && _raFilter.lv_extreme) _raCands = _raCands.filter(i => !isNaN(parseInt(_raPool.battleArea[i] && _raPool.battleArea[i].level)));

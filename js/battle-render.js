@@ -703,6 +703,8 @@ function startAttackModeUI(slotIdx, opts) {
   // アタックできる相手か（効果のアタックでアクティブも可＝canHitActive／「アタックされない」／継続効果の「アクティブ状態にもアタックできる」）
   const _atkTargetOk = (def) => {
     if (!def) return false;
+    // 効果のアタックの「アタック先の条件」（opts.targetOk。雪片の絆 ED01-10「進化元枚数が選んだデジモンより少ない相手のデジモン」）
+    if (typeof opts.targetOk === 'function' && !opts.targetOk(def)) return false;
     // 「デジモンにアタックできない」（cant_attack_digimon。双葉＆ジャミング P-135）
     if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_attack_digimon')) return false;
     if (window._canAttackDigimonTarget) {

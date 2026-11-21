@@ -452,18 +452,25 @@ function execPhase(phase) {
 
 // ----- アクティブフェイズ -----
 
+// テキストの各行で、行頭から続く【…】の並びに【kw】があるか（文が始まったらそこで打ち切る）
+function _leadingKeywordHas(text, kw) {
+  return String(text || '').split(/\r?\n/).some(line => {
+    const m = /^\s*((?:【[^】]*】\s*)+)(.*)$/.exec(line);
+    if (!m) return false;
+    if (/^\s*を/.test(m[2])) return false;
+    return m[1].indexOf('【' + kw + '】') >= 0;
+  });
+}
+
 // ≪再起動≫判定: _permEffects.reboot or buffs[keyword_reboot] or キーワード欄/効果テキスト
 function _hasReboot(c) {
   if (!c) return false;
   if (c._permEffects && c._permEffects.reboot) return true;
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_reboot')) return true;
-  // キーワード欄に「再起動」を含む場合もアクティブ扱い（passive flag 適用前のフォールバック）
-  const kw = String(c.keyword || c['キーワード'] || '');
-  if (kw.indexOf('再起動') >= 0) return true;
-  // 効果テキストに「【再起動】」が記載されているケース（自身が再起動持ちであることを示す表記）
-  const ef = String(c.effect || '');
-  const evo = String(c.evoSourceEffect || '');
-  if (/【再起動】/.test(ef) || /【再起動】/.test(evo)) return true;
+  // 効果テキストの行頭に並ぶキーワード（例「【Sアタック+1】【再起動】【ブロッカー】」）に【再起動】がある＝自身が持つ。
+  // 「〜は【再起動】を得る」（ST5-12）・「【再起動】を持つ間」（BT2-005）のような文中の記述や、キーワード欄（記述があるだけでも入る）は見ない
+  if (_leadingKeywordHas(c.effect, '再起動')) return true;
+  if (Array.isArray(c.stack) && c.stack.some(s => s && !s._faceDown && _leadingKeywordHas(s.evoSourceEffect, '再起動'))) return true;
   // 進化元のレシピ passive に reboot がある場合
   if (Array.isArray(c.stack)) {
     for (const s of c.stack) {

@@ -2040,6 +2040,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
   switch (action.code) {
     case 'draw': {
+      // 「〇枚ごとに1枚」で0枚になったとき（BT1-102 セキュリティ1枚以下）は引かない。値の指定なしは1枚
+      if (action.value === 0) { ctx.addLog && ctx.addLog('💨 ドローする枚数が0枚です'); callback(); break; }
       const n = action.value || 1;
       // target が both / both_none（「お互いは【2ドロー】」デビモン BT26-068）のときは、
       // 自分が引いた後に相手も同じ枚数引く（_drawForOpponent）
@@ -2602,8 +2604,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               } catch (_) {}
             });
           }
-          // カード自身のトップレベルon_active（他カードのactive経由でも一応拾う）
-          if (carrier.recipe && carrier !== ctx.card) {
+          // カード自身のトップレベルon_active。自分の効果で自分をアクティブにしたときも拾う
+          // （BT2-032: テイマーのレストで自身をアクティブ→自身の「メインフェイズでアクティブになったとき」）
+          if (carrier.recipe) {
             try {
               const raw = typeof carrier.recipe === 'string' ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -10950,6 +10953,8 @@ function checkConditions(conditions, card, bs, side) {
         } else if (typeof cond.value === 'string') {
           subCondCode = cond.value;
         }
+        // "cond_exists_count_ge:cond_no_evo:2" は parseRecipeCondition で value と count に分かれる（BT1-004）
+        if (cond.count) minCount = cond.count;
         const matched = oppArea2.filter(c => {
           if (!c || c.type !== 'デジモン') return false;
           if (!subCondCode) return true;

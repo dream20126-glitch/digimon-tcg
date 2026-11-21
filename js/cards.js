@@ -283,7 +283,8 @@ export async function loadCardAndKeywordData() {
       return { cards: [], keywords: [] };
     }
 
-    allCards = data.cards || [];
+    // カードNoの無い行（チェックボックスだけ下まで伸びた空行等）はカードとして扱わない
+    allCards = (data.cards || []).filter(c => c && String(c['カードNo'] || '').trim());
     keywords = data.keywords || [];
     masterKeywords = keywords;
     loadKeywordEffects();

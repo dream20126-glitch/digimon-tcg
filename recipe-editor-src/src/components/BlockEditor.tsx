@@ -431,6 +431,8 @@ export function MultiTextTags({ values, onChange, placeholder, accentColor, valu
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          // 入力欄から離れたときも確定する（Enter／「+ 追加」を押さずに保存すると、値の無い条件として保存時に消えていた。ST26-02）
+          onBlur={() => { if (draft.trim()) add(); }}
           placeholder={placeholder || '例: サイボーグ型'}
           style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
         />
@@ -485,6 +487,8 @@ function FeatureTagsCombined({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          // 入力欄から離れたときも確定する（未確定のまま保存すると消えていた）
+          onBlur={() => { if (draft.trim()) add(); }}
           placeholder={placeholder || "例: サイボーグ型"}
           style={{ flex: 1, minWidth: 120, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
         />

@@ -1986,18 +1986,20 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 実装されているため）。thenBreak:true の効果でセグメントを区切ることで、「AとBをANDで
   // 行い、その後C」のように、AND/OR区間の後ろにだけ「その後」を続けることができる
   const rawAltActions = Array.isArray(b.altActions) ? b.altActions.filter((a) => a && a.action) : [];
-  // 「直前の効果の期間・発動条件を引き継ぐ」（inheritPrev）: 前から順に、直前の効果（効果1は step）の期間・発動条件を写した出力を作っておく
-  const _altObjMap = new Map<AltAction, any>();
-  {
+  // 「直前の効果の設定を引き継ぐ」（inheritPrev）: 出力した各効果を覚えておき、この関数の最後（効果1の対象の条件等が
+  // そろった後）に、前から順に直前の効果（効果1は step）の対象・期間・発動条件を写す
+  const _altEmitted = new Map<AltAction, any>();
+  const altObjOf = (a: AltAction) => { const o = altActionToStepObject(a, keywordDict); _altEmitted.set(a, o); return o; };
+  const applyInheritPass = () => {
+    if (!rawAltActions.some((a) => a.inheritPrev)) return;
     let _prevObj: any = step;
     rawAltActions.forEach((a) => {
-      const o = altActionToStepObject(a, keywordDict);
+      const o = _altEmitted.get(a);
+      if (!o) return;
       if (a.inheritPrev) applyInheritPrev(o, _prevObj);
-      _altObjMap.set(a, o);
       _prevObj = o;
     });
-  }
-  const altObjOf = (a: AltAction) => JSON.parse(JSON.stringify(_altObjMap.get(a) || altActionToStepObject(a, keywordDict)));
+  };
   const altSegments: AltAction[][] = [[]];
   if (rawAltActions.length > 0) {
     const legacyAllThen = b.altActionsOp === 'then';
@@ -2245,6 +2247,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     moveAltsToChoices(thenStep);
     container[b.trigger].push(thenStep);
   });
+  applyInheritPass();
 }
 
 // 「base:value@subject」形式を ConditionPair に分解
@@ -2656,7 +2659,10 @@ function stepObjectToAltAction(step0: any): AltAction {
   if (_inh) _altOut.inheritPrev = true;
   return _altOut;
 }
-const INHERIT_PREV_KEYS = ['duration', 'condition', 'when', 'extra_conditions', 'condition_op', 'condition_chain'];
+// 引き継ぐ項目: 対象・対象の条件・期間・発動条件（アクション以外が同じ効果。「進化できず、レストできない」BT27-033 等）
+const INHERIT_PREV_KEYS = ['target', 'filter', 'duration', 'condition', 'when', 'extra_conditions', 'condition_op', 'condition_chain'];
+// 対象を1体ずつ選ぶ形（own:1 / opponent:up_to_2 等）。引き継ぐときは選び直さず「そのデジモン」（same_target）にする
+const INHERIT_PICK_TARGET_RE = /^(own|opponent|both|other_own|target_other_own)(_card)?:(\d+|up_to_\d+)$/;
 function stripInheritedFields(step: any): any {
   const o = { ...step };
   INHERIT_PREV_KEYS.forEach((k) => { delete o[k]; });
@@ -2668,6 +2674,8 @@ function applyInheritPrev(o: any, src: any): void {
     delete o[k];
     if (src && src[k] !== undefined) o[k] = JSON.parse(JSON.stringify(src[k]));
   });
+  // 直前の効果が対象を選ぶ形なら、同じデジモンに行う（もう一度選ばせない）
+  if (src && INHERIT_PICK_TARGET_RE.test(String(src.target || ''))) { o.target = 'same_target'; delete o.filter; }
   o.inherit_prev = true;
 }
 function stepObjectToAltActionBase(step: any): AltAction {

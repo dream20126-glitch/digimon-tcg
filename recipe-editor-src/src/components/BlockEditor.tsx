@@ -8801,8 +8801,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               checked={!!editingAlt!.inheritPrev}
               onChange={(e) => updateEffect({ inheritPrev: e.target.checked || undefined })}
             />
-            <b>直前の効果の期間・発動条件を引き継ぐ</b>
-            <span style={{ fontSize: 10, color: '#666' }}>（ONの間、この効果の期間・発動条件の設定は使わず、直前の効果と同じになります）</span>
+            <b>直前の効果の設定を引き継ぐ（アクション以外同じ）</b>
+            <span style={{ fontSize: 10, color: '#666' }}>（ONの間、対象・対象の条件・期間・発動条件は直前の効果と同じになります。直前の効果が「〜1体」を選ぶ形なら、同じデジモンに行います）</span>
           </label>
         )}
         {/* 新しいアクション専用の項目（支払うコスト-の登場/進化、効果の上限の種類 等）。効果1・効果2以降共通 */}

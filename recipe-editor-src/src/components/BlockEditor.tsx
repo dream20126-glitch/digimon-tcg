@@ -446,17 +446,20 @@ export function MultiTextTags({ values, onChange, placeholder, accentColor, valu
 // （MultiTextTagsと違い、タグ1つ1つが自分の所属モード(mode)を持つため、追加時にモードを
 // 選んでから追加する。含む=cond_feature_contains・完全一致=cond_featureの別々の
 // ConditionPairへ振り分けるのは呼び出し側(onAdd/onRemove)の責務）
+// withDesc: 3つ目のモード〔記述〕（「〜」の記述がある＝cond_description_contains）も選べる（参照の属性「名称」）
+type TagMode = 'contains' | 'exact' | 'desc';
 function FeatureTagsCombined({
-  combined, onAdd, onRemove, accentColor, placeholder,
+  combined, onAdd, onRemove, accentColor, placeholder, withDesc = false,
 }: {
-  combined: { v: string; mode: 'contains' | 'exact' }[];
-  onAdd: (v: string, mode: 'contains' | 'exact') => void;
-  onRemove: (v: string, mode: 'contains' | 'exact') => void;
+  combined: { v: string; mode: TagMode }[];
+  onAdd: (v: string, mode: TagMode) => void;
+  onRemove: (v: string, mode: TagMode) => void;
   accentColor?: string;
   placeholder?: string;
+  withDesc?: boolean;
 }) {
   const [draft, setDraft] = useState('');
-  const [mode, setMode] = useState<'contains' | 'exact'>('contains');
+  const [mode, setMode] = useState<TagMode>('contains');
   const accent = accentColor || '#d81b60';
   const add = () => {
     const v = draft.trim();
@@ -469,7 +472,7 @@ function FeatureTagsCombined({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
           {combined.map(({ v, mode: m }) => (
             <span key={m + ':' + v} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, border: `2px solid ${accent}`, background: accent, color: '#fff', fontSize: 11, fontWeight: 'bold' }}>
-              {m === 'contains' ? `${v}（含む）` : v}
+              {m === 'contains' ? `${v}（含む）` : m === 'desc' ? `「${v}」の記述` : v}
               <button type="button" onClick={() => onRemove(v, m)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
             </span>
           ))}
@@ -477,9 +480,9 @@ function FeatureTagsCombined({
       )}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <ButtonGroup
-          options={[{ code: 'contains', label: '含む' }, { code: 'exact', label: '完全一致' }]}
+          options={[{ code: 'contains', label: '含む' }, { code: 'exact', label: '完全一致' }, ...(withDesc ? [{ code: 'desc', label: '記述' }] : [])]}
           value={mode}
-          onChange={(v) => setMode((v || 'contains') as 'contains' | 'exact')}
+          onChange={(v) => setMode((v || 'contains') as TagMode)}
           accentColor={accent}
         />
         <input
@@ -555,7 +558,7 @@ function RefExistsAttributeFilterPanel({
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
   // 名称の属性があるか（含む・完全一致のどちらか）
-  const nameVal = getAttr('cond_name') || getAttr('cond_name_contains');
+  const nameVal = getAttr('cond_name') || getAttr('cond_name_contains') || (marker === REF_EXISTS_FILTER_MARKER && !withNameDesc ? getAttr('cond_description_contains') : undefined);
 
   // 名称: 含む（cond_name_contains）と完全一致（cond_name）。両方持てる（P-160）
   const nameContainsVal = getAttr('cond_name_contains');
@@ -569,7 +572,7 @@ function RefExistsAttributeFilterPanel({
     if (lvGe || lvLe || lvEq) s.add('lv');
     if (costGe || costLe || costEq) s.add('cost');
     if (featureVal) s.add('feature');
-    if (descVal) s.add('desc');
+    if (descVal && !(marker === REF_EXISTS_FILTER_MARKER && !withNameDesc)) s.add('desc');
     return s;
   });
   const toggleSub = (key: string) => {
@@ -581,7 +584,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'desc') setAttr('cond_description_contains', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
-      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each' || cc.base === 'cond_attr_or'))));
+      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each' || cc.base === 'cond_attr_or' || (marker === REF_EXISTS_FILTER_MARKER && !withNameDesc && cc.base === 'cond_description_contains')))));
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -765,11 +768,15 @@ function RefExistsAttributeFilterPanel({
             const listOf = (v?: ConditionPair) => (v?.value || '').split(',').map((x) => x.trim()).filter(Boolean);
             const containsList = listOf(nameContainsVal);
             const exactList = listOf(nameExactVal);
-            const combined = [...containsList.map((v) => ({ v, mode: 'contains' as const })), ...exactList.map((v) => ({ v, mode: 'exact' as const }))];
-            const write = (nextContains: string[], nextExact: string[]) => {
-              let next = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains')));
+            // 〔記述〕（「〜」の記述がある＝cond_description_contains）も名称と同じ欄で選べる（バトルエリア等の参照。名称・記述を別ボタンで出す参照は除く）
+            const nameWithDesc = marker === REF_EXISTS_FILTER_MARKER && !withNameDesc;
+            const descList = nameWithDesc ? descs : [];
+            const combined = [...containsList.map((v) => ({ v, mode: 'contains' as const })), ...exactList.map((v) => ({ v, mode: 'exact' as const })), ...descList.map((v) => ({ v, mode: 'desc' as const }))];
+            const write = (nextContains: string[], nextExact: string[], nextDesc: string[] = descList) => {
+              let next = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || (nameWithDesc && cc.base === 'cond_description_contains'))));
               if (nextContains.length > 0) next.push({ base: 'cond_name_contains', value: nextContains.join(','), subject: marker });
               if (nextExact.length > 0) next.push({ base: 'cond_name', value: nextExact.join(','), subject: marker });
+              if (nameWithDesc && nextDesc.length > 0) next.push({ base: 'cond_description_contains', value: nextDesc.join(','), subject: marker });
               const both = nextContains.length > 0 && nextExact.length > 0;
               // 両方になったとき、ほかの属性が無ければ「どちらか」（OR）にする
               if (both && !attrOr && activeSub.size === 1) next.push({ base: 'cond_attr_or', subject: marker });
@@ -784,11 +791,13 @@ function RefExistsAttributeFilterPanel({
                 <FeatureTagsCombined
                   combined={combined}
                   placeholder="例: トレッドミル・トレーニング"
+                  withDesc={nameWithDesc}
                   onAdd={(v, m) => {
                     if (m === 'contains') { if (!containsList.includes(v)) write([...containsList, v], exactList); }
+                    else if (m === 'desc') { if (!descList.includes(v)) write(containsList, exactList, [...descList, v]); }
                     else if (!exactList.includes(v)) write(containsList, [...exactList, v]);
                   }}
-                  onRemove={(v, m) => (m === 'contains' ? write(containsList.filter((x) => x !== v), exactList) : write(containsList, exactList.filter((x) => x !== v)))}
+                  onRemove={(v, m) => (m === 'contains' ? write(containsList.filter((x) => x !== v), exactList) : m === 'desc' ? write(containsList, exactList, descList.filter((x) => x !== v)) : write(containsList, exactList.filter((x) => x !== v)))}
                   accentColor="#946200"
                 />
                 {both && !attrOr && (
@@ -12006,7 +12015,7 @@ function ConditionsHybridEditor({
                   {cat.label}
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <FeatureTagsCombined combined={combined} onAdd={addTag} onRemove={removeTag} accentColor={colors.accent} />
+                  <FeatureTagsCombined combined={combined} onAdd={(v, m) => { if (m !== 'desc') addTag(v, m); }} onRemove={(v, m) => { if (m !== 'desc') removeTag(v, m); }} accentColor={colors.accent} />
                 </div>
                 {/* 対象（発動条件の「このデジモンが特徴『NSp』を持つなら」等）: 含む/完全一致の行どちらにも同じ対象を付ける */}
                 {showSubjectSelector && (() => {

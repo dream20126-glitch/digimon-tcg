@@ -25810,6 +25810,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 【リンク時】で選んだカードに「レスト不可」が付かなかった）
         if (_crIsOpponent) _sendRemoteStatusBuff(ctx, opponent, c, 'cant_rest', _crDur);
       };
+      // 「〜全てはレストできない」（opponent:all / own:all 等。ユキナモン BT27-033「進化元を持たない相手のデジモン全ては
+      // 進化できず、レストできない」）: 対象の条件に合うもの全てに付ける（以前は1体だけ選んでいた）
+      if (/:all$/.test(_crTgtStr)) {
+        _crCands.forEach(_crApply);
+        ctx.renderAll();
+        callback();
+        break;
+      }
       if (effectiveSide === 'ai' || _crCands.length === 1) {
         _crApply(_crCands[0]);
         ctx.renderAll();

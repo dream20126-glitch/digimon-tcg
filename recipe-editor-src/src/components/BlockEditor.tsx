@@ -12513,6 +12513,45 @@ function ConditionsHybridEditor({
                           </>
                         );
                       })()
+                    ) : /^cond_evo_count_(ge|le|eq)$/.test(c.base) ? (
+                      /* 進化元の枚数 以上/以下/完全一致: 比べる値は数値か、このデジモン／相手のデジモン／自分のデジモンの進化元の枚数
+                         （「このデジモンの進化元枚数以下の相手のデジモン」= 以下 ＋ このデジモン。値 self_card / opp / own_digimon） */
+                      (() => {
+                        const v = c.value || '';
+                        const mode = v === 'self_card' || v === 'opp' || v === 'own_digimon' ? v : '';
+                        return (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <ButtonGroup
+                              options={[
+                                { code: '', label: '数値' },
+                                { code: 'self_card', label: 'このデジモン' },
+                                { code: 'opp', label: '相手' },
+                                { code: 'own_digimon', label: '自分' },
+                              ]}
+                              value={mode}
+                              onChange={(m) => updateAt(i, { value: m || '' })}
+                              accentColor={colors.accent}
+                            />
+                            {mode === '' ? (
+                              <>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={v}
+                                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                                  placeholder="枚数"
+                                  style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: 11, color: colors.accent }}>
+                                {mode === 'self_card' ? 'このデジモンの進化元の枚数' : mode === 'opp' ? '相手のデジモン（どれか1体）の進化元の枚数' : '自分のデジモン（どれか1体）の進化元の枚数'}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()
                     ) : (c.base === 'cond_dp_le' || c.base === 'cond_dp_ge' || c.base === 'cond_dp_sum_le') ? (
                       DP_REF_CODES.has(c.value || '') ? (() => {
                         const dpRefBase = dpRefBaseOf(c.value || '');

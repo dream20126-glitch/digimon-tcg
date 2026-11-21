@@ -1059,7 +1059,8 @@ function parseFilterObject(f: any): ConditionPair[] {
     const v = f[`evo_source_${quant}`];
     if (v !== undefined) {
       // 数値で比べる以上/以下/完全一致は、対象の条件「進化元の枚数」として読む（比べる先の参照つき・より多い/少ないは従来の参照「進化元」）
-      if (['ge', 'le', 'eq'].includes(quant) && /^\d+$/.test(String(v)) && f.evo_source_subject !== 'opp') out.push({ base: 'cond_evo_count_' + quant, value: String(v) });
+      // 比べる先が このデジモン(self_card)／相手(opp)／自分のデジモン(own_digimon) のときも「進化元の枚数」で読む
+      if (['ge', 'le', 'eq'].includes(quant) && (/^\d+$/.test(String(v)) || ['self_card', 'opp', 'own_digimon'].includes(String(v))) && f.evo_source_subject !== 'opp') out.push({ base: 'cond_evo_count_' + quant, value: String(v) });
       else out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
     }
   });

@@ -1330,8 +1330,8 @@ function _cardHasDescription(baseCard, reqText) {
 // 「「ジェムモン」記述Lv.2」が全ての Lv.2 から進化できる等、広く一致してしまっていた）。
 //
 // クローズの種別（どの進化コスト列を使うか）:
-//   feature … 進化元自身の特徴を「持つ」指定がある（特徴「A」Lv.5／特徴「A」を持つ名称「B」／特徴「A」を持つテイマー）
-//   name    … 名称・記述・登場コスト・進化元/下のカード・色の数などの指定がある（特徴を「持たない」も含む）
+//   name    … 名称の指定がある（特徴「A」を持つ名称「B」も名称）。名称が無くても記述・登場コスト・下のカード・色の数・特徴を持たない だけのもの
+//   feature … 名称が無く、進化元自身の特徴を「持つ」指定がある（特徴「A」Lv.5／特徴「A」を持つテイマー）
 //   color   … 色・Lv だけ
 const _EVO_COLOR_CHARS = '赤青黄緑黒紫白';
 
@@ -1426,8 +1426,12 @@ function _parseEvoClause(raw) {
   if (ok && !kinds.some((k) => _EVO_HEAD_KINDS.includes(k))) ok = false;
   // テイマーも名称も指定していないクローズはデジモンからだけ（「特徴「A」」だけのクローズがテイマーに一致しないように）
   if (ok && !kinds.includes('tamer') && !kinds.includes('name')) tests.push((b) => b.type !== 'テイマー');
-  const type = kinds.includes('feature') ? 'feature'
-    : kinds.some((k) => k === 'name' || k === 'desc' || k === 'playcost' || k === 'stack' || k === 'notfeature' || k === 'colorcount') ? 'name'
+  // コスト列は「何から進化するか」で選ぶ: 名称の指定があれば名称（特徴「A」を持つ名称「B」も名称）、
+  // 名称が無く特徴を持つ指定があれば特徴（特徴「A」Lv.5／特徴「A」を持つテイマー）、
+  // 記述・登場コスト・下のカード等だけなら名称、色・Lv だけなら色
+  const type = kinds.includes('name') ? 'name'
+    : kinds.includes('feature') ? 'feature'
+    : kinds.some((k) => k === 'desc' || k === 'playcost' || k === 'stack' || k === 'notfeature' || k === 'colorcount') ? 'name'
     : 'color';
   return { c, ok, kinds, tests, type };
 }

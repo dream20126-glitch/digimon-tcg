@@ -11170,7 +11170,7 @@ const NO_VALUE_CONDS = new Set([
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
   'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
   'cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest',
-  'cond_lv_highest', 'cond_lv_lowest',
+  'cond_lv_highest', 'cond_lv_lowest', 'cond_evo_highest', 'cond_evo_lowest',
   'cond_face_down', 'cond_face_up', 'cond_designated_name',
   'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
   'cond_target_stack', 'cond_target_evo_source',
@@ -11180,7 +11180,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'keyword' | 'state' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'keyword' | 'state' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'evo_count' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -11201,6 +11201,8 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'ref', label: '参照' },
   { value: 'decrease', label: '減少' },
   { value: 'designated', label: '指定' },
+  // 進化元の枚数が最も少ない／多い（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。filter.evo_extreme。⚠ エンジン未実装）
+  { value: 'evo_count', label: '進化元の枚数' },
   // 進化元/重ねられているカードは「対象の条件」パネルではなく、対象欄（デジモン選択後の
   // サブ選択肢）側に移設済み（cond_target_evo_source/cond_target_stackのデータ形式は
   // そのまま流用。書き込み元UIのみ変更）。カテゴリボタンとしてはここには出さない
@@ -11480,6 +11482,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   decrease: 'cond_security_decreased',
   designated: DESIGNATED_NAME_COND,
   evo_source: 'cond_target_evo_source',
+  evo_count: 'cond_evo_lowest',
   stacked: 'cond_target_stack',
 };
 
@@ -11527,6 +11530,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_cost_highest', label: '最も高い' },
     { value: 'cond_cost_lowest', label: '最も低い' },
     { value: 'cond_cost_sum_le', label: '合計〜まで' },
+  ],
+  evo_count: [
+    { value: 'cond_evo_lowest', label: '最も少ない' },
+    { value: 'cond_evo_highest', label: '最も多い' },
   ],
   memory: [
     { value: 'cond_memory_ge', label: '以上' },
@@ -11625,6 +11632,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   if (base === 'cond_target_evo_source') return 'evo_source';
+  if (base === 'cond_evo_lowest' || base === 'cond_evo_highest') return 'evo_count';
   return 'other';
 }
 

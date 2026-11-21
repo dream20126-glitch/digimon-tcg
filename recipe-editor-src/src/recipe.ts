@@ -714,7 +714,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_name_same_self', 'cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up', 'cond_self_rest', 'cond_self_active']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_name_same_self', 'cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_evo_highest', 'cond_evo_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up', 'cond_self_rest', 'cond_self_active']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する。
 // own_pick/opp_pick = 複数該当する場合にプレイヤーが任意で1体選ぶ版（BlockEditor.tsx の
@@ -887,6 +887,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // （エンジン未対応・保存のみ可。現状のところ値は不要なので c.value は見ない）
       case 'cond_dp_highest': f.dp_extreme = 'highest'; break;
       case 'cond_dp_lowest':  f.dp_extreme = 'lowest'; break;
+      // 進化元の枚数が最も多い／少ない（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。⚠ エンジン未実装）
+      case 'cond_evo_highest': f.evo_extreme = 'highest'; break;
+      case 'cond_evo_lowest':  f.evo_extreme = 'lowest'; break;
       // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type
       case 'cond_type': {
         const types = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
@@ -1083,6 +1086,8 @@ function parseFilterObject(f: any): ConditionPair[] {
   }
   if (f.dp_extreme === 'highest') out.push({ base: 'cond_dp_highest' });
   else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
+  if (f.evo_extreme === 'highest') out.push({ base: 'cond_evo_highest' });
+  else if (f.evo_extreme === 'lowest') out.push({ base: 'cond_evo_lowest' });
   if (f.cost_extreme === 'highest') out.push({ base: 'cond_cost_highest' });
   else if (f.cost_extreme === 'lowest') out.push({ base: 'cond_cost_lowest' });
   if (f.cost_sum_le !== undefined) out.push({ base: 'cond_cost_sum_le', value: String(f.cost_sum_le) });

@@ -141,7 +141,7 @@ const REF_EVO_COUNT_RE = /^cond_has_evo_(le|eq|gt|lt)$/;
 const REF_EVO_MATCH_RE = /^cond_evo_match_(le|eq|gt|lt)$/;
 const isRefEvoRow = (p: ConditionPair) => !!p && (p.base === 'cond_has_evo' || REF_EVO_COUNT_RE.test(p.base));
 export const REF_ZONE_FILTER_CODES = new Set([...REF_EXISTS_FILTER_CODES, 'cond_type']);
-// 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
+// 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 
 // 参照(cond_battle_area_ge, 以上/1)の行に属性フィルタ(REF_EXISTS_FILTER_MARKER付き)が
@@ -892,7 +892,7 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // （エンジン未対応・保存のみ可。現状のところ値は不要なので c.value は見ない）
       case 'cond_dp_highest': f.dp_extreme = 'highest'; break;
       case 'cond_dp_lowest':  f.dp_extreme = 'lowest'; break;
-      // 進化元の枚数が最も多い／少ない（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。⚠ エンジン未実装）
+      // 進化元の枚数が最も多い／少ない（「最も進化元枚数が少ない相手のデジモン1体」AD1-013）
       case 'cond_evo_highest': f.evo_extreme = 'highest'; break;
       case 'cond_evo_lowest':  f.evo_extreme = 'lowest'; break;
       // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type

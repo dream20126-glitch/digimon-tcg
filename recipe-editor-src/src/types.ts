@@ -442,7 +442,7 @@ export interface EffectBlock {
   // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
   actionParams?: Record<string, any>;
   targetFilter?: ConditionPair[]; // アクション対象自身の絞り込み（例:レスト状態のこのデジモン）→ step.filter に serialize
-  // アタック（attack）のアタック先の条件（「進化元枚数がそのデジモンより少ない相手のデジモン1体にアタック」ED01-10）→ step.attack_target_filter。⚠ エンジン未実装
+  // アタック（attack）のアタック先の条件（「進化元枚数がそのデジモンより少ない相手のデジモン1体にアタック」ED01-10）→ step.attack_target_filter
   attackTargetFilter?: ConditionPair[];
   // targetFilterのAND内包OR版条件チェーン（「Lv4以下のクロノモン、または特徴TS」等）。
   // 設定されていればtargetFilterより優先。JSON では単一セグメントならstep.filterの

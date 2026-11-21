@@ -7435,7 +7435,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={(e) => updateEffect({ options: swapOpts(effectOptions, ['allow_active'], e.target.checked ? 'allow_active' : '') })}
                           />
                           アクティブ状態の相手のデジモンにもアタックできる（options: allow_active）
-                          <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装</span>
                         </label>
                       )}
                       {!effectOptions.includes('without_rest') && (
@@ -7445,7 +7444,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={(next) => updateEffect({ attackTargetFilter: next.length ? next : undefined })}
                             dict={dict}
                             title="アタック先の条件"
-                            hint="（アタックできる相手のデジモンの条件。例: 進化元の枚数 → より少ない → アタックするデジモン。⚠ エンジン未実装）"
+                            hint="（アタックできる相手のデジモンの条件。例: 進化元の枚数 → より少ない → アタックするデジモン）"
                             theme="action"
                             defaultSubject=""
                             showSubjectSelector={false}
@@ -11231,7 +11230,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'ref', label: '参照' },
   { value: 'decrease', label: '減少' },
   { value: 'designated', label: '指定' },
-  // 進化元の枚数: 以上/以下/完全一致（filter.evo_source_ge/le/eq。エンジン対応済み）、最も少ない／多い（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。filter.evo_extreme。⚠ エンジン未実装）
+  // 進化元の枚数: 以上/以下/完全一致（filter.evo_source_ge/le/eq。エンジン対応済み）、最も少ない／多い（「最も進化元枚数が少ない相手のデジモン1体」AD1-013。filter.evo_extreme）
   { value: 'evo_count', label: '進化元の枚数' },
   // 進化元/重ねられているカードは「対象の条件」パネルではなく、対象欄（デジモン選択後の
   // サブ選択肢）側に移設済み（cond_target_evo_source/cond_target_stackのデータ形式は
@@ -12559,7 +12558,7 @@ function ConditionsHybridEditor({
                                 { code: 'self_card', label: 'このデジモン' },
                                 { code: 'opp', label: '相手' },
                                 { code: 'own_digimon', label: '自分' },
-                                // アタックの「アタック先の条件」で、アタックするデジモンと比べる（ED01-10。⚠ エンジン未実装）
+                                // アタックの「アタック先の条件」で、アタックするデジモンと比べる（ED01-10）
                                 { code: 'attacker', label: 'アタックするデジモン' },
                               ]}
                               value={mode}
@@ -12580,7 +12579,7 @@ function ConditionsHybridEditor({
                               </>
                             ) : (
                               <span style={{ fontSize: 11, color: colors.accent }}>
-                                {mode === 'self_card' ? 'このデジモンの進化元の枚数' : mode === 'opp' ? '相手のデジモン（どれか1体）の進化元の枚数' : mode === 'attacker' ? 'アタックするデジモンの進化元の枚数（アタック先の条件用。⚠ エンジン未実装）' : '自分のデジモン（どれか1体）の進化元の枚数'}
+                                {mode === 'self_card' ? 'このデジモンの進化元の枚数' : mode === 'opp' ? '相手のデジモン（どれか1体）の進化元の枚数' : mode === 'attacker' ? 'アタックするデジモンの進化元の枚数（アタック先の条件用）' : '自分のデジモン（どれか1体）の進化元の枚数'}
                               </span>
                             )}
                           </div>

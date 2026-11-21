@@ -19077,6 +19077,22 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // 対象が「このデジモン」（self / self_card）のときの対象の条件（filter）は、「〜を持つこのデジモン」の条件として見る。
+  // 合わなければ何もしない（セッカモン ST26-04 の進化元「この効果で破棄しなかったなら、特徴『氷雪型』を持つこのデジモンを
+  // アクティブにできる」= active ＋ target:self_card ＋ filter:{feature:'氷雪型'}。以前は対象の条件を見ずにアクティブにしていた）。
+  // 取得元から選ぶもの（from）や、進化元・重なっているカード等を指す項目（target_*）は対象のデジモン自身の条件ではないので除く
+  if (step && /^self(_card)?$/.test(String(step.target || '')) && !step.from && step.filter && typeof step.filter === 'object'
+      && !Array.isArray(step.filter) && ctx.card && !_COST_STEP_SET.has(step)) {
+    const _sfKeys = Object.keys(step.filter);
+    const _sfCardKeys = _sfKeys.filter((k) => !/^target_|^evo_source_subject$|_ref_filter$/.test(k));
+    if (_sfCardKeys.length > 0 && _sfCardKeys.length === _sfKeys.length
+        && !cardMatchesFilter(ctx.card, step.filter, ctx.bs, ctx.side, ctx.card)) {
+      ctx.addLog && ctx.addLog('💨 「' + (ctx.card.name || '') + '」は条件に合わないため効果なし');
+      callback && callback();
+      return;
+    }
+  }
+
   // 「〜ごとに、この効果の数値／上限を±N」（per_count_mode:'step'）: 数えた数 n = floor(数 / per_count) で、
   // value_step × n を足した値（または上限）のステップに置き換えてから先へ進む（全アクション共通。コストを払った後に数える）。
   //   value_step_cap なし: 効果の数値に足す（セイテンゴクウモン EX12-048「DP-8000。進化元のLv.5のカード1枚ごとに、

@@ -1804,6 +1804,9 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
   // お互いの手札/トラッシュ/セキュリティ/バトルエリア（both_trash 等。デュークモン P-186「お互いのトラッシュ合計5枚ごとに」）
   if (/^both_(hand|trash|security|battle_area)$/.test(String(refSource || ''))) return countWith(_cardsOfRef(refSource));
   switch (refSource) {
+    // このデジモンのDP（「このデジモンのDP8000ごとに」ルビウスドラモン＆バーニングドライブ ST25-05。
+    // 枚数ではなくDPの値を返し、呼び出し側が per_count（8000）で割る）
+    case 'self_dp':            return card ? (parseInt(card.dp, 10) || 0) : 0;
     // --- 自分側 ---
     case 'evo_source':         return countWith(card && card.stack ? card.stack : []);
     // このデジモン本体（デルタモン P-076「このデジモンの色1色ごとに」＝ self_card ＋ ref_count:colors）
@@ -13139,6 +13142,8 @@ function _adjustExecuteSteps(flag, triggerCode, steps, card) {
   return steps;
 }
 
+// 進化元の常時効果で得たときに _permEffects で直接扱うキーワード（テンプレートをマージしない）
+const _EVO_PERM_KW = new Set(['security_attack_plus', 'jamming', 'reboot', 'blocker', 'rush', 'penetrate', 'piercing', 'michizure', 'barrier', 'evade', 'armor_break', 'indomitable']);
 function _lookupTriggerSteps(recipeObj, triggerCode, card) {
   let result = _lookupTriggerStepsBase(recipeObj, triggerCode);
   // オプションの【メイン】【ディレイ】（巨大肉 EX12-073 / コンロンの勅令 EX12-075）: 【メイン】の並びのディレイは、
@@ -13182,6 +13187,24 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       const code = b.type.slice('keyword_'.length);
       if (seen.has(code) || passiveFlags.has(code)) return;
       seen.add(code);
+      const kw = dict[code];
+      if (!kw) return;
+      const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
+      if (!tplSteps) return;
+      const filled = _tagKeywordSteps(code, _adjustExecuteSteps(code, triggerCode, _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined), card));
+      if (filled.length === 0) return;
+      result = result ? result.concat(filled) : filled;
+    });
+  }
+  // 進化元の常時効果で得たキーワード（applyPermanentEffects の _evoGrantedKeywords）にレシピテンプレートがあれば、
+  // そのトリガー分もマージする（レプティリモン ST25-04 の進化元「【自分のターン】『ジェムモン』の記述があるこのデジモンは
+  // 【急襲】を得る」= 【自分のターン終了時】このデジモンでアタックできる）。_permEffects で直接扱うキーワードは除く
+  if (card && card._evoGrantedKeywords && typeof card._evoGrantedKeywords.forEach === 'function' && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
+    const dict = getKeywordDict();
+    const passiveFlags = new Set(((recipeObj && Array.isArray(recipeObj.passive)) ? recipeObj.passive : []).map(p => p && p.flag));
+    const permBuffKw = new Set((Array.isArray(card.buffs) ? card.buffs : []).filter(b => b && b.source === 'recipe_perm' && typeof b.type === 'string' && b.type.startsWith('keyword_')).map(b => b.type.slice('keyword_'.length)));
+    card._evoGrantedKeywords.forEach((code) => {
+      if (!code || _EVO_PERM_KW.has(code) || passiveFlags.has(code) || permBuffKw.has(code)) return;
       const kw = dict[code];
       if (!kw) return;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
@@ -19054,6 +19077,44 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // 「〜ごとに、この効果の数値／上限を±N」（per_count_mode:'step'）: 数えた数 n = floor(数 / per_count) で、
+  // value_step × n を足した値（または上限）のステップに置き換えてから先へ進む（全アクション共通。コストを払った後に数える）。
+  //   value_step_cap なし: 効果の数値に足す（セイテンゴクウモン EX12-048「DP-8000。進化元のLv.5のカード1枚ごとに、
+  //     このDPマイナス効果の数値-3000」= value:8000 + value_step:-3000）
+  //   value_step_cap:'dp'|'cost'|'lv': 対象の条件の上限に足す（ルビウスドラモン＆バーニングドライブ ST25-05「DP合計7000まで消滅。
+  //     このデジモンのDP8000ごとに、このDP消滅効果の上限+4000」= dp_sum_le:7000 + value_step:4000 + value_step_cap:'dp'）
+  if (step && step.per_count_mode === 'step' && step.per_count && ctx.bs
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    const _psRef = _refWithCountMode(step);
+    const _psCount = getRefSourceCountDirect(_psRef, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+    const _psN = Math.floor(_psCount / step.per_count);
+    const _psDelta = (Number(step.value_step) || 0) * _psN;
+    const _ps = Object.assign({}, step);
+    ['per_count', 'per_count_mode', 'value_step', 'value_step_cap', 'ref', 'ref_filter', 'ref_state', 'ref_count'].forEach((k) => { delete _ps[k]; });
+    const _psCap = step.value_step_cap;
+    if (_psCap === 'dp' || _psCap === 'cost' || _psCap === 'lv') {
+      const _bumpCap = (f) => {
+        if (!f || typeof f !== 'object') return f;
+        const o = Object.assign({}, f);
+        if (o[_psCap + '_sum_le'] != null && o[_psCap + '_sum_le'] !== '') {
+          // 合計の上限は 'self' 等の参照のこともあるので、上乗せ分として持たせる（_runSumBudgetSelection が足す）
+          o[_psCap + '_sum_le_bonus'] = (parseInt(o[_psCap + '_sum_le_bonus'], 10) || 0) + _psDelta;
+        } else if (o[_psCap + '_le'] != null && Number.isFinite(parseInt(o[_psCap + '_le'], 10))) {
+          o[_psCap + '_le'] = parseInt(o[_psCap + '_le'], 10) + _psDelta;
+        }
+        return o;
+      };
+      if (_ps.filter) _ps.filter = _bumpCap(_ps.filter);
+      if (_ps.from_filter) _ps.from_filter = _bumpCap(_ps.from_filter);
+    } else if (_ps.value != null && Number.isFinite(Number(_ps.value))) {
+      _ps.value = Number(_ps.value) + _psDelta;
+    }
+    const _psLabel = _psRef === 'self_dp' ? 'このデジモンのDP' : '数えた数';
+    ctx.addLog && ctx.addLog('📊 ' + _psLabel + ' ' + _psCount + ' → ' + step.per_count + 'ごとに' + (Number(step.value_step) >= 0 ? '+' : '') + step.value_step + '×' + _psN
+      + ' = ' + (_psCap ? '上限' : '数値') + (_psDelta >= 0 ? '+' : '') + _psDelta);
+    step = _ps;
+  }
+
   // 合計予算つきの対象選択（filter.dp_sum_le / lv_sum_le / cost_sum_le。アグモン-勇気の絆-ACE LM-021
   // 「DP合計このデジモンのDPまで、相手のデジモンを消滅させる」）: 全アクション共通でここで対象を選び切ってから
   // 1体ずつ実行する。コストを払った後に行う（コストで盤面やDPが変わるため）
@@ -19232,6 +19293,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         return;
       }
     } else {
+    // 「その後、そのデジモンが〜なら」（same_target ＋ 対象の条件）: 直前に選んだデジモンが条件に合わなければ何もしない
+    // （レプティリモン ST25-04「その後、そのデジモンがDP12000以上なら、加えて【Sアタック+1】を得る」。以前は対象の条件を
+    //  見ずに付けていた）。進化元・重なっているカード等を指す項目（target_*）や参照つきの上限は対象のカード自身の条件ではないので除く
+    const _stF = step.filter;
+    if (_stF && typeof _stF === 'object' && !Array.isArray(_stF)
+        && !Object.keys(_stF).some((k) => /^target_|^evo_source_|_sum_le|_ref_filter$/.test(k) || (/^(dp|lv|cost)(_le|_ge)?$/.test(k) && typeof _stF[k] === 'string'))
+        && !cardMatchesFilter(picked, _stF, ctx.bs, ctx.side, ctx.card)) {
+      ctx.addLog && ctx.addLog('💨 「' + (picked.name || '') + '」は条件に合わないため効果なし');
+      callback && callback();
+      return;
+    }
     const _ownArea = (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea) || [];
     const _oppArea = (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea) || [];
     const _ownIdx = _ownArea.indexOf(picked);

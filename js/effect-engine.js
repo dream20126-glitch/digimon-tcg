@@ -19841,7 +19841,6 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    case 'summon':
     // 効果でアプ合体（辞書のアクション「アプ合体」App_Fusion。大空勇仁 P-240「自分のデジモン1体を手札のデジモンカードに
     // アプ合体できる」）: 手札のアプ合体を持つカードと、その条件のリンク状態の自分のデジモンを選び、アプ合体のコストを払って進化させる
     case 'App_Fusion':
@@ -19883,6 +19882,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }, _afHands);
       break;
     }
+    case 'summon':
     case 'summon_appear':
     case 'summon_use': {
       // 登場させなかった（「使わない」・候補なし）ときに、続く効果の「そのデジモン」（same_target）や

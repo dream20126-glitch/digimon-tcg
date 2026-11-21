@@ -8173,11 +8173,40 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(e) => {
                       const v = e.target.value;
                       if (v === '') updateEffect({ value: undefined });
-                      else if (/^\d+$/.test(v)) updateEffect({ value: Number(v) });
+                      else if (/^\d+$/.test(v)) {
+                        // 効果の上限/数値の修正: 下の「増やす／減らす」で選んだ符号を保つ（数字だけ打ち直してもマイナスのまま）
+                        const keepMinus = effectAction === 'effect_cap_modify' && Number(effectValue) < 0;
+                        updateEffect({ value: keepMinus ? -Number(v) : Number(v) });
+                      }
+                      else if (effectAction === 'effect_cap_modify' && /^-\d+$/.test(v)) updateEffect({ value: Number(v) });
                       else updateEffect({ value: v });
                     }}
                     placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK_017)' : '数値 (例: 1000)'}
                   />
+                  {/* 効果の上限/数値の修正: 増やす（+）か減らす（−）か。値の符号として保存する（減らす＝マイナスの値。
+                      SD01-03「DP消滅効果の上限+1000」＝増やす 1000） */}
+                  {effectAction === 'effect_cap_modify' && (() => {
+                    const n = Number(effectValue);
+                    const minus = !isNaN(n) && n < 0;
+                    const setSign = (s: string) => {
+                      const abs = Math.abs(Number(effectValue));
+                      if (effectValue === undefined || effectValue === '' || isNaN(abs)) return;
+                      updateEffect({ value: s === '-' ? -abs : abs });
+                    };
+                    return (
+                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <ButtonGroup
+                          options={[{ code: '+', label: '増やす（＋）' }, { code: '-', label: '減らす（－）' }]}
+                          value={minus ? '-' : '+'}
+                          onChange={setSign}
+                          accentColor="#6b21a8"
+                        />
+                        <span style={{ fontSize: 10, color: '#666' }}>
+                          {effectValue === undefined || effectValue === '' ? '先に値を入れてください' : `上限/数値を ${minus ? '－' : '＋'}${Math.abs(Number(effectValue)) || ''}`}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   {/* トークンを登場させる体数（token_count。1体なら省略して保存） */}
                   {effectAction === 'summon_token' && (() => {
                     const curCount = (isEditingAlt ? editingAlt!.tokenCount : block.tokenCount) || 1;

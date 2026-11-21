@@ -12497,7 +12497,9 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // 例: ダルクモン「他の自分のデジモンが登場した時に発動」
     // 「自分のデジモンが育成エリアからバトルエリアに移動したとき」（on_move＋発動主体。ウッコモン P-123・大和田ルイ P-130）も
     // 移動したデジモン以外の場のカードが反応する（以前は移動したデジモン自身の【移動時】しか見ていなかった）
-    if (sourceCard && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack' || triggerCode === 'on_move')) {
+    // テイマーからの進化は「デジモンが進化したとき」を誘発しない（公式Q&A BT27-048 Q7718。進化したカード自身の【進化時】は下で処理する）
+    const _fromTamerEvo = triggerCode === 'on_evolve' && !!(sourceCard && sourceCard._evolvedFromTamer);
+    if (sourceCard && !_fromTamerEvo && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack' || triggerCode === 'on_move')) {
       _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer);
     }
     // on_battle_win の trigger_conditions（例: cond_lv_ge:6@opp「Lv6以上の相手だけを
@@ -18319,7 +18321,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   //  誤配置されるのを防ぐ）
   const _isSummonTamer = String(c.type || '') === 'テイマー';
   if (_isSummonTamer) {
-    if (!player.tamerArea.includes(c)) player.tamerArea.push(c);
+    if (!player.tamerArea.includes(c)) { c.summonedThisTurn = true; player.tamerArea.push(c); }
   } else {
     const empty = player.battleArea.indexOf(null);
     if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
@@ -20091,7 +20093,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               && (typeof cardToSummon.effect === 'string' && /テイマー|【自分のターン】|【相手のターン】/.test(cardToSummon.effect)));
         if (isTamer) {
           // 既に tamerArea に存在する場合は二重登場させない
-          if (!p.tamerArea.includes(cardToSummon)) p.tamerArea.push(cardToSummon);
+          if (!p.tamerArea.includes(cardToSummon)) { cardToSummon.summonedThisTurn = true; p.tamerArea.push(cardToSummon); }
           ctx.addLog('🌟 「' + cardToSummon.name + '」をテイマーエリアに登場');
         } else {
           // 既にバトルエリアにある場合は二重登場させない
@@ -21358,6 +21360,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const isTamer = String(c.type || '') === 'テイマー';
           freshOnFieldEnter(c, true);
           if (isTamer) {
+            c.summonedThisTurn = true;
             player.tamerArea.push(c);
           } else {
             const empty = player.battleArea.indexOf(null);
@@ -21476,6 +21479,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const isTamer = String(c.type || '') === 'テイマー';
           freshOnFieldEnter(c, true);
           if (isTamer) {
+            c.summonedThisTurn = true;
             player.tamerArea.push(c);
           } else {
             const empty = player.battleArea.indexOf(null);
@@ -24284,6 +24288,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (i !== -1) player[z].splice(i, 1);
       });
       if (!player.tamerArea) player.tamerArea = [];
+      _pibCard.summonedThisTurn = true;
       player.tamerArea.push(_pibCard);
       _pibCard._placedInBattleArea = true;
       // ≪ディレイ≫は置かれたターンには発揮できない（公式ルール 16-17-3）ための印。持ち主の次のターンの始まり

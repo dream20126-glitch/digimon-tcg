@@ -1083,6 +1083,7 @@ function renderTamerRows() {
       if (!card) return;
       const sl = document.createElement('div');
       sl.className = 'tamer-slot';
+      sl.dataset.tamerIdx = String(i); // テイマーエリア内の位置（手札からテイマーへ進化するドロップ先の判定に使う）
       sl.dataset.cardNo = card.cardNo || '';
       sl.dataset.cardName = card.name || '';
       if (card.suspended) sl.style.transform = 'rotate(90deg)';
@@ -1426,7 +1427,7 @@ export function renderHand() {
         const t = ev.touches ? ev.touches[0] : ev;
         if (!isDragging && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) {
           isDragging = true;
-          highlightDropZones(true);
+          highlightDropZones(true, card);
           cardEl.style.position = 'fixed'; cardEl.style.zIndex = '99999';
           cardEl.style.pointerEvents = 'none'; cardEl.style.transform = 'scale(1.1)'; cardEl.style.transition = 'none';
         }
@@ -1453,6 +1454,20 @@ export function renderHand() {
             console.log('[handDrag] drop on iku slot');
             if (window.doEvolveIku) window.doEvolveIku(card, idx); dropped = true;
           }
+        }
+        // 自分のテイマーに進化（進化条件「特徴「倉田軍団」を持つテイマー」BT27-048 等）
+        if (!dropped && (card.type === 'デジモン' || card.type === 'デュアル')) {
+          const tRow = document.getElementById('pl-tamer-row');
+          (tRow ? tRow.querySelectorAll('.tamer-slot') : []).forEach((slot) => {
+            if (dropped) return;
+            const r = slot.getBoundingClientRect();
+            if (!(cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom)) return;
+            const ti = parseInt(slot.dataset.tamerIdx, 10);
+            if (isNaN(ti) || !bs.player.tamerArea[ti]) return;
+            console.log('[handDrag] drop on tamer slot ' + ti);
+            if (window.doEvolveTamer) window.doEvolveTamer(card, idx, ti);
+            dropped = true;
+          });
         }
         // バトルエリアに登場 or 進化
         if (!dropped) {
@@ -1501,10 +1516,17 @@ export function renderHand() {
 }
 
 // ドロップゾーンハイライト
-function highlightDropZones(on) {
+function highlightDropZones(on, card) {
   document.querySelectorAll('#pl-battle-row .b-slot').forEach(s => {
     s.style.borderColor = on ? '#ffffff55' : '';
     s.style.background = on ? '#1a1a1a' : '';
+  });
+  // 進化できるテイマーを光らせる（テイマーから進化 BT27-048 等）
+  document.querySelectorAll('#pl-tamer-row .tamer-slot').forEach(s => {
+    const t = bs.player.tamerArea[parseInt(s.dataset.tamerIdx, 10)];
+    let ok = false;
+    if (on && card && t && typeof window.canEvolveOntoTamer === 'function') { try { ok = window.canEvolveOntoTamer(card, t); } catch (_) {} }
+    s.style.boxShadow = ok ? '0 0 10px #00ff88' : '';
   });
 }
 

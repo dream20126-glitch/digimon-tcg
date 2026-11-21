@@ -2068,6 +2068,8 @@ export function doPlay(card, handIdx, slotIdx) {
   if (card.type === 'テイマー') {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     if (window._freshOnFieldEnter) window._freshOnFieldEnter(card);
+    // 「登場したターン」の記録（テイマーから進化したデジモンは、テイマーが登場したターンにはアタックできない。BT27-048 Q7720）
+    card.summonedThisTurn = true;
     bs.player.tamerArea.push(card);
     addLog('▶ 「' + card.name + '」を登場！（コスト ' + _effPlayCost + '）');
     if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
@@ -2551,6 +2553,88 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
         finish();
       }
     }, { deferDismiss: false });
+  });
+}
+
+// ===== テイマーからの進化（進化条件「特徴「倉田軍団」を持つテイマー」BT27-017/026/038/048・「〜がある「神原拓也」」AD1-002 等） =====
+// 公式Q&A（BT27-048 Q7718〜7723・BT18-022 Q2933/2935/6589〜6592）:
+//  - テイマーはデジモンとして扱わず、そのまま進化元になる（デジモンはバトルエリアへ。テイマーの下のカードも進化元）
+//  - 「デジモンが進化するとき」「デジモンが進化したとき」の効果は誘発しない（進化するカード自身の【進化時】は発揮する）
+//  - 進化ドローは行う
+//  - テイマーが登場したターンはアタックできない（summonedThisTurn をテイマーから引き継ぐ）
+//  - テイマーの進化元効果は得る／【セキュリティ】効果は得ない（進化元効果の読み取りがそうなっている）
+// レスト/アクティブは通常の進化と同じく引き継ぐ。
+// card: 進化先（手札）, tamer: 自分のテイマーエリアのテイマー, cost: 支払うコスト（軽減計算済み）, side: 'player'|'ai'
+export function doEvolveFromTamer(card, tamer, cost, side, callback) {
+  side = side === 'ai' ? 'ai' : 'player';
+  const p = bs[side];
+  const ti = (p.tamerArea || []).indexOf(tamer);
+  if (!card || ti === -1) { callback && callback(false); return; }
+  if (!canPayMemory(side, cost)) { addLog('🚨 「' + card.name + '」への進化の' + memoryShortText(side, cost)); callback && callback(false); return; }
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: !!tamer.suspended,
+    summonedThisTurn: !!tamer.summonedThisTurn,
+    buffs: tamer.buffs || [], _grantedRecipes: tamer._grantedRecipes,
+    dpModifier: 0,
+    linkedCards: [],
+    stack: [tamer].concat(tamer.stack || []),
+    // 「デジモンが進化したとき」を誘発させない印（effect-engine の反応スキャンが見る。【進化時】の後に外す）
+    _evolvedFromTamer: true,
+  });
+  evolved.dp = evolved.baseDp;
+  p.tamerArea.splice(ti, 1);
+  placeOnBattleArea(side, evolved);
+  const _hi = p.hand.indexOf(card);
+  if (_hi !== -1) p.hand.splice(_hi, 1);
+  if (side === 'player') bs.selHand = null;
+  addLog('⬆ テイマー「' + tamer.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
+  if (side === 'player' && _onlineMode && _sendCommand) {
+    try { _sendCommand({ type: 'evolve', cardName: evolved.name, baseName: tamer.name || '', cardImg: evolved.imgSrc || '', evolveCost: cost }); } catch (_) {}
+  }
+  renderAll();
+  if (side === 'player' && _onlineMode && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+  showEvolveEffect(cost, tamer.name, tamer, evolved, () => {
+    // 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
+    if (side === 'player') playerSpendMemory(cost, true);
+    else aiSpendMemory(cost);
+    doDraw(side, '進化ドロー', () => {
+      const finish = () => { delete evolved._evolvedFromTamer; renderAll(true); callback && callback(true); };
+      if (hasKeyword(evolved, '【進化時】')) _hooks.checkAndTriggerEffect(evolved, '【進化時】', finish, side);
+      else finish();
+    }, { deferDismiss: false });
+  });
+}
+
+// テイマーへ進化できる手札のカードか（進化条件に合う・進化コストを持つ）
+export function canEvolveOntoTamer(card, tamer) {
+  if (!card || !tamer || tamer.type !== 'テイマー') return false;
+  if (card.type !== 'デジモン' && card.type !== 'デュアル') return false;
+  if (card.evolveCost == null && !card.evolveCostFeatureRaw && !card.evolveCostNameRaw) return false;
+  return canEvolveOnto(card, tamer);
+}
+
+// 手札のカードを自分のテイマーへドロップしたとき（battle-render.js から呼ぶ）
+export function doEvolveTamer(card, handIdx, tamerIdx) {
+  if (bs.phase !== 'main' || _attackInProgress) return;
+  const tamer = bs.player.tamerArea[tamerIdx];
+  if (!tamer || !card) return;
+  if (!canEvolveOntoTamer(card, tamer)) { addLog('🚨 「' + tamer.name + '」から「' + card.name + '」へは進化できません（' + (card.evolveCond || '進化条件なし') + '）'); return; }
+  let cost = getEvolveCostFor(card, tamer);
+  const _evoDisc = _consumePendingEvoCostReduction(card, tamer);
+  if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  let _staticEvo = 0;
+  try { _staticEvo = _getStaticEvoCostReduction(card, tamer, bs, 'player'); } catch (_) {}
+  if (_staticEvo !== 0) { cost = Math.max(0, cost - _staticEvo); addLog('💠 進化コスト' + (_staticEvo > 0 ? '-' + _staticEvo : '+' + (-_staticEvo)) + '（コスト' + cost + 'で進化）'); }
+  // 「デジモンが進化するとき」の効果（before_evolve）は誘発しない（公式Q&A BT27-048 Q7718）。
+  // 【吸収進化】は進化するカード自身の能力なので使える
+  _checkAbsorbEvolveDiscount(card, bs, 'player', (discount2) => {
+    const _final = Math.max(0, cost - (discount2 > 0 ? discount2 : 0));
+    if (!canPayMemory('player', _final)) { addLog('🚨 「' + card.name + '」への進化の' + memoryShortText('player', _final)); return; }
+    const _go = () => doEvolveFromTamer(card, tamer, _final, 'player', () => { checkPlayerPendingTurnEnd(); });
+    if (discount2 > 0) { addLog('💠 吸収進化で進化コスト-' + discount2 + '（コスト' + _final + 'で進化）'); fireOppRestThen('player', _go); }
+    else _go();
   });
 }
 
@@ -3978,6 +4062,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
       }
       // ----- セキュリティがテイマー -----
       if (sec.type === 'テイマー') {
+        sec.summonedThisTurn = true;
         bs.ai.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」が相手に登場');
         // 相手に「自分のテイマーエリアにカードを追加して」と通知
@@ -5748,6 +5833,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks, _chec
           });
         }
       } else if (sec.type === 'テイマー') {
+        sec.summonedThisTurn = true;
         bs.player.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」がプレイヤーに登場');
         renderAll();
@@ -5958,6 +6044,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   if (c.type === 'テイマー') {
     bs.ai.hand.splice(handIdx, 1);
     if (window._freshOnFieldEnter) window._freshOnFieldEnter(c);
+    c.summonedThisTurn = true;
     bs.ai.tamerArea.push(c);
     addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + _aiBasePay + '）');
     renderAll();
@@ -6238,6 +6325,20 @@ function _aiPlayAutoBody(callback) {
     const _ev = _aiFindEvolve(base);
     if (!_ev) continue;
     _aiEvolveInBattleArea(_ev.card, i, () => {
+      _hooks.applyPermanentEffects('ai'); renderAll(true);
+      if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+      setTimeout(() => aiPlayAuto(callback), 600);
+    });
+    return;
+  }
+
+  // ②' テイマーから進化（進化条件「特徴「倉田軍団」を持つテイマー」BT27-048 等）。プレイヤーと同じ doEvolveFromTamer
+  for (const t of (bs.ai.tamerArea || []).slice()) {
+    if (!t) continue;
+    const _ev = _aiFindEvolve(t);
+    if (!_ev || _ev.alt) continue;
+    addLog('🤖 AIがテイマー「' + t.name + '」から「' + _ev.card.name + '」に進化！');
+    doEvolveFromTamer(_ev.card, t, _ev.cost, 'ai', () => {
       _hooks.applyPermanentEffects('ai'); renderAll(true);
       if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
       setTimeout(() => aiPlayAuto(callback), 600);

@@ -547,7 +547,7 @@ function execUnsuspend() {
     // テイマーも「アクティブにならない」（prevent_unsuspend）を持つ間はレストのまま（ロゼモン：バーストモード BT26-050
     // 「相手のデジモン/テイマー2体はアクティブにならない」）
     bs.player.tamerArea.forEach(c => {
-      if (c) { if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false; c._usedEffects = []; }
+      if (c) { if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false; c._usedEffects = []; c.summonedThisTurn = false; }
     });
     // 育成エリアのデジモンもアクティブにする（【トレーニング】でレストしたもの）
     { const _ik = bs.player.ikusei; if (_ik) { if (!_ik.cantBeActive && !_hasPreventUnsuspend(_ik) && !_skipAllUnsuspend) _ik.suspended = false; _ik._usedEffects = []; } }
@@ -586,7 +586,7 @@ function execUnsuspend() {
   } else {
     // レスト無しでもリセットは実行
     bs.player.battleArea.forEach(c => { if (c) { c.summonedThisTurn = false; c._usedEffects = []; } });
-    bs.player.tamerArea.forEach(c => { if (c) c.suspended = false; });
+    bs.player.tamerArea.forEach(c => { if (c) { c.suspended = false; c.summonedThisTurn = false; } });
     renderAll();
     showSkipAnnounce('🔄 アクティブフェイズ スキップ！', () => {
       addLog('🔄 アクティブフェイズ スキップ');
@@ -1058,6 +1058,8 @@ function setOppPhase(phase) { bs._oppPhase = phase; updatePhaseBadge(); }
 function aiPhaseUnsuspend() {
   _clearPlacedTurnMarks(bs.ai);
   setOppPhase('unsuspend');
+  // テイマーの「登場したターン」の記録を外す（テイマーから進化したデジモンのアタック可否に使う）
+  (bs.ai.tamerArea || []).forEach(t => { if (t) t.summonedThisTurn = false; });
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
   const hasRested = bs.ai.battleArea.some(c => c && c.suspended) || !!(bs.ai.ikusei && bs.ai.ikusei.suspended);

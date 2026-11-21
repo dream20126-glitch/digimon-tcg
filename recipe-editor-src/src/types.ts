@@ -442,6 +442,8 @@ export interface EffectBlock {
   // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
   actionParams?: Record<string, any>;
   targetFilter?: ConditionPair[]; // アクション対象自身の絞り込み（例:レスト状態のこのデジモン）→ step.filter に serialize
+  // アタック（attack）のアタック先の条件（「進化元枚数がそのデジモンより少ない相手のデジモン1体にアタック」ED01-10）→ step.attack_target_filter。⚠ エンジン未実装
+  attackTargetFilter?: ConditionPair[];
   // targetFilterのAND内包OR版条件チェーン（「Lv4以下のクロノモン、または特徴TS」等）。
   // 設定されていればtargetFilterより優先。JSON では単一セグメントならstep.filterの
   // フラット形式、複数セグメントなら{or:[...]}形式で出力する（cardMatchesFilterが
@@ -657,6 +659,8 @@ export interface AltAction {
   // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];
+  // 効果1と同じ意味（step.attack_target_filter）
+  attackTargetFilter?: ConditionPair[];
   // targetFilterのAND内包OR版条件チェーン（EffectBlock.targetFilterChainと同じ意味・変換）
   targetFilterChain?: ConditionChainEntry[];
   fromFilter?: ConditionPair[];

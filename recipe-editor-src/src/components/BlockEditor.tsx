@@ -7424,6 +7424,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         レストせず（レストせずアタックできるようにするだけで、即時アタックはしない）
                       </label>
                       {!effectOptions.includes('without_rest') && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={effectOptions.includes('allow_active')}
+                            onChange={(e) => updateEffect({ options: swapOpts(effectOptions, ['allow_active'], e.target.checked ? 'allow_active' : '') })}
+                          />
+                          アクティブ状態の相手のデジモンにもアタックできる（options: allow_active）
+                          <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装</span>
+                        </label>
+                      )}
+                      {!effectOptions.includes('without_rest') && (
+                        <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 4, padding: 6 }}>
+                          <ConditionsHybridEditor
+                            conditions={(isEditingAlt ? editingAlt!.attackTargetFilter : block.attackTargetFilter) || []}
+                            onChange={(next) => updateEffect({ attackTargetFilter: next.length ? next : undefined })}
+                            dict={dict}
+                            title="アタック先の条件"
+                            hint="（アタックできる相手のデジモンの条件。例: 進化元の枚数 → より少ない → アタックするデジモン。⚠ エンジン未実装）"
+                            theme="action"
+                            defaultSubject=""
+                            showSubjectSelector={false}
+                            supportsMultiValue={true}
+                          />
+                        </div>
+                      )}
+                      {!effectOptions.includes('without_rest') && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
                           <ButtonGroup
@@ -11535,6 +11561,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_evo_count_ge', label: '以上' },
     { value: 'cond_evo_count_le', label: '以下' },
     { value: 'cond_evo_count_eq', label: '完全一致' },
+    { value: 'cond_evo_count_gt', label: 'より多い' },
+    { value: 'cond_evo_count_lt', label: 'より少ない' },
     { value: 'cond_evo_lowest', label: '最も少ない' },
     { value: 'cond_evo_highest', label: '最も多い' },
   ],
@@ -11635,7 +11663,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   if (base === 'cond_target_evo_source') return 'evo_source';
-  if (base === 'cond_evo_lowest' || base === 'cond_evo_highest' || /^cond_evo_count_(ge|le|eq)$/.test(base)) return 'evo_count';
+  if (base === 'cond_evo_lowest' || base === 'cond_evo_highest' || /^cond_evo_count_(ge|le|eq|gt|lt)$/.test(base)) return 'evo_count';
   return 'other';
 }
 
@@ -12513,12 +12541,12 @@ function ConditionsHybridEditor({
                           </>
                         );
                       })()
-                    ) : /^cond_evo_count_(ge|le|eq)$/.test(c.base) ? (
+                    ) : /^cond_evo_count_(ge|le|eq|gt|lt)$/.test(c.base) ? (
                       /* 進化元の枚数 以上/以下/完全一致: 比べる値は数値か、このデジモン／相手のデジモン／自分のデジモンの進化元の枚数
                          （「このデジモンの進化元枚数以下の相手のデジモン」= 以下 ＋ このデジモン。値 self_card / opp / own_digimon） */
                       (() => {
                         const v = c.value || '';
-                        const mode = v === 'self_card' || v === 'opp' || v === 'own_digimon' ? v : '';
+                        const mode = v === 'self_card' || v === 'opp' || v === 'own_digimon' || v === 'attacker' ? v : '';
                         return (
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <ButtonGroup
@@ -12527,6 +12555,8 @@ function ConditionsHybridEditor({
                                 { code: 'self_card', label: 'このデジモン' },
                                 { code: 'opp', label: '相手' },
                                 { code: 'own_digimon', label: '自分' },
+                                // アタックの「アタック先の条件」で、アタックするデジモンと比べる（ED01-10。⚠ エンジン未実装）
+                                { code: 'attacker', label: 'アタックするデジモン' },
                               ]}
                               value={mode}
                               onChange={(m) => updateAt(i, { value: m || '' })}
@@ -12546,7 +12576,7 @@ function ConditionsHybridEditor({
                               </>
                             ) : (
                               <span style={{ fontSize: 11, color: colors.accent }}>
-                                {mode === 'self_card' ? 'このデジモンの進化元の枚数' : mode === 'opp' ? '相手のデジモン（どれか1体）の進化元の枚数' : '自分のデジモン（どれか1体）の進化元の枚数'}
+                                {mode === 'self_card' ? 'このデジモンの進化元の枚数' : mode === 'opp' ? '相手のデジモン（どれか1体）の進化元の枚数' : mode === 'attacker' ? 'アタックするデジモンの進化元の枚数（アタック先の条件用。⚠ エンジン未実装）' : '自分のデジモン（どれか1体）の進化元の枚数'}
                               </span>
                             )}
                           </div>

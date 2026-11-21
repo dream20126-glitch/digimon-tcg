@@ -651,6 +651,9 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   }
   const targetFilterObj = buildConditionChainFilter(a.targetFilterChain, a.targetFilter);
   if (targetFilterObj) out.filter = targetFilterObj;
+  // アタックのアタック先の条件（ED01-10）
+  const atfObj = buildFilterObject((a.attackTargetFilter || []).filter((p) => p.base));
+  if (atfObj) out.attack_target_filter = atfObj;
   const fromFilterObj = (a.fromFilterChain && a.fromFilterChain.length > 0)
     ? buildConditionChainFilter(a.fromFilterChain, a.fromFilter)
     : buildFilterObjectMaybeOr(a.fromFilter, a.fromFilterOp);
@@ -747,12 +750,12 @@ function applyRefZoneCond(f: Record<string, any>, c: ConditionPair): boolean {
   else if (c.base === 'cond_has_evo') { zone = 'evo_source'; quant = 'ge'; }
   else if (/^cond_has_evo_(le|eq|gt|lt)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_has_evo_', ''); }
   // 対象の条件「進化元の枚数 → 以上/以下/完全一致」（参照「進化元」と同じ filter.evo_source_ge/le/eq に保存）
-  else if (/^cond_evo_count_(ge|le|eq)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_evo_count_', ''); }
+  else if (/^cond_evo_count_(ge|le|eq|gt|lt)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_evo_count_', ''); }
   else return false;
   const n = parseInt(String(c.value), 10);
   if (!isNaN(n)) f[`${zone}_${quant}`] = n;
   // 数値の代わりに比べる先（'self_card'=このカード / 'opp'=相手の同じ場所 / own_*=自分のデジモン等の同じ場所の枚数）
-  else if (['self_card', 'opp', 'own_digimon', 'own_tamer', 'own_card'].includes(String(c.value))) f[`${zone}_${quant}`] = c.value;
+  else if (['self_card', 'opp', 'own_digimon', 'own_tamer', 'own_card', 'attacker'].includes(String(c.value))) f[`${zone}_${quant}`] = c.value;
   if (c.subject === 'opp') f[`${zone}_subject`] = 'opp';
   return true;
 }
@@ -1060,7 +1063,7 @@ function parseFilterObject(f: any): ConditionPair[] {
     if (v !== undefined) {
       // 数値で比べる以上/以下/完全一致は、対象の条件「進化元の枚数」として読む（比べる先の参照つき・より多い/少ないは従来の参照「進化元」）
       // 比べる先が このデジモン(self_card)／相手(opp)／自分のデジモン(own_digimon) のときも「進化元の枚数」で読む
-      if (['ge', 'le', 'eq'].includes(quant) && (/^\d+$/.test(String(v)) || ['self_card', 'opp', 'own_digimon'].includes(String(v))) && f.evo_source_subject !== 'opp') out.push({ base: 'cond_evo_count_' + quant, value: String(v) });
+      if (['ge', 'le', 'eq', 'gt', 'lt'].includes(quant) && (/^\d+$/.test(String(v)) || ['self_card', 'opp', 'own_digimon', 'attacker'].includes(String(v))) && f.evo_source_subject !== 'opp') out.push({ base: 'cond_evo_count_' + quant, value: String(v) });
       else out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
     }
   });
@@ -2012,6 +2015,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     ? buildConditionChainFilter(_tfOrChain, (b.targetFilter || []).filter((p) => _tfQuick(p.base) || p.orGroup === -1))
     : buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
   if (targetFilterObj) step.filter = targetFilterObj;
+  // アタックのアタック先の条件（「進化元枚数がそのデジモンより少ない相手のデジモン1体にアタック」ED01-10）
+  const atfObj = buildFilterObject((b.attackTargetFilter || []).filter((p) => p.base));
+  if (atfObj) step.attack_target_filter = atfObj;
   // === 「コスト上限+/-」を「直前の効果」へ自動適用する ===
   // action:'cost_limit_plus'/'cost_limit_minus' かつ applyCostModToPrev:true のAltActionは、
   // 独立したalt_actionsのエントリとしては出力せず、直前の効果（自分がaltSegments[0]の
@@ -2737,6 +2743,7 @@ function stepObjectToAltAction(step: any): AltAction {
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
     valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
     valueStepCap: step?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(step?.value_step_cap) ? step.value_step_cap : undefined,
+    attackTargetFilter: step?.attack_target_filter ? parseFilterObject(step.attack_target_filter) : undefined,
     refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     // 「～ごとに」の参照条件・参照状態（「その後」の後続stepでも、開き直して保存したときに
     // 消えないよう復元する。altActionToStepObject の ref_filter / ref_state 出力の逆変換）
@@ -3052,6 +3059,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     // value_step→valueStep、ref_count→refCount へ復元済み（同上の理由で素通しにしない）
     value_step: true,
     value_step_cap: true,
+    attack_target_filter: true,
     ref_count: true,
     designated: true,
     designated_groups: true,
@@ -3276,6 +3284,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
     valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
     valueStepCap: step?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(step?.value_step_cap) ? step.value_step_cap : undefined,
+    attackTargetFilter: step?.attack_target_filter ? parseFilterObject(step.attack_target_filter) : undefined,
     refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     perRef: step?.ref || '',
     perRefStateCond: (() => {
@@ -3403,6 +3412,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : a?.per_count_mode === 'step' ? 'step' as const : undefined,
             valueStep: a?.per_count_mode === 'step' && a?.value_step != null ? Number(a.value_step) : undefined,
             valueStepCap: a?.per_count_mode === 'step' && STEP_CAP_ATTRS.has(a?.value_step_cap) ? a.value_step_cap : undefined,
+            attackTargetFilter: a?.attack_target_filter ? parseFilterObject(a.attack_target_filter) : undefined,
             refCount: a?.ref_count === 'colors' ? 'colors' as const : undefined,
             perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,

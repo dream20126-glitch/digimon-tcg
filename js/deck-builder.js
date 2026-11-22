@@ -228,12 +228,8 @@ window.showPreview = function(id) {
     `<div class="keyword-item"><span class="keyword-name">【${escHtml(k.keyword)}】</span><div class="keyword-desc">${escHtml(k.description)}</div></div>`
   ).join('');
   document.getElementById('keyword-preview-wrap').style.display = kws.length ? 'block' : 'none';
-  const limit = (card["効果"] || '').includes('50枚まで') ? 50 : 4;
-  document.getElementById('qty-area').innerHTML =
-    `<button class="ctrl-btn" style="width:100%;" onclick="removeFromDeck('${id}')" aria-label="1枚減らす">−1</button>`
-    + [1, 2, 3, 4].map(n =>
-      `<button class="ctrl-btn" style="width:100%;" onclick="addToDeck('${id}', ${n}, ${limit})">+${n}</button>`
-    ).join('');
+  previewCardId = id;
+  renderQtyButtons(id);
   updateQtyMsg(id);
   document.getElementById('card-preview-window').style.display = 'block';
 };
@@ -265,10 +261,39 @@ function keywordsInText(text) {
   });
 }
 
-window.removeFromDeck = function(id) {
-  if (!tempDeck.find(i => i.card["カードNo"] === id)) return;
-  changeQty(id, -1);
+let previewCardId = null; // 開いているカード詳細のカードNo
+// カード詳細の枚数ボタン（0〜4）。押した数をこのカードの枚数にする（0＝デッキから外す）。今の枚数のボタンを光らせる
+function renderQtyButtons(id) {
+  const area = document.getElementById('qty-area');
+  if (!area) return;
+  const item = tempDeck.find(i => i.card["カードNo"] === id);
+  const cur = item ? item.count : 0;
+  area.innerHTML = [0, 1, 2, 3, 4].map(n =>
+    `<button class="ctrl-btn qty-btn${n === cur ? ' active' : ''}" style="width:100%;" aria-pressed="${n === cur}" onclick="setDeckCount('${id}', ${n})">${n}</button>`
+  ).join('');
+}
+window.setDeckCount = function(id, n) {
+  const card = allCards.find(c => c["カードNo"] === id);
+  if (!card) return;
+  const limit = (card["効果"] || '').includes('50枚まで') ? 50 : 4;
+  const item = tempDeck.find(i => i.card["カードNo"] === id);
+  const cur = item ? item.count : 0;
+  const diff = n - cur;
+  if (diff === 0) return;
+  if (diff > 0) {
+    // 4枚制限は「カードNoの _ より前」が同じカード（絵違い）を合算して判定
+    if (baseDeckCount(id) + diff > limit) return alert(`最大 ${limit} 枚までです（絵違い合計）`);
+    if (String(card["レベル"]) === '2') {
+      const tamaTotal = tempDeck.filter(i => String(i.card["レベル"]) === '2').reduce((s, i) => s + i.count, 0);
+      if (tamaTotal + diff > 5) return alert('デジタマデッキは最大5枚までです');
+    }
+  }
+  if (n <= 0) tempDeck = tempDeck.filter(i => i.card["カードNo"] !== id);
+  else if (item) item.count = n;
+  else tempDeck.push({ card, count: n });
+  updateDeckUI();
   updateQtyMsg(id);
+  renderQtyButtons(id);
 };
 
 window.hidePreview = function() {
@@ -320,6 +345,8 @@ window.changeQty = function(id, diff) {
   item.count += diff;
   if (item.count <= 0) tempDeck = tempDeck.filter(i => i.card["カードNo"] !== id);
   updateDeckUI();
+  // 開いているカード詳細の枚数ボタン（0〜4）・投入数も合わせる
+  if (previewCardId === id) { renderQtyButtons(id); updateQtyMsg(id); }
 };
 
 window.updateDeckUI = function() {

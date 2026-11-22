@@ -270,6 +270,13 @@
   font-size: 11px;
   line-height: 1.5;
 }
+/* カード詳細の枚数ボタン（0〜4）: 今の枚数を光らせる */
+.qty-btn.active {
+  background: rgba(0, 251, 255, 0.2);
+  border-color: var(--main-cyan);
+  color: var(--main-cyan);
+  font-weight: bold;
+}
 /* カード詳細の効果（メイン効果／進化元効果・オプション効果・リンク効果／セキュリティ効果） */
 .effect-item {
   background: #111;

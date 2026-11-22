@@ -1068,6 +1068,12 @@ function _hudSyncQueue(context) {
       const raw = inh ? inh.effect : (blk._recipeCard ? (blk._recipeCard.evoSourceEffect || blk.raw) : blk.raw);
       let text = '';
       try { text = extractTriggerSectionText(raw || '', trig, blk._grantedSteps || null); } catch (_) { text = raw || ''; }
+      // 「進化元を破棄する。この効果で破棄しなかったなら〜」で破棄できないなら、発揮する「破棄しなかったなら〜」の文を出す（BT27-029）
+      try {
+        const _hs = blk._grantedSteps || (trig ? getRecipeForTrigger(blk._recipeCard || e.card, trig, !!blk._recipeCard) : null);
+        const _ht = _emptyEvoAltHeadText(_hs, side);
+        if (_ht) text = _ht;
+      } catch (_) {}
       const it = _hudItem(side, e.card, blk._recipeCard || null, text);
       // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
       it.group = (_outerW.has(e) ? 'queueOuter:' : 'queue:') + side + ':' + (e.priority || 'normal');
@@ -1354,6 +1360,9 @@ function showQueueOrderSelect(entries, callback0) {
     const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
     // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
     let effText = _withKeywordRuleText(extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null), Array.isArray(_steps) ? _steps : null);
+    // 「進化元を破棄する。この効果で破棄しなかったなら〜」で破棄できないなら、発揮する「破棄しなかったなら〜」の文を出す（BT27-029）
+    const _emptyAltText = _emptyEvoAltHeadText(_steps, entry.actualSide || 'player');
+    if (_emptyAltText) effText = _emptyAltText;
     // 「〜。その後、〜」のように1つの効果が複数のステップに分かれていれば、全部の文章を出す
     // （P-187 で【リカバリー+1】だけが出て、「その後〜」が別の効果に見えていた）
     if (Array.isArray(_steps)) {
@@ -3165,16 +3174,37 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 「相手のデジモンの進化元を選んで3枚破棄」で、相手の進化元が合計3枚しか無いのに1枚ずつ選ばせていた）
         const _poolTotal = () => _qualIdx().reduce((a, i) => a + _edPoolQual(_area()[i]).length, 0);
         const _autoAll = !action._isCost && _poolTotal() <= n;
+        // 選ばずに全部破棄するときは、1枚ずつではなくデジモンごとにまとめて破棄する（演出もデジモンごとに1回）
+        if (_autoAll) {
+          const _holders = _qualIdx().map(i => _area()[i]).filter(Boolean);
+          let _hi = 0;
+          const _nextH = () => {
+            if (_hi >= _holders.length) { _finish(); return; }
+            const t = _holders[_hi++];
+            const cards = _edPoolQual(t).slice();
+            if (cards.length === 0) { _nextH(); return; }
+            _edInfo = null;
+            _edBefore.set(t, t.stack.slice());
+            const discarded = [];
+            cards.forEach((c) => {
+              const si = t.stack.indexOf(c);
+              if (si === -1) return;
+              _edNote(t, c, si);
+              t.stack.splice(si, 1);
+              edOwner.trash.push(c);
+              discarded.push(c);
+            });
+            _done += discarded.length;
+            finalizeDiscard(discarded, t, (did) => { if (did) _anyS = true; afterDiscard(did, _nextH); });
+          };
+          _nextH();
+          break;
+        }
         const _nextS = () => {
           if (_left <= 0) { _finish(); return; }
           const cands = _qualIdx();
           if (cands.length === 0) { _finish(); return; }
-          if (effectiveSide === 'ai' || _autoAll) {
-            const _t = _area()[cands[0]];
-            const _q = _edPoolQual(_t);
-            if (_autoAll && _q.length > 0) { _takeFrom(_t, _topS ? _q[0] : _q[_q.length - 1]); return; }
-            _pickCardOf(_t); return;
-          }
+          if (effectiveSide === 'ai') { _pickCardOf(_area()[cands[0]]); return; }
           ctx.addLog('🎯 進化元を破棄するデジモンを選んでください（' + (_done + 1) + '/' + n + '枚目）');
           showTargetSelection(edRowSide, cands, null, uiColor, (idx) => {
             if (idx === null || idx === undefined) { _finish(); return; }
@@ -16976,6 +17006,17 @@ function _altHeadForEmptyEvoDiscard(st, bs, side) {
     const opp = side === 'player' ? bs.ai : bs.player;
     const any = (opp && opp.battleArea || []).some(c => c && Array.isArray(c.stack) && c.stack.length > 0 && !_hasCantDiscard(c));
     return any ? null : alt;
+  } catch (_) { return null; }
+}
+// 発揮待ちの表示・同時誘発の選択画面用: 上の形で破棄できないなら「【…】この効果で破棄しなかったなら〜」の文（なければ null）
+function _emptyEvoAltHeadText(steps, side) {
+  try {
+    const bs = typeof window !== 'undefined' ? window._lastBattleState : null;
+    if (!Array.isArray(steps) || steps.length !== 1 || !bs || !side) return null;
+    const alt = _altHeadForEmptyEvoDiscard(steps[0], bs, side);
+    if (!alt) return null;
+    const pm = /^((?:【[^】]+】)+)/.exec(String(steps[0].display_text || '').trim());
+    return (pm ? pm[1] : '') + alt.display_text.trim();
   } catch (_) { return null; }
 }
 function _announceTextByMemoryGate(steps, text, card, bs, side) {

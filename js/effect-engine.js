@@ -17475,6 +17475,12 @@ function recipeWillExecuteAnything(recipe, ctx) {
     //   コストを支払えず効果自体が発動しないため、演出ポップアップも出さない）
     // 「リンクカードを破棄することで」（【分離】等）でリンクカードが無い場合も同様（_costStepsInfeasible）
     if (_costStepsInfeasible(step.cost, ctx.card, ctx.bs, ctx.side)) continue;
+    // ≪ディレイ≫は、そのカードがバトルエリアに置かれたターンには発揮できない（公式ルール 16-17-3）。確認（「発動しますか？」）や
+    // 発揮待ちにも出さない（紅玉の絆 ED01-09・雪片の絆 ED01-10 で、置いたターンにも確認が出て発動したように見えていた）
+    if (step && step.action === 'delay' && ctx.card && ctx.card._placedTurnKey) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' placed this turn → delay skip');
+      continue;
+    }
     // summon/evolve（手札から登場/進化）で手札に候補が無ければ不発なので演出ポップアップも出さない
     // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
     // ≪デコード≫は「バトル以外でバトルエリアを離れるとき」の効果。バトルで負けて離れるときは発揮しない
@@ -19837,6 +19843,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // place_in_battle_area で置かれたオプションはテイマーエリアにいる（トレーマニュアル BT26-099 等）
       const _delayTIdx = (_delayIdx === -1 && _delayCard) ? (player.tamerArea || []).indexOf(_delayCard) : -1;
       if (_delayIdx === -1 && _delayTIdx === -1) { callback(false); return; }
+      console.log('[delay] card=' + (_delayCard && _delayCard.name) + ' placedTurnKey=' + (_delayCard && _delayCard._placedTurnKey) + ' turn=' + (ctx.bs && ctx.bs.turn) + ' isPlayerTurn=' + (ctx.bs && ctx.bs.isPlayerTurn));
       // ≪ディレイ≫は、その効果を持つカードがバトルエリアに置かれたターンには発揮できない（公式ルール 16-17-3）
       if (_delayCard && _delayCard._placedTurnKey) {
         ctx.addLog && ctx.addLog('💨 「' + _delayCard.name + '」はバトルエリアに置かれたターンなので【ディレイ】できない');

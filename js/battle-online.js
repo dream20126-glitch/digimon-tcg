@@ -1039,6 +1039,9 @@ function onRemoteCommand(cmd) {
     case 'security_effect_request': {
       // 相手がアタック→自分のセキュリティからカードがめくれた→自分が効果を処理
       addLog('✦ セキュリティ効果：「' + cmd.cardName + '」');
+      // 相手の効果（≪急襲≫等）でのアタックだと、相手の「効果を発動中…」の全面表示が残っていることがある。
+      // これからこちらが選ぶので閉じる（残っていると対象選択が表示の下に隠れて押せなかった）
+      if (m.fxRemoteEffectClose) { try { m.fxRemoteEffectClose(); } catch (_) {} }
       const secCard = {
         name: cmd.cardName, cardNo: cmd.cardNo || '', type: cmd.cardType || 'オプション',
         effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',

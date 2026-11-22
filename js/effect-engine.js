@@ -18634,6 +18634,10 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
       });
       try { _hudSyncQueue(ctx); } catch (_) {}
     }
+    // 効果でのアタックが始まったら、相手の画面の「相手が効果を発動中…」（全面の表示）を閉じる。
+    // 閉じないとアタック中の相手の操作（セキュリティ効果の対象選択・ブロック等）が表示の下に隠れて押せなかった
+    // （≪急襲≫でアタック → 相手のセキュリティのソローブルー ST2-14 の対象選択）
+    if (window._onlineSendCommand) { try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
     window.startAttack(atkCard, slotIdx, (ok) => {
       if (!ok) { delete atkCard._executeAttacking; finish(false); return; }
       if (waitResolve) {

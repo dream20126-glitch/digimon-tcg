@@ -15388,7 +15388,11 @@ function _discardToLegacyStep(step) {
     delete rest.target_evo_source; delete rest.target_evo_source_position;
     // 「相手のデジモンの進化元を選んで4枚破棄する」（target: opponent:4・value 無し・「1体」と書いていない。ヴァイクモン LM-040）:
     // 複数のデジモンの進化元から合わせて選べる（_evoPooled）
-    const _pooled = !hasVal && sufN > 1 && (zone === 'opponent' || zone === 'own');
+    // 対象が体数なしの「相手のデジモン」（target: opponent・value 2以上。「相手のデジモンの進化元を選んで3枚破棄する」
+    // セッカモン BT27-029 / ST26-04・ユキナモン＆氷獣戯画 ST26-05）も同じ（以前は1体を選ぶと、そのデジモンの進化元だけから
+    // 破棄し、2枚しか無ければ選ばずに2枚とも破棄していた）
+    const _bareMulti = hasVal && !suf && (parseInt(step.value, 10) || 0) > 1 && f.target_evo_source_position === 'select';
+    const _pooled = (zone === 'opponent' || zone === 'own') && ((!hasVal && sufN > 1) || _bareMulti);
     const out = Object.assign(base, {
       _evoPooled: _pooled || undefined,
       action: pos === 'top' ? 'evo_discard_top' : pos === 'bottom' ? 'evo_discard_bottom' : pos === 'select' ? 'evo_discard_select' : pos === 'all' ? 'evo_discard_all' : 'evo_discard',

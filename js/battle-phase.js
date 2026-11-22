@@ -1290,6 +1290,12 @@ function aiPhaseMain() {
 // ----- AI ターン終了 -----
 
 async function endAiTurn() {
+  // CPU の【急襲】（自分のターン終了時、このデジモンでアタックできる）: メモリーが相手側に渡っていてもアタックする
+  // （AI対戦。battle-combat.js _aiRunRaidAttacks）
+  if (window._aiBattleActive && typeof window._aiRunRaidAttacks === 'function') {
+    try { await new Promise((res) => window._aiRunRaidAttacks(res)); } catch (_) {}
+    if (bs._battleAborted) return;
+  }
   // CPU の「このターン終了時、〜する」（at_turn_end）の予約を実行する
   try { await new Promise((res) => _runTurnEndDelayedEffects(bs, 'ai', res)); } catch (_) {}
   // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火

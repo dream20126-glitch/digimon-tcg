@@ -59,7 +59,11 @@ export function classifyCard(c) {
     onAttack: items.some((x) => !/^evo_source/.test(x.trig) && /(^|,)on_attack(,|$)/.test(x.trig)) || /【アタック時】/.test(main),
     onDestroy: items.some((x) => !/^evo_source/.test(x.trig) && /(^|,)on_destroy(,|$)/.test(x.trig)) || /【消滅時】/.test(main),
     onAttackEvo: items.some((x) => /^evo_source/.test(x.trig) && /(^|,)on_attack(,|$)/.test(x.trig)) || /【アタック時】/.test(String(c.evoSourceEffect || '')),
-    onDestroyEvo: items.some((x) => /^evo_source/.test(x.trig) && /(^|,)on_destroy(,|$)/.test(x.trig)) || /【消滅時】/.test(String(c.evoSourceEffect || '')),
+    // 【急襲】（自分のターン終了時、このデジモンでアタックできる）。raidEvo は進化元にあるとき上のデジモンに【急襲】を与える
+    raid: flags.has('attack_at_end_phase') || /【急襲】/.test(main),
+    raidEvo: items.some((x) => /^evo_source/.test(x.trig) && (x.st.flag === 'attack_at_end_phase' || (x.st.action === 'grant_keyword' && /attack_at_end_phase/.test(String(x.st.keyword || '')))))
+      || /【急襲】/.test(String(c.evoSourceEffect || '')),
+    onDestroyEvo:items.some((x) => /^evo_source/.test(x.trig) && /(^|,)on_destroy(,|$)/.test(x.trig)) || /【消滅時】/.test(String(c.evoSourceEffect || '')),
   };
   // セキュリティからめくれたとき、アタックしてきたデジモンを弱らせる・取り除くオプション
   // （【セキュリティ】の効果か、「このカードの【メイン】効果を発揮する」で【メイン】が相手のデジモンに効くもの）

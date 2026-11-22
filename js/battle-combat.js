@@ -5655,9 +5655,58 @@ function _aiThink(cb) {
   }, 700);
 }
 
+// ===== 【急襲】（自分のターン終了時、このデジモンでアタックできる）=====
+// CPU の効果からのアタックはエンジン側で動かない（効果のアタックはプレイヤー専用）ため、CPU のターン終了時に
+// 【急襲】を持つデジモンのアタックをここで行う（battle-phase.js endAiTurn から呼ぶ）。選び方はふつうのアタックと同じ
+let _aiRaidMode = false;
+function _aiHasRaid(c) { return !!c && hasPassiveFlag(c, 'attack_at_end_phase', ''); }
+if (typeof window !== 'undefined') window._aiRunRaidAttacks = (cb) => {
+  if (!window._aiBattleActive || _onlineMode || bs._battleAborted) { cb && cb(); return; }
+  try { _hooks.applyPermanentEffects('ai'); } catch (_) {}
+  if (!(bs.ai.battleArea || []).some(c => _aiHasRaid(c) && !c.suspended && c._aiRaidTurn !== bs.turn)) { cb && cb(); return; }
+  _aiRaidMode = true;
+  aiAttackPhase(() => { _aiRaidMode = false; cb && cb(); });
+};
+// 進化させると【急襲】を持つか（進化先のカード自身か、進化元になる base / その下のカードが【急襲】を与える）
+function _aiWillHaveRaid(base, evoCard) {
+  if (!base || !evoCard) return false;
+  if (_aiTagsOf(evoCard).raid) return true;
+  return [base, ...(base.stack || [])].some(x => _aiTagsOf(x).raidEvo);
+}
+// 先を見た行動（中・高）: このデジモンをアタックさせずに残し、アタックの後に進化させて【急襲】でターン終了時にアタックするか。
+//  条件: アクティブ／このターンで勝ち切れない／手札に、このデジモンから進化できて【急襲】になるカードがある（勝ち筋のカードか、
+//  セキュリティのデジモンに負けないDP）／進化コストが、自分のメモリー＋相手に渡してよい分で払える
+function _aiHoldForRaid(c) {
+  if (!_aiIsMid() || !c || c.suspended || _aiRaidMode || _aiOverflowOK) return false;
+  if (bs._aiRaidPlanTurn === bs.turn && bs._aiRaidPlanCard === c) return true;
+  const area = (bs.ai.battleArea || []).filter(x => _aiIsDigi(x) && !x.suspended);
+  if (_aiIsHigh() && _aiHighLethal(area)) return false;
+  const best = _aiRaidEvolveFor(c, Math.abs(bs.memory) + 10);
+  if (!best) return false;
+  bs._aiRaidPlanTurn = bs.turn; bs._aiRaidPlanCard = c;
+  addLog('🧠 「' + c.name + '」は今はアタックせず、あとで「' + best.card.name + '」に進化して【急襲】でアタックする');
+  return true;
+}
+// c から進化できて【急襲】になる手札のカード（コスト maxCost 以下）で、ターン終了時のアタックに意味があるもの
+function _aiRaidEvolveFor(c, maxCost) {
+  let best = null;
+  for (const e of (bs.ai.hand || [])) {
+    if (!e || (e.type !== 'デジモン' && e.type !== 'デュアル')) continue;
+    if (!_aiWillHaveRaid(c, e)) continue;
+    let ok = false;
+    try { ok = _resolveEvolveMatch(e, c) !== null || !!_getAltEvolve(e, c, bs, 'ai'); } catch (_) { ok = false; }
+    if (!ok) continue;
+    const cost = getEvolveCostFor(e, c);
+    if (cost === null || cost === undefined || cost > maxCost) continue;
+    if (!(_aiIsFinisher(e) || _dpOf(e) > _aiEstSecDp())) continue;
+    if (!best || _dpOf(e) > _dpOf(best.card)) best = { card: e, cost };
+  }
+  return best;
+}
+
 // 高（デジモンマスター）はアタックのたびに「考え中」を出してから決める
 export function aiAttackPhase(callback) {
-  if (_aiIsHigh() && !bs._battleAborted && !(bs.memory > 0 && !bs._aiScriptInProgress)) { _aiThink(() => _aiAttackPhaseBody(callback)); return; }
+  if (_aiIsHigh() && !bs._battleAborted && !(bs.memory > 0 && !bs._aiScriptInProgress && !_aiRaidMode)) { _aiThink(() => _aiAttackPhaseBody(callback)); return; }
   _aiAttackPhaseBody(callback);
 }
 function _aiAttackPhaseBody(callback) {
@@ -5676,7 +5725,8 @@ function _aiAttackPhaseBody(callback) {
   }
 
   // メモリーが相手（プレイヤー）側に移っていれば AI のターンは終わっている（公式ルール）。アタックしない
-  if (bs.memory > 0 && !bs._aiScriptInProgress) { callback(); return; }
+  // ただし【急襲】のアタック（自分のターン終了時）はメモリーが相手側でも行う
+  if (bs.memory > 0 && !bs._aiScriptInProgress && !_aiRaidMode) { callback(); return; }
   // アタックできるデジモン（自分のメインと同じ条件）: アクティブ・登場したターンでない（≪速攻≫は可）・
   // 「アタックできない」「レストできない」でない
   const _aiCanAttack = (c) => {
@@ -5684,6 +5734,10 @@ function _aiAttackPhaseBody(callback) {
     const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
     if (c.summonedThisTurn && !rush) return false;
     if (c.cantAttack || c.cantRest) return false;
+    // 【急襲】のアタック: 【急襲】を持つデジモンが1回ずつ
+    if (_aiRaidMode) return _aiHasRaid(c) && c._aiRaidTurn !== bs.turn;
+    // 中・高: このあと進化させて【急襲】でアタックする予定のデジモンは、今はアタックさせずに残す（先を見た行動）
+    if (_aiHoldForRaid(c)) return false;
     return true;
   };
   // アタック先: アタックできる相手のデジモンがいればそのデジモン（先頭から）。いなければプレイヤー（セキュリティ）。
@@ -5714,6 +5768,10 @@ function _aiAttackPhaseBody(callback) {
     }
   }
   if (atkIdx === -1) { callback(); return; }
+  if (_aiRaidMode && bs.ai.battleArea[atkIdx]) {
+    bs.ai.battleArea[atkIdx]._aiRaidTurn = bs.turn;
+    addLog('⚡ 【急襲】「' + bs.ai.battleArea[atkIdx].name + '」がターン終了時にアタック！');
+  }
 
   // アタック中に進化（アーツ進化等）したら、進化後のカードを同じデジモンのアタッカーとして扱う（プレイヤーの _evolvedAttacker と同じ）
   let atk = bs.ai.battleArea[atkIdx];
@@ -6160,16 +6218,19 @@ let _aiOverflowOK = false;
 if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowOK = !!v; };
 // 中（ベテランテイマー）: 相手に渡すのは3まで（普通のプレイヤーと同じく、出したいカードを出してターンを終える。
 // 先攻1ターン目はメモリー0から始まるので、相手に渡さないと何もできない）。低は10まで（できることは全てやる）
-function aiAvailableMemory(card) {
+function aiAvailableMemory(card, base) {
   // 高（デジモンマスター）は基本2まで（相手に渡すメモリーが少ないほど良い）。得な効果のカードはその分多く渡す
-  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? _aiOverflowAllowance(card) : 10) : 0;
+  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? _aiOverflowAllowance(card, base) : 10) : 0;
   return Math.abs(bs.memory) + over;
 }
 // 中・高: アタックの後、このカードのために相手に渡してよいメモリー（デッキの設計図・作戦・相手の読みで変える）
 //  基本: 中3・高2 ＋ 効果の得（_aiMidMemoryBonus）
 //  設計図: 勝ち筋のカード（一番上のレベル）は＋2。「自分のターン開始時にメモリーが3に戻る」テイマーが場にいれば＋1
 //  高の作戦: 守りを固めるときは守りのカード＋2・それ以外−1。相手を速攻型と読んだら守り以外−1
-function _aiOverflowAllowance(card) {
+function _aiOverflowAllowance(card, base) {
+  // 先を見た行動: アタックさせずに残したデジモンを【急襲】になるカードに進化させる → ターン終了時にアタックできるので、
+  // メモリーが相手側に渡っても進化する（相手に渡すのは最大10まで）
+  if (base && card && bs._aiRaidPlanTurn === bs.turn && bs._aiRaidPlanCard === base && !base.suspended && _aiWillHaveRaid(base, card)) return 10;
   let n = (_aiIsHigh() ? 2 : 3) + _aiMidMemoryBonus(card);
   const p = _aiProfile();
   if (p && card) {
@@ -6449,7 +6510,7 @@ function _aiFindEvolveFrom(base) {
     let cost = alt ? alt.cost : getEvolveCostFor(c, base);
     if (cost === null || cost === undefined) continue;
     try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
-    if (cost > aiAvailableMemory(c)) continue;
+    if (cost > aiAvailableMemory(c, base)) continue;
     if (!_high) {
       if (!_best) _best = { card: c, cost, alt: !!alt };
       if (!_fin && _aiIsFinisher(c)) _fin = { card: c, cost, alt: !!alt };

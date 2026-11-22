@@ -3206,6 +3206,9 @@ function aiSpendMemory(cost) {
 
 let _atkState = null; // { card, slotIdx }
 let _attackInProgress = false; // アタック処理中フラグ（操作ロック用）
+// アタック・ブロックでのレスト（ルールによるレスト）の印。盤面の変化の演出（battle-fx.js boardStateDiff）は
+// 効果の処理中のレストを「効果でレスト」として見せるので、≪急襲≫等の効果でのアタックのレストが効果のレストに見えていた
+function _markRuleRest(c) { try { if (c && typeof window !== 'undefined') { if (!window._ruleRestSet) window._ruleRestSet = new WeakSet(); window._ruleRestSet.add(c); } } catch (_) {} }
 // ターン終了判定（battle-phase.js checkAutoTurnEnd）から、アタック処理中かを参照できるようにする
 if (typeof window !== 'undefined') window._isAttackInProgress = () => _attackInProgress;
 // 起動効果（デジモン/テイマーの【メイン】）の完了時用: 保留中の効果アタックだけを行う（ターン終了判定はしない）
@@ -3257,7 +3260,7 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
     else { addLog('🤖 AIはブロックしなかった'); return false; }
   }
   const blocker = bs.ai.battleArea[blockerIdx];
-  blocker.suspended = true;
+  blocker.suspended = true; _markRuleRest(blocker);
   addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
   renderAll();
   // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
@@ -3290,7 +3293,7 @@ export function startAttack(card, slotIdx, callback) {
   // 効果のステップの終わり（アタック終了時の自壊の後）まで後回しになっていた
   if (typeof window !== 'undefined') window._destroyFxBatch = null;
   // 「レストせずアタックできる」（attack options:without_rest）ならレストしない（その1回のアタックだけ）
-  if (!card._attackWithoutRest) card.suspended = true;
+  if (!card._attackWithoutRest) { card.suspended = true; _markRuleRest(card); }
   delete card._attackWithoutRest;
   card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
@@ -3512,7 +3515,7 @@ export function resolveAttackTarget(target, targetIdx) {
         window._tutorialAiBlockIntent = null;
         const blocker = bs.ai.battleArea[blockerIdx];
         addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
-        blocker.suspended = true;
+        blocker.suspended = true; _markRuleRest(blocker);
         try {
           if (window._tutorialRunner) {
             window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'ai' });
@@ -3611,7 +3614,7 @@ export function resolveAttackTarget(target, targetIdx) {
         window._tutorialAiBlockIntent = null;
         const blocker = bs.ai.battleArea[blockerIdx];
         addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
-        blocker.suspended = true;
+        blocker.suspended = true; _markRuleRest(blocker);
         try {
           if (window._tutorialRunner) {
             window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'ai' });
@@ -5522,7 +5525,7 @@ function _aiAttackPhaseBody(callback) {
   // アタック中は保留中の DP0 の消滅・【衝突】のブロッカー等がアタック中として扱われる
   _attackInProgress = true;
   if (typeof window !== 'undefined') window._destroyFxBatch = null;
-  atk.suspended = true;
+  atk.suspended = true; _markRuleRest(atk);
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._attackEndRequested = false;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
@@ -5586,7 +5589,7 @@ function _aiAttackPhaseBody(callback) {
     const _aiBlocked = (blockerIdx) => {
       const blocker = bs.player.battleArea[blockerIdx];
       if (!blocker) { _aiProceed(); return; }
-      blocker.suspended = true;
+      blocker.suspended = true; _markRuleRest(blocker);
       addLog('🛡 「' + blocker.name + '」でブロック！');
       if (window._tutorialRunner && window._tutorialRunner.active) {
         try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
@@ -7776,7 +7779,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   }
 
   // 本物のアタックフロー（演出・ブロック確認・効果処理すべて含む）
-  atk.suspended = true;
+  atk.suspended = true; _markRuleRest(atk);
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
@@ -7845,7 +7848,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
               if (blockerIndices.length === 1) {
                 const blockerIdx = blockerIndices[0];
                 const blocker = bs.player.battleArea[blockerIdx];
-                blocker.suspended = true;
+                blocker.suspended = true; _markRuleRest(blocker);
                 addLog('🛡 「' + blocker.name + '」でブロック！');
                 if (window._tutorialRunner && window._tutorialRunner.active) {
                   try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
@@ -7863,7 +7866,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                 showBlockerSelection(blockerIndices, atk, (selectedIdx) => {
                   if (selectedIdx !== null) {
                     const blocker = bs.player.battleArea[selectedIdx];
-                    blocker.suspended = true;
+                    blocker.suspended = true; _markRuleRest(blocker);
                     addLog('🛡 「' + blocker.name + '」でブロック！');
                     if (window._tutorialRunner && window._tutorialRunner.active) {
                       try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}

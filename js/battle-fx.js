@@ -4061,7 +4061,11 @@ export function boardStateDiff() {
         // 効果の処理中の変化だけ（進化等でカードが変わったときは出さない）
         if (!prev || prev.no !== now.no || !active || window._fxMoveHold > 0) return;
         const hits = [];
-        if (prev.s !== now.s) hits.push([now.s ? 'rest' : 'active', null]);
+        // アタック・ブロックでのレスト（battle-combat.js _markRuleRest）は効果のレストではないので出さない
+        // （≪急襲≫等の効果でアタックしたとき、アタックのレストが「効果でレスト」の演出になっていた）
+        const _ruleRest = !!(now.s && window._ruleRestSet && window._ruleRestSet.has(c));
+        if (window._ruleRestSet && !now.s) window._ruleRestSet.delete(c);
+        if (prev.s !== now.s && !_ruleRest) hits.push([now.s ? 'rest' : 'active', null]);
         if (prev.dp !== now.dp) hits.push([now.dp < prev.dp ? 'dp_minus' : 'dp_plus', { from: prev.dp, to: now.dp, diff: Math.abs(now.dp - prev.dp) }]);
         if (prev.seal !== now.seal && now.seal.length > prev.seal.length) {
           hits.push(['seal', now.seal === 'AB' ? 'アタック・ブロック不可' : now.seal === 'A' ? 'アタック不可' : 'ブロック不可']);

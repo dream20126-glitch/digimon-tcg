@@ -18115,6 +18115,20 @@ function _sendOppSecurityMovesNow(ctx, moves) {
 // （未指定は元の順のまま上に戻す）。post_actions は選んだカード（bs._lastPickedCard）を見て続けて行う。
 // オンライン: セキュリティの中身は持ち主の端末が正。相手のセキュリティなら選んだ1枚の移動を fx_oppSecurityMoved で、
 // 戻した後の並びを fx_oppSecurityOrder で持ち主に送る（持ち主が security_init で送り返す）。自分のセキュリティは security_init で送る
+// AI対戦で CPU がカードをオープンしたとき（セキュリティ・手札のオープン等）、オンラインの相手のオープンと同じ画面で見せる。
+// start: オープンしたカードを並べる → act: 行き先を1枚ずつ（少しずつ間を空ける） → end(cb): 少し見せてから閉じて cb。
+// CPU でない・オンライン・画面が無いときは null（呼び出し側は今までどおり）
+function _cpuOpenView(ctx) {
+  if (!ctx || ctx.side !== 'ai' || typeof document === 'undefined' || !document.body) return null;
+  if (typeof window === 'undefined' || (window._isOnlineMode && window._isOnlineMode()) || !window._cpuDeckOpenView) return null;
+  const v = window._cpuDeckOpenView;
+  let t = Date.now();
+  return {
+    start(cmd) { try { v.start(cmd); } catch (e) { console.error('[cpuOpenView]', e); } t = Date.now() + 1400; },
+    act(cmd) { const at = Math.max(Date.now(), t); t = at + 700; setTimeout(() => { try { v.act(cmd); } catch (_) {} }, at - Date.now()); },
+    end(cb) { const at = Math.max(Date.now(), t) + 900; setTimeout(() => { try { v.end(); } catch (_) {} cb && cb(); }, at - Date.now()); },
+  };
+}
 function _securityOpenPick(step, ctx, callback) {
   const bs = ctx.bs;
   const isOpp = step.security_owner === 'opp' || step.security_owner === 'opponent';
@@ -18122,7 +18136,21 @@ function _securityOpenPick(step, ctx, callback) {
   const owner = bs[ownerSide];
   const lbl = ownerSide === 'ai' ? '相手の' : '';
   const online = !!(ctx.side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
-  const send = (cmd) => { if (online) { try { window._onlineSendCommand(cmd); } catch (e) { console.error('[securityOpenPick]', e); } } };
+  // AI対戦の CPU のセキュリティのオープンも画面に見せる（オンラインの相手に送る表示と同じもの。閉じるのは効果の終わり）
+  // 「選んで」オープンで呼び直すときは、最初の呼び出しの表示を引き継ぐ（閉じる処理を二重にしない）
+  const _cpuView = step._cpuView || (step.private ? null : _cpuOpenView(ctx));
+  if (_cpuView && !step._cpuView) {
+    const _cb0 = callback;
+    callback = (...a) => _cpuView.end(() => _cb0 && _cb0(...a));
+  }
+  const send = (cmd) => {
+    if (online) { try { window._onlineSendCommand(cmd); } catch (e) { console.error('[securityOpenPick]', e); } return; }
+    if (!_cpuView || !cmd) return;
+    // 受け手（プレイヤー）から見た向き: CPU のセキュリティは「相手の」、プレイヤーのセキュリティは自分の領域
+    const c2 = Object.assign({}, cmd, { receiverZone: ownerSide === 'player' });
+    if (cmd.type === 'fx_remoteDeckOpenStart') _cpuView.start(c2);
+    else if (cmd.type === 'fx_remoteDeckOpenAct') _cpuView.act(c2);
+  };
   if (!owner || !owner.security || owner.security.length === 0) {
     ctx.addLog && ctx.addLog('⚠ ' + lbl + 'セキュリティが空です');
     callback && callback();
@@ -18138,7 +18166,7 @@ function _securityOpenPick(step, ctx, callback) {
     const ask = () => {
       if (chosen.length >= openN || ctx.side !== 'player') {
         for (let i = 0; chosen.length < openN && i < owner.security.length; i++) if (!chosen.includes(i)) chosen.push(i);
-        _securityOpenPick(Object.assign({}, step, { _openIdx: chosen.slice() }), ctx, callback);
+        _securityOpenPick(Object.assign({}, step, { _openIdx: chosen.slice(), _cpuView: _cpuView || undefined }), ctx, callback);
         return;
       }
       const opts = owner.security.map((c, i) => i).filter((i) => !chosen.includes(i));
@@ -22663,6 +22691,14 @@ function executeRecipeStep(step, ctx, store, callback) {
             window._onlineSendCommand({ type: 'fx_remoteDeckOpenStart', sourceCardName: ctx.card ? ctx.card.name : '', zoneName: '手札', cards: cards.map((c) => ({ cardNo: c.cardNo, name: c.name, imgSrc: getImg(c) })) });
             window._onlineSendCommand({ type: 'fx_remoteDeckOpenEnd' });
           } catch (_) {}
+        }
+        // AI対戦の CPU が手札をオープンしたときも、オープンしたカードを画面に見せる（少し見せてから閉じて続ける）
+        const _hoView = _cpuOpenView(ctx);
+        if (_hoView) {
+          const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+          _hoView.start({ sourceCardName: ctx.card ? ctx.card.name : '', zoneName: '手札', cards: cards.map((c) => ({ cardNo: c.cardNo, name: c.name, imgSrc: getImg(c) })) });
+          _hoView.end(() => callback(true));
+          return;
         }
         callback(true);
       };

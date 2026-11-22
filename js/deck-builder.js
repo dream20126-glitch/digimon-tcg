@@ -115,8 +115,6 @@ function sortResults(list) {
 }
 
 window.filterCards = function() {
-  const _sortSel = document.getElementById('s-sort');
-  if (_sortSel && _sortSel.value !== sortMode) _sortSel.value = sortMode;
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
   // 何も絞り込んでいないときは全件を出さず、案内だけ表示する
@@ -180,7 +178,12 @@ function renderResults(list) {
   if (resultObserver) resultObserver.disconnect();
   const panel = res.closest('.center-panel');
   if (panel) panel.scrollTop = 0;
-  res.innerHTML = `<div class="search-hit-count">${list.length}件</div><div id="search-results-sentinel"></div>`;
+  // 件数の行の右側に並べ替えのボタン（押した並び順で並べ直す）
+  const _sortOpts = [['name', '名称ごと'], ['no', 'カードNo'], ['lv', 'Lv'], ['cost', 'コスト']];
+  const _sortBtns = _sortOpts.map(([k, l]) =>
+    `<button type="button" class="sort-btn${sortMode === k ? ' active' : ''}" aria-pressed="${sortMode === k}" onclick="setSortMode('${k}')">${l}</button>`).join('');
+  res.innerHTML = `<div class="search-hit-bar"><span class="search-hit-count">${list.length}件</span>`
+    + `<span class="sort-bar"><span class="sort-label">並べ替え</span>${_sortBtns}</span></div><div id="search-results-sentinel"></div>`;
   renderNextPage();
   const sentinel = document.getElementById('search-results-sentinel');
   if (!sentinel) return;

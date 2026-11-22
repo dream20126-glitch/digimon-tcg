@@ -55,13 +55,6 @@
         <div id="mode-effect" class="mode-btn" onclick="setSearchMode('effect')">記述検索</div>
       </div>
       <input type="text" id="s-input" oninput="filterCards()" placeholder="キーワードを入力...">
-      <span class="filter-label">SORT</span>
-      <select id="s-sort" onchange="setSortMode(this.value)" aria-label="並び順" style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:6px; background:#0a0a0a; color:#ddd; border:1px solid #333; border-radius:4px;">
-        <option value="name">同じ名称ごと</option>
-        <option value="no">カードNo順</option>
-        <option value="lv">Lv順</option>
-        <option value="cost">コスト順</option>
-      </select>
       <span class="filter-label">LEVEL</span>
       <div class="btn-grid">
         <div class="filter-btn" onclick="toggleFilter(this, 'levels', '2')">2</div>

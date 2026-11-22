@@ -80,6 +80,43 @@
   font-size: 11px;
   color: #777;
 }
+/* 件数（左）と並べ替えのボタン（右）の行 */
+.search-hit-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sort-bar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.sort-label {
+  font-size: 11px;
+  color: #777;
+  margin-right: 2px;
+}
+.sort-btn {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #0a0a0a;
+  color: #999;
+  cursor: pointer;
+}
+.sort-btn:hover { border-color: rgba(0, 251, 255, 0.6); color: #ccc; }
+.sort-btn.active {
+  border-color: #00fbff;
+  color: #00fbff;
+  background: rgba(0, 251, 255, 0.1);
+}
 .search-guide {
   grid-column: 1 / -1;
   margin-top: 40px;

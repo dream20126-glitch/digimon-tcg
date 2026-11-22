@@ -417,6 +417,10 @@ window.handleSaveRequest = async function() {
       name, cover: selectedCoverUrl, list, password: pw, isUpdate: exists
     });
 
+    // 保存できなかった（GAS のエラー）なら「保存が完了しました」を出さない
+    if (!saveResult || saveResult.error || !/^SUCCESS/.test(String(saveResult.status || ''))) {
+      throw new Error((saveResult && saveResult.error) || '保存できませんでした');
+    }
     const isUpdate = saveResult.status === 'SUCCESS_UPDATE';
     document.getElementById('finish-status-title').innerText =
       isUpdate ? 'デッキの編集が完了しました' : 'デッキの保存が完了しました';

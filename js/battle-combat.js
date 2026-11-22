@@ -6123,6 +6123,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   // ----- デュアルカード（AIはオプションとして使用。アーツ進化できるなら常に受け入れる） -----
   if (c.type === 'デュアル') {
     bs.ai.hand.splice(handIdx, 1);
+    if (_aiIsHigh()) addLog('👑 「' + c.name + '」はオプションとして使う（効果を使ってからアーツ進化）');
     addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + _aiBasePay + '）');
     renderAll();
     showOptionEffect(c, () => {
@@ -6134,6 +6135,11 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
       onDone = (te) => _endBusy(() => _onDoneDual(te));
       _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
         const candidates = _findArtsEvolveCandidates(c, 'ai');
+        // 高: アーツ進化先は、このターンにアタックできるバトルエリアのデジモン → レベルの高いもの を優先
+        if (_aiIsHigh() && candidates.length > 1) {
+          const _rk = (t) => (t.area === 'battle' && !t.base.suspended && !t.base.summonedThisTurn ? 100 : 0) + _lvOf(t.base);
+          candidates.sort((a, b) => _rk(b) - _rk(a));
+        }
         if (candidates.length > 0) {
           const evolved = _placeArtsEvolve(c, candidates[0], 'ai');
           if (hasKeyword(evolved, '【進化時】')) {
@@ -6270,7 +6276,10 @@ function _aiFindEvolveFrom(base) {
   const _plan = _high ? _aiPlan() : 'develop';
   let _fin = null; // 中: 勝ち筋のカードに進化できるならそれを選ぶ
   for (const c of bs.ai.hand) {
-    if (!c || c.type !== 'デジモン') continue;
+    if (!c) continue;
+    // デュアルカード: 高（デジモンマスター）が「直接進化」を選んだときだけ進化に使う（それ以外はオプションとして使う ③）
+    if (c.type === 'デュアル') { if (_aiDualMode(c) !== 'evolve') continue; }
+    else if (c.type !== 'デジモン') continue;
     // 進化できるか・コストはプレイヤーの進化（doEvolve の _normalEvolve）と同じ判定（代替進化・常在の進化コスト増減も含む）
     let ok = false, alt = null;
     try { ok = _resolveEvolveMatch(c, base) !== null; } catch (_) { ok = false; }
@@ -6301,6 +6310,7 @@ if (typeof window !== 'undefined') window._aiCanEvolveNow = (base) => { try { re
 function _aiEvolveInBattleArea(card, slotIdx, done) {
   const base = bs.ai.battleArea[slotIdx];
   if (!base || !card) { done(); return; }
+  if (card && card.type === 'デュアル' && _aiIsHigh()) addLog('👑 「' + card.name + '」はオプションとして使わず、直接進化する（コストを抑える）');
   let cost = getEvolveCostFor(card, base);
   let _alt = null;
   try { _alt = _getAltEvolve(card, base, bs, 'ai'); } catch (_) {}
@@ -6336,6 +6346,7 @@ function _aiEvolveInBattleArea(card, slotIdx, done) {
 function _aiEvolveIku(card, done) {
   const base = bs.ai.ikusei;
   if (!base || !card) { done(false); return; }
+  if (card && card.type === 'デュアル' && _aiIsHigh()) addLog('👑 「' + card.name + '」はオプションとして使わず、直接進化する（コストを抑える）');
   let cost = getEvolveCostFor(card, base);
   let _altEvo = null;
   try { _altEvo = _getAltEvolve(card, base, bs, 'ai'); } catch (_) {}
@@ -6426,6 +6437,49 @@ function _aiMidOptionIsWasted(c) {
     if (n > 0) return false;
   }
   return targeted > 0;
+}
+
+// デュアルカードの使い方: 'option'（オプションとして使う→アーツ進化）／'evolve'（手札から直接進化）／null（今は使わない）
+// 低・中（ベテランテイマー）は常にオプションから。高（デジモンマスター）は勝ち筋で選ぶ:
+//  ・オプションとして使えない（メモリー不足・色・効果の対象がいない・強い相手まで取っておく）→ 直接進化
+//  ・進化できる相手がいない／進化コストが払えない → オプション
+//  ・両方できる → オプションの効果に価値があればオプション（使用コストは高いが、効果＋アーツ進化）。
+//    価値: 相手のデジモン/テイマー/セキュリティに効く手順に対象がいる、ドロー・メモリー+、
+//    守りを固める作戦で守りの効果、アタック前に自分のデジモンを強くする（このターンにアタックできるデジモンがいて、相手にデジモンがいる）。
+//    価値が無ければ、コストの安い直接進化
+function _aiDualMode(c) {
+  if (!c || c.type !== 'デュアル') return null;
+  if (!_aiIsHigh()) return 'option';
+  const avail = aiAvailableMemory(c);
+  const canOpt = c.playCost !== null && _aiPlayCost(c) <= avail
+    && (hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai'))
+    && !_aiMidOptionIsWasted(c) && !_aiHighHoldOption(c);
+  const bases = [...(bs.ai.battleArea || []), bs.ai.ikusei].filter(b => b && _aiIsDigi(b) && canEvolveOnto(c, b));
+  const evoCosts = bases.map(b => getEvolveCostFor(c, b)).filter(v => v !== null && v !== undefined);
+  const canEvo = evoCosts.length > 0 && Math.min(...evoCosts) <= avail;
+  if (!canEvo) return canOpt ? 'option' : null;
+  if (!canOpt) return 'evolve';
+  return _aiDualOptionValuable(c) ? 'option' : 'evolve';
+}
+function _aiDualOptionValuable(c) {
+  let r = c.recipe;
+  if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
+  const steps = (r && Array.isArray(r.main)) ? r.main.filter(Boolean) : [];
+  if (steps.length === 0) return true; // レシピが読めないときは従来どおりオプション
+  const oppDigi = (bs.player.battleArea || []).some(_aiIsDigi);
+  const canSwing = !_aiOverflowOK && (bs.ai.battleArea || []).some(x => _aiIsDigi(x) && !x.suspended && (!x.summonedThisTurn || _aiTagsOf(x).rush));
+  const defend = _aiPlan() === 'defend';
+  for (const st of steps) {
+    const a = String(st.action || ''), t = String(st.target || '');
+    if (/^(draw|memory|memory_plus)$/.test(a)) return true;
+    if (/^opp/.test(t)) {
+      const n = _aiMidStepTargetCount(st);
+      if (n === null ? true : n > 0) return true;
+    }
+    if (a === 'dp_plus' && /^own/.test(t) && canSwing && oppDigi) return true;
+    if (defend && /^(grant_keyword|dp_plus)$/.test(a) && /^own/.test(t)) return true;
+  }
+  return false;
 }
 
 // 高（デジモンマスター）は1つ行動するたびに「考え中」を出してから決める
@@ -6522,7 +6576,9 @@ function _aiPlayAutoBody(callback) {
     c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c) &&
     (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai')) &&
     !(_aiIsMid() && _aiMidOptionIsWasted(c)) &&
-    !(_aiIsHigh() && _aiHighHoldOption(c))
+    !(_aiIsHigh() && _aiHighHoldOption(c)) &&
+    // 高: デュアルカードは「オプションとして使う」と決めたときだけ（直接進化は ② で）
+    !(c.type === 'デュアル' && _aiIsHigh() && _aiDualMode(c) !== 'option')
   );
   // 高: メモリーを増やすテイマーを優先して出す。守りを固める作戦なら、守りのカード（除去・ブロッカー等）をその次に
   if (_aiIsHigh()) {

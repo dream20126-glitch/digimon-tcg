@@ -6249,7 +6249,7 @@ function _aiKeepForNursery(c) {
   const iku = bs.ai.ikusei;
   const lv = _lvOf(c);
   // 育成エリアにいるデジモンが、このカードの1つ下のレベル（今かこの先に進化させられる）
-  if (iku && iku.type === 'デジモン' && _lvOf(iku) === lv - 1) return true;
+  if (iku && (iku.type === 'デジモン' || iku.type === 'デジタマ') && _lvOf(iku) === lv - 1) return true;
   // 育成エリアが空でデジタマが残っている Lv.3 は、次のターンに孵化して育てられる（場にデジモンがいて、急いで出す必要が無いとき）
   if (!iku && lv === 3 && (bs.ai.tamaDeck || []).length > 0 && (bs.ai.battleArea || []).some(x => x && x.type === 'デジモン')) return true;
   return false;
@@ -6269,8 +6269,34 @@ function _aiFindEvolve(base) {
       try { _r = _aiFindEvolveFrom(base); } finally { bs.ai.hand = _hand0; }
       if (_r) return _r;
     }
+    // 次に【登場時】を持たないカード（育成エリアで進化させても失う効果が無い）
+    const _hand1 = bs.ai.hand;
+    bs.ai.hand = _hand1.filter(c => c && !_aiHasOnPlay(c));
+    let _r2 = null;
+    try { _r2 = _aiFindEvolveFrom(base); } finally { bs.ai.hand = _hand1; }
+    if (_r2) return _r2;
+    // 【登場時】のカードしか無い: 育成エリアで進化させた方が得なら進化させる（進化コストが安い・進化ドローがある・
+    // 育成エリアは相手に狙われない）。ただし、そのカードが手札に1枚だけで、バトルエリアにデジモンがいなくて、
+    // 今のメモリーで手札から登場させられる（＝【登場時】を使いながら場に出せる）なら、進化させずに登場させる方に取っておく
+    const _r3 = _aiFindEvolveFrom(base);
+    if (_r3 && _aiHasOnPlay(_r3.card)) {
+      const _same = _hand1.filter(c => c && c.name === _r3.card.name).length;
+      const _noField = !(bs.ai.battleArea || []).some(_aiIsDigi);
+      const _canPlay = _r3.card.playCost !== null && _aiPlayCost(_r3.card) <= Math.abs(bs.memory);
+      if (_same <= 1 && _noField && _canPlay) return null;
+    }
+    return _r3;
   }
   return _aiFindEvolveFrom(base);
+}
+// 【登場時】を持つか（レシピの on_play。無ければ効果テキスト）
+function _aiHasOnPlay(c) {
+  if (!c) return false;
+  try {
+    const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe;
+    if (r && typeof r === 'object') return Object.keys(r).some(k => k.split(',').map(s => s.trim()).includes('on_play'));
+  } catch (_) {}
+  return /【登場時】/.test(String(c.effect || ''));
 }
 function _aiFindEvolveFrom(base) {
   let _best = null;
@@ -6503,7 +6529,8 @@ function _aiPlayAutoBody(callback) {
 
   // ① 育成エリアで進化（プレイヤーの doEvolveIku と同じ処理: 代替進化・進化コスト-の予約 → 状態を引き継いだ新しい1体 →
   //    コスト支払い → 進化ドロー → 【進化時】）
-  if (bs.ai.ikusei && bs.ai.ikusei.type === 'デジモン') {
+  //    孵化したデジタマ（タイプ「デジタマ」の Lv.2）も進化させる（以前はタイプがデジモンのときだけで、育成エリアで一切進化していなかった）
+  if (bs.ai.ikusei && (bs.ai.ikusei.type === 'デジモン' || bs.ai.ikusei.type === 'デジタマ')) {
     const _ev = _aiFindEvolve(bs.ai.ikusei);
     if (_ev) {
       _aiEvolveIku(_ev.card, (turnEnded) => {

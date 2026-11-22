@@ -17397,7 +17397,7 @@ function _stepLacksHandCandidate(step, card, bs, side) {
 // （公式ルール 15-7-5）ので、コスト側だけを見る（後ろは実行時に「対象がいません」）。
 // 判定できない形（デッキ・セキュリティからの取得、対象の条件が無い・進化元を対象にする等）は「候補あり」として扱う
 const _NC_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'place_under_self', 'place_under_digimon', 'place_under_tamer', 'add_to_hand', 'link']);
-const _NC_BOARD_ACTIONS = new Set(['destroy', 'rest', 'bounce', 'return_hand', 'return_deck', 'dp_minus', 'dp_plus', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'active', 'place_on_security_top', 'not_active', 'prevent_unsuspend']);
+const _NC_BOARD_ACTIONS = new Set(['destroy', 'rest', 'bounce', 'return_hand', 'return_deck', 'dp_minus', 'dp_plus', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'active', 'place_on_security_top', 'not_active', 'prevent_unsuspend', 'redirect_attack']);
 function _resolveLvMarkersInFilter(f, card, block, bs) {
   if (!f || typeof f !== 'object') return f;
   const src = _currentFormOf(block && block._eventSourceCard, bs); // 処理する時点の姿（公式Q&A A6882）
@@ -17479,6 +17479,14 @@ function _stepCandidatesEmpty(st, ctx) {
     }
     // 盤面のデジモン/テイマーを対象にする処理（対象の条件があるとき）
     const m = /^(opponent|own)(_card|_tamer|_digimon)?(?::(\d+|all|up_to_\d+))?$/.exec(String(st.target || ''));
+    // 対象の条件が無くても、選べる盤面のカードが1枚も無ければ実行できない（レナモン ST26-02 進化元「アタックの対象を相手のデジモン1体に
+    // 変更できる」で、相手のバトルエリアにデジモンがいないのに確認が出ていた。同じ効果すべて共通）
+    if (m && _NC_BOARD_ACTIONS.has(st.action) && zones.length === 0 && !(st.filter && typeof st.filter === 'object' && Object.keys(st.filter).length > 0)) {
+      const P0 = m[1] === 'own' ? me : opp;
+      const pool0 = [...(m[2] !== '_tamer' ? (P0.battleArea || []) : []), ...((m[2] === '_card' || m[2] === '_tamer') ? (P0.tamerArea || []) : [])]
+        .filter(c => c && (m[2] === '_card' || m[2] === '_tamer' || c.type === 'デジモン' || c.type === 'デュアル'));
+      return pool0.length === 0;
+    }
     if (m && _NC_BOARD_ACTIONS.has(st.action) && zones.length === 0 && st.filter && typeof st.filter === 'object' && Object.keys(st.filter).length > 0) {
       if (st.filter.target_evo_source || st.filter.target_stack || st.filter.target_evo_source_position) return false;
       const P = m[1] === 'own' ? me : opp;

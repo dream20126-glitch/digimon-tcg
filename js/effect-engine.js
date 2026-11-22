@@ -2954,7 +2954,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         : [];
       const _edPooled = _edPoolTamers.length >= 2;
       if (evoTargets.length === 0 && !_edPooled) {
+        // 「この効果で破棄しなかったなら」（cond_last_action_eq:0）が前の効果の枚数を見ないよう、破棄した枚数を0にする
+        // （セッカモン BT27-029 の進化元効果: 進化元を持つ相手のデジモンがいないのにアクティブにならなかった）
+        if (ctx.bs) { ctx.bs._lastActionCount = 0; ctx.bs._lastActionCards = []; }
         ctx.addLog('⚠ 進化元を破棄できる対象がいません');
+        // 「この効果で破棄しなかったなら〜」のポップアップを先に出している（runWithAltActions の _headAlt）ときは、失敗の表示を出さずに続きへ
+        if (ctx._quietNoTarget && !action._isCost) { callback(undefined); break; }
         // コストの場合は支払えない＝本体の効果も実行しない（callback(false)）
         showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(action._isCost ? false : undefined));
         break;
@@ -3143,11 +3148,20 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           showEvoSourceSelection(tgt, q, null, (chosen) => _takeFrom(tgt, chosen), _edCanCancel(action, ctx),
             _qualIdx().length > 1 ? () => _nextS() : undefined);
         };
+        // 破棄できる進化元が合計で枚数以下なら、選ぶ余地が無いので全部破棄する（強制効果。セッカモン BT27-029
+        // 「相手のデジモンの進化元を選んで3枚破棄」で、相手の進化元が合計3枚しか無いのに1枚ずつ選ばせていた）
+        const _poolTotal = () => _qualIdx().reduce((a, i) => a + _edPoolQual(_area()[i]).length, 0);
+        const _autoAll = !action._isCost && _poolTotal() <= n;
         const _nextS = () => {
           if (_left <= 0) { _finish(); return; }
           const cands = _qualIdx();
           if (cands.length === 0) { _finish(); return; }
-          if (effectiveSide === 'ai') { _pickCardOf(_area()[cands[0]]); return; }
+          if (effectiveSide === 'ai' || _autoAll) {
+            const _t = _area()[cands[0]];
+            const _q = _edPoolQual(_t);
+            if (_autoAll && _q.length > 0) { _takeFrom(_t, _topS ? _q[0] : _q[_q.length - 1]); return; }
+            _pickCardOf(_t); return;
+          }
           ctx.addLog('🎯 進化元を破棄するデジモンを選んでください（' + (_done + 1) + '/' + n + '枚目）');
           showTargetSelection(edRowSide, cands, null, uiColor, (idx) => {
             if (idx === null || idx === undefined) { _finish(); return; }
@@ -16933,8 +16947,33 @@ function _stateGateFamilies(st) {
   }
   return fams;
 }
+// 「相手のデジモンの進化元を破棄する。この効果で破棄しなかったなら、〜」（効果1＝進化元の破棄・効果2以降に
+// cond_last_action_eq:0 の文）で、今は進化元を破棄できる相手のデジモンがいないなら、その「破棄しなかったなら」の効果2を返す。
+// 破棄の文・「効果を発動できませんでした」ではなく、効果2のポップアップだけを出すために使う（セッカモン BT27-029 進化元）
+function _altHeadForEmptyEvoDiscard(st, bs, side) {
+  try {
+    if (!st || st.action !== 'discard' || !bs || !side) return null;
+    const f = st.filter && typeof st.filter === 'object' ? st.filter : null;
+    if (!f || !f.target_evo_source || !/^opponent(:\d+|:all)?$/.test(String(st.target || ''))) return null;
+    if (Array.isArray(st.cost) && st.cost.length > 0) return null;
+    const alts = (Array.isArray(st.alt_actions) && st.alt_actions_op !== 'or') ? st.alt_actions : [];
+    const alt = alts.find(a => a && typeof a.display_text === 'string' && a.display_text.trim()
+      && /cond_last_action_eq:0/.test(String(a.condition || '')));
+    if (!alt) return null;
+    const opp = side === 'player' ? bs.ai : bs.player;
+    const any = (opp && opp.battleArea || []).some(c => c && Array.isArray(c.stack) && c.stack.length > 0 && !_hasCantDiscard(c));
+    return any ? null : alt;
+  } catch (_) { return null; }
+}
 function _announceTextByMemoryGate(steps, text, card, bs, side) {
   try {
+    if (Array.isArray(steps) && steps.length === 1) {
+      const _alt = _altHeadForEmptyEvoDiscard(steps[0], bs, side);
+      if (_alt) {
+        const _pm = /^((?:【[^】]+】)+)/.exec(String(steps[0].display_text || '').trim());
+        return (_pm ? _pm[1] : '') + _alt.display_text.trim();
+      }
+    }
     if (!Array.isArray(steps) || steps.length < 2 || !bs || !side) return text;
     if (!steps.every(st => st && typeof st.display_text === 'string' && st.display_text.trim())) return text;
     // 先に判定できる条件の種類: メモリー・セキュリティの枚数・手札の枚数（シーヴァモンACE LM-024「自分のセキュリティが3枚以上なら〜。
@@ -17532,7 +17571,12 @@ function runWithAltActions(step, ctx, store, callback) {
       if (fx) { try { fx(ps.lbl + 'セキュリティをシャッフル', () => callback && callback(...args)); return; } catch (_) {} }
       callback && callback(...args);
     };
+    // 進化元を破棄できる相手のデジモンがいない「破棄する。この効果で破棄しなかったなら〜」: 最初のポップアップを効果2の文にしてある
+    // （_announceTextByMemoryGate）ので、破棄の「効果を発動できませんでした」と、効果2のポップアップの2回目は出さない
+    const _headAlt = _altHeadForEmptyEvoDiscard(step, ctx.bs, ctx.side);
+    if (_headAlt) ctx._quietNoTarget = true;
     executeRecipeStep(mainOnly, ctx, store, (success) => {
+      delete ctx._quietNoTarget;
       if (success === false) { _cbAfterSecShuffle(false); return; }
       // 直前の効果で処理した枚数／カード（「この効果で破棄した1枚ごとに」テティスモン EX12-030）は、効果1が終わった時点の
       // 値を効果2以降に引き継ぐ（その間に発揮された別の効果に上書きされて -2000 しかされなかった）
@@ -17575,7 +17619,7 @@ function runWithAltActions(step, ctx, store, callback) {
         }
         // 効果2以降に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す（効果1とは別の文章。
         // エディタの効果2以降の「効果発動ポップアップの表示テキスト」）。「〜なら」を満たさないときは出さない
-        if (aRun && typeof aRun.display_text === 'string' && aRun.display_text.trim() && !aRun.no_announce
+        if (aRun && typeof aRun.display_text === 'string' && aRun.display_text.trim() && !aRun.no_announce && a !== _headAlt
             // 「〜なら」は condition だけでなく when・追加条件まで含めて判定する（「進化元を持つ相手のデジモンがいないなら」＝
             // cond_not_exists@opp ＋ when cond_has_evo:1。condition だけだと「相手のデジモンがいないなら」になり、
             // 満たしているのに「さらに」のポップアップが出なかった。ヴァルナー・ドラグノフ BT27-088）

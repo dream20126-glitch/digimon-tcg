@@ -2076,7 +2076,7 @@ export function doPlay(card, handIdx, slotIdx) {
             addLog('✦ 「' + card.name + '」をトラッシュへ');
             renderAll();
           }
-          _endBusy(() => { renderAll(); checkPlayerPendingTurnEnd(); });
+          _endBusy(() => { try { _hooks.applyPermanentEffects('player'); } catch (_) {} renderAll(); checkPlayerPendingTurnEnd(); });
         }));
       }, 'player');
     });
@@ -3068,6 +3068,9 @@ function _placeArtsEvolve(card, target, side) {
   else p.ikusei = evolved;
   bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
   addLog((side === 'ai' ? '🤖 AIが' : '') + '「' + base.name + '」→「' + evolved.name + '」にアーツ進化！（コスト無し）');
+  // 場に置いたらすぐ継続効果（【自分のターン】DP8000ごとにSアタック+1 等）を計算する。以前は【進化時】の後まで計算されず、
+  // ルビウスドラモン＆バーニングドライブ ST25-05 のSアタック+1が、別の効果でDPが変わるまで付いていなかった
+  try { _hooks.applyPermanentEffects(side); } catch (_) {}
   renderAll();
   return evolved;
 }

@@ -217,16 +217,58 @@ window.showPreview = function(id) {
   const feat = String(card["特徴"] || '').trim();
   featEl.innerText = (feat && feat !== 'なし' && feat !== '-') ? '特徴：' + feat : '';
   featEl.style.display = featEl.innerText ? 'block' : 'none';
-  const matched = masterKeywords.filter(kw => (card["効果"] || '').includes(kw.name));
-  document.getElementById('keyword-preview-area').innerHTML = matched.map(kw =>
-    `<div class="keyword-item"><span class="keyword-name">【${kw.name}】</span><div class="keyword-desc">${kw.effect}</div></div>`
+  // 効果（メイン効果／進化元効果。デュアルカードの下段はオプション効果、リンクカードはリンク効果）とセキュリティ効果
+  const sections = previewEffectSections(card);
+  document.getElementById('effect-preview-area').innerHTML = sections.length
+    ? sections.map(s => `<div class="effect-item"><span class="effect-label">${escHtml(s.label)}</span><div class="effect-text">${escHtml(s.text)}</div></div>`).join('')
+    : '<div class="effect-item"><div class="effect-text" style="color:#666;">効果なし</div></div>';
+  // キーワード効果の説明（キーワード辞書 data/keyword-effects.json）。カードの文に書かれているキーワードだけ
+  const kws = keywordsInText(sections.map(s => s.text).join('\n'));
+  document.getElementById('keyword-preview-area').innerHTML = kws.map(k =>
+    `<div class="keyword-item"><span class="keyword-name">【${escHtml(k.keyword)}】</span><div class="keyword-desc">${escHtml(k.description)}</div></div>`
   ).join('');
+  document.getElementById('keyword-preview-wrap').style.display = kws.length ? 'block' : 'none';
   const limit = (card["効果"] || '').includes('50枚まで') ? 50 : 4;
-  document.getElementById('qty-area').innerHTML = [1, 2, 3, 4].map(n =>
-    `<button class="ctrl-btn" style="width:100%;" onclick="addToDeck('${id}', ${n}, ${limit})">+${n}</button>`
-  ).join('');
+  document.getElementById('qty-area').innerHTML =
+    `<button class="ctrl-btn" style="width:100%;" onclick="removeFromDeck('${id}')" aria-label="1枚減らす">−1</button>`
+    + [1, 2, 3, 4].map(n =>
+      `<button class="ctrl-btn" style="width:100%;" onclick="addToDeck('${id}', ${n}, ${limit})">+${n}</button>`
+    ).join('');
   updateQtyMsg(id);
   document.getElementById('card-preview-window').style.display = 'block';
+};
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+const _noText = (v) => { const t = String(v == null ? '' : v).trim(); return !t || t === 'なし' || t === '-'; };
+// カード詳細に出す効果の欄。下段（進化元効果の欄）は、デュアルカードならオプション効果、リンクカードならリンク効果
+function previewEffectSections(card) {
+  const out = [];
+  const isDual = String(card["タイプ"]) === 'デュアル';
+  const isLink = !_noText(card["リンク条件"]) || !_noText(card["リンクDP"]);
+  if (!_noText(card["効果"])) out.push({ label: 'メイン効果', text: String(card["効果"]).trim() });
+  if (!_noText(card["進化元効果"])) out.push({ label: isDual ? 'オプション効果' : isLink ? 'リンク効果' : '進化元効果', text: String(card["進化元効果"]).trim() });
+  if (!_noText(card["セキュリティ効果"])) out.push({ label: 'セキュリティ効果', text: String(card["セキュリティ効果"]).trim() });
+  return out;
+}
+// カードの文に書かれているキーワード（【〇〇】≪〇〇≫《〇〇》。数値つき【1ドロー】【リカバリー+1】【Sアタック+1】等も）の説明を
+// キーワード辞書（window.keywordEffects）から引く。辞書の見出しとカードの書き方が違うものは別名で引く
+const KEYWORD_ALIASES = { 'セキュリティアタック': ['Sアタック', 'セキュリティアタック'] };
+function keywordsInText(text) {
+  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects : [];
+  const t = String(text || '');
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return dict.filter(k => {
+    const names = KEYWORD_ALIASES[k.keyword] || [k.keyword];
+    return names.some(n => new RegExp('[【≪《][0-9０-９]*' + esc(n)).test(t));
+  });
+}
+
+window.removeFromDeck = function(id) {
+  if (!tempDeck.find(i => i.card["カードNo"] === id)) return;
+  changeQty(id, -1);
+  updateQtyMsg(id);
 };
 
 window.hidePreview = function() {

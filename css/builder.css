@@ -270,6 +270,28 @@
   font-size: 11px;
   line-height: 1.5;
 }
+/* カード詳細の効果（メイン効果／進化元効果・オプション効果・リンク効果／セキュリティ効果） */
+.effect-item {
+  background: #111;
+  border: 1px solid var(--border-col);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+}
+.effect-label {
+  display: inline-block;
+  color: #ffaa00;
+  font-weight: bold;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.effect-text {
+  color: #ddd;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* レスポンシブ */
 @media (max-width: 900px) {

@@ -443,7 +443,8 @@
   position: relative; overflow: hidden; flex-shrink: 0;
 }
 .tamer-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
-.tamer-slot .s-name { position: absolute; bottom: 1px; left: 0; right: 0; background: rgba(0,0,0,0.75); color: #fff; font-size: 7px; text-align: center; padding: 1px; }
+/* カード名は1行（長い名前は…で切る。テイマーの長い名前が3行になり、カードの絵が半分隠れていた） */
+.tamer-slot .s-name { position: absolute; bottom: 1px; left: 0; right: 0; background: rgba(0,0,0,0.75); color: #fff; font-size: 7px; text-align: center; padding: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 長押しアクション選択ボタン */
 .lp-action-btn {

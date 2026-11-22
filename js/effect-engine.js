@@ -1858,17 +1858,17 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'own_digimon':        return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')));
     case 'own_rest_digimon':   return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && c.suspended));
     case 'own_active_digimon': return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended));
-    case 'own_tamer':          return countWith((player.tamerArea || []).filter(c => c !== null));
+    case 'own_tamer':          return countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     // 自分のデジモン/テイマー（バトルエリアのデジモン＋テイマーエリア）。
     // 例: メルヴァモン(BT26-081)「特徴イリアス/TSを持つ自分のデジモン/テイマー1体ごとにDP-4000」
     case 'own_digimon_tamer':
       return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
-           + countWith((player.tamerArea || []).filter(c => c !== null));
+           + countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     // own_card: 「カード」＝デジモン+テイマー(+オプション)全種別。オプションはプレイ後トラッシュへ
     // 移動し場に残らないため、実質バトルエリア(デジモン)+テイマーエリアの合算になる
     case 'own_card':
       return countWith(player.battleArea.filter(c => c !== null))
-           + countWith((player.tamerArea || []).filter(c => c !== null));
+           + countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     // メモリー（bs.memory。プレイヤー側=正/AI側=負の共有ゲージ。自分側に無ければ0扱い）
     case 'own_memory': return bs ? Math.max(0, side === 'player' ? bs.memory : -bs.memory) : 0;
     // --- 相手側 ---
@@ -1880,14 +1880,14 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_rest_digimon':     return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && c.suspended));
     case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended));
     case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!c.stack || c.stack.length === 0)));
-    case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
+    case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     // 相手のデジモン/テイマー（own_digimon_tamer の相手側版）
     case 'opp_digimon_tamer':
       return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
-           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+           + countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     case 'opp_card':
       return countWith(opponent.battleArea.filter(c => c !== null))
-           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+           + countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     // 相手側のメモリー（own_memoryと同じゲージを符号違いで読む）
     case 'opp_memory': return bs ? Math.max(0, side === 'player' ? -bs.memory : bs.memory) : 0;
     // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
@@ -1910,18 +1910,18 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
       return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
            + countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')));
     case 'both_tamer':
-      return countWith((player.tamerArea || []).filter(c => c !== null))
-           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+      return countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     case 'both_digimon_tamer':
       return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
            + countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
-           + countWith((player.tamerArea || []).filter(c => c !== null))
-           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+           + countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     case 'both_card':
       return countWith(player.battleArea.filter(c => c !== null))
-           + countWith((player.tamerArea || []).filter(c => c !== null))
+           + countWith((player.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'))
            + countWith(opponent.battleArea.filter(c => c !== null))
-           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+           + countWith((opponent.tamerArea || []).filter(c => c !== null && c.type !== 'オプション'));
     default: return 0;
   }
 }
@@ -4782,6 +4782,51 @@ function _cpuStepIsSelfLoss(st) {
   if (st.action === 'discard' || st.action === 'deck_trash_top') return !/^opp/.test(t);
   return /^(own|self)/.test(t);
 }
+// ===== CPU（ベテランテイマー・デジモンマスター）が任意の効果を使うか: 使っても得をしない効果は使わない =====
+// CPU のターンか（AI対戦で CPU は 'ai' 側）
+function _cpuIsOwnTurn(bs) { return !!(bs && bs.isPlayerTurn === false); }
+// このターンにまだアタックできるか（card を渡せばそのデジモン、無ければ CPU のデジモンのどれか）
+function _cpuCanAttackNow(bs, card) {
+  const me = bs && bs.ai;
+  if (!me) return false;
+  const hasRush = (c) => !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
+  const can = (c) => !!(c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended && !c.cantAttack
+    && !(c.summonedThisTurn && !hasRush(c)) && (me.battleArea || []).includes(c));
+  if (card) return can(card);
+  return (me.battleArea || []).some(can);
+}
+// 守りのキーワード（自分のターン中だけ付いても役に立たない）
+const _CPU_DEF_KW = new Set(['blocker', 'barrier', 'evade', 'armor_break', 'jamming', 'reboot', 'indomitable', 'scapegoat', 'fragment', 'decoy']);
+// 1つの効果（手順）が、今使って得になるか
+function _cpuStepWorthIt(st, bs, card) {
+  if (!st) return false;
+  const dur = String(normalizeRecipeDuration(st.duration) || st.duration || '');
+  // 「ターン終了まで」（このターンで終わる）。アタック/バトル終了までも同じ扱い
+  const thisTurnOnly = !dur || dur === 'dur_this_turn' || /until_(attack|battle)_end/.test(dur);
+  const ownTurn = _cpuIsOwnTurn(bs);
+  const onSelf = /^self(_card)?$/.test(String(st.target || ''));
+  const kw = String(st.keyword || '');
+  const offensive = st.action === 'dp_plus' || st.action === 'security_attack_plus' || (st.action === 'grant_keyword' && kw && !_CPU_DEF_KW.has(kw));
+  if (offensive) {
+    // 自分のターン中だけの DP+・攻めのキーワードは、このターンにアタックできるときだけ（「このデジモンは」ならそのデジモンが）
+    if (thisTurnOnly && ownTurn) return _cpuCanAttackNow(bs, onSelf ? card : null);
+    return true; // 相手のターン（バトルで勝つための DP+ 等）・先まで続くもの
+  }
+  if (st.action === 'grant_keyword' && _CPU_DEF_KW.has(kw)) return !(thisTurnOnly && ownTurn); // 自分のターン中だけ守っても意味がない
+  if (st.action === 'draw') {
+    const n = parseInt(st.value, 10) || 1;
+    return ((bs && bs.ai && bs.ai.deck) || []).length > n + 2; // デッキ切れで負けない
+  }
+  return true;
+}
+// 効果全体（その後・さらに〜も含む）のどれか1つでも得になれば使う
+function _cpuRecipeWorthIt(steps, bs, card) {
+  return steps.some((s) => {
+    if (_cpuStepWorthIt(s, bs, card)) return true;
+    const alts = (Array.isArray(s.alt_actions) && s.alt_actions_op !== 'or') ? s.alt_actions : [];
+    return alts.some((a) => a && _cpuStepWorthIt(Object.assign({ duration: s.duration }, a, { target: a.target === 'same_target' ? s.target : a.target }), bs, card));
+  });
+}
 function _cpuMidWantsOptional(recipe, bs, card) {
   const steps = (Array.isArray(recipe) ? recipe : []).filter(Boolean);
   if (steps.length === 0) return true;
@@ -4791,7 +4836,9 @@ function _cpuMidWantsOptional(recipe, bs, card) {
     if (!atk || !card) return true;
     return (parseInt(card.dp, 10) || 0) > (parseInt(atk.dp, 10) || 0);
   }
-  return !steps.every(_cpuStepIsSelfLoss);
+  if (steps.every(_cpuStepIsSelfLoss)) return false;
+  // 使っても得をしない（このターンにアタックできないのにターン終了までの DP+ 等）なら使わない
+  return _cpuRecipeWorthIt(steps, bs, card);
 }
 // 候補から n 体選ぶ。CPU（effSide==='ai'）は preferOwn に応じて自分側/相手側を優先して先頭から。
 // 候補が n 体以下なら全員。それ以外は showCardListPicker（自分/相手の別をカード名の前に表示）
@@ -10153,7 +10200,7 @@ function _countStateDigimon(bs, sideKey, isActive, type) {
   const matches = (c) => c && (isActive ? !c.suspended : !!c.suspended);
   let n = 0;
   if (type !== 'tamer') n += (p.battleArea || []).filter(matches).length;
-  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(matches).length;
+  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(c => c && c.type !== 'オプション' && matches(c)).length;
   return n;
 }
 // subjectコード（own/opp/both + _tamer/_card/_any サフィックス）からカード種別を取り出す。
@@ -10172,7 +10219,9 @@ function _battleAreaCount(bs, sideKey, type) {
   if (!p) return 0;
   let n = 0;
   if (type !== 'tamer') n += (p.battleArea || []).filter(c => c).length;
-  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(c => c).length;
+  // テイマーエリアには「バトルエリアに置かれたオプション」（【ディレイ】等）も置かれるが、テイマーでもデジモンでもないので数えない
+  // （ST26-03「自分のテイマーが1体以下なら」が、テイマー1体＋置いたオプション1枚で2体と数えて発揮されなかった）
+  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(c => c && c.type !== 'オプション').length;
   return n;
 }
 
@@ -11007,7 +11056,7 @@ function checkConditions(conditions, card, bs, side) {
         // place_in_battle_area で tamerArea に置かれたオプションを探す）
         const _existsByName = !_existsWantTamer && otherConds.some(oc => oc.code === 'cond_name' || oc.code === 'cond_name_contains');
         const _areaOf = (sd) => {
-          const base = _existsWantTamer ? (bs[sd].tamerArea || [])
+          const base = _existsWantTamer ? (bs[sd].tamerArea || []).filter(c => c && c.type !== 'オプション')
             : (_existsByName || _existsWantCard) ? [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])]
             : (bs[sd].battleArea || []);
           return (_existsBreedMark && !_existsWantTamer && bs[sd].ikusei) ? [...base, bs[sd].ikusei] : base;

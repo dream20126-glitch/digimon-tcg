@@ -1480,6 +1480,8 @@ function executeQueueEntry(entry, context, callback0) {
         // 残っていれば閉じる（対象選択/確認ダイアログで既に開いた相手側オーバーレイをここで閉じる）
         window._onlineSendCommand({ type: 'fx_effectClose' });
       }
+      // AI対戦の CPU の効果: オンラインの相手の効果が終わったときと同じく、発動の表示を閉じる
+      if (actualSide === 'ai') _cpuCloseAnnounce();
       cb();
     };
     // レシピがあればレシピ実行、なければ従来処理
@@ -1618,6 +1620,12 @@ function executeQueueEntry(entry, context, callback0) {
     // 中（ベテランテイマー）: 自分のカードを失うだけの任意効果は使わない
     if (_cpuMidActive() && Array.isArray(_recipeStepsForLookup) && !_cpuMidWantsOptional(_recipeStepsForLookup, context.bs || (typeof window !== 'undefined' ? window._lastBattleState : null), card)) {
       if (typeof window !== 'undefined' && typeof window.addLog === 'function') window.addLog('🤖 AIは「' + card.name + '」の効果を使わなかった');
+      // オンラインの相手が「いいえ」を選んだときと同じ表示（確認中 →「効果を発動しませんでした」）
+      if (_cpuHeadless({ side: 'ai' })) {
+        window._cpuLoopback({ type: 'fx_confirmShow', cardName: card.name, effectText: displayEffText });
+        setTimeout(() => { window._cpuLoopback({ type: 'fx_confirmClose', accepted: false }); callback && callback(); }, Math.min(3500, 1500 + String(displayEffText || '').length * 10));
+        return;
+      }
       callback && callback();
       return;
     }
@@ -1676,11 +1684,16 @@ function executeCostAndActions(block, ctx, callback) {
 // ===== オンライン効果結果通知 =====
 // 選択効果の結果（カード画像＋アクション）を相手に送信
 function sendEffectResult(card, actionType, ctx) {
-  if (!window._isOnlineMode || !window._isOnlineMode()) return;
   if (actionType === 'bounce' && _hitFxOn()) return; // 手札に戻す演出（fx_effectHit）を送るので出さない
-  if (ctx.side !== 'player') return; // 自分の効果のみ送信
   const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || '') : '';
   const labels = { summon: '登場！', destroy: '消滅！', bounce: '手札に戻す！', rest: 'レスト！', active: 'アクティブ！', evolve: '進化！', recover: 'リカバリー！', dp_plus: 'DP強化！', dp_minus: 'DP弱体化！' };
+  // AI対戦の CPU: オンラインの相手から届いたときと同じ受け取り処理で結果を見せる
+  if (_cpuHeadless(ctx)) {
+    window._cpuLoopback({ type: 'fx_effectResult', cardName: card ? card.name : '', cardImg: imgSrc, actionType, actionLabel: labels[actionType] || actionType });
+    return;
+  }
+  if (!window._isOnlineMode || !window._isOnlineMode()) return;
+  if (ctx.side !== 'player') return; // 自分の効果のみ送信
   window._onlineSendCommand({
     type: 'fx_effectResult',
     cardName: card ? card.name : '',
@@ -2194,8 +2207,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const dpPick = [];
         if (ctx._forceTargetIdx != null && dpTargets.indexOf(ctx._forceTargetIdx) >= 0) dpPick.push(ctx._forceTargetIdx);
         for (const di of _cpuOrder(dpTargets, opponent.battleArea, 'dpminus', val)) { if (dpPick.length >= dpNeed) break; if (dpPick.indexOf(di) < 0) dpPick.push(di); }
-        dpPick.forEach(applyDpMinus);
-        ctx.renderAll(); callback(); break;
+        // オンラインの相手が選んだときと同じく「相手が対象を選択中…」→ 結果の表示（AI対戦の CPU）
+        _cpuSelectPause(ctx, dpTargets.length > dpNeed, () => {
+          dpPick.forEach((i) => { if (_cpuHeadless(ctx)) sendEffectResult(opponent.battleArea[i], 'dp_minus', ctx); applyDpMinus(i); });
+          ctx.renderAll(); callback();
+        });
+        break;
       }
       // プレイヤー: dpNeed 体を順に選択
       const dpRemain = dpTargets.slice();
@@ -2455,9 +2472,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         void card;
         // 「この効果で消滅しなかったなら」（メガドラモン EX12-064）: 実際に消滅したかで処理した数を決める
         // （消滅処理中の他の効果で _lastActionCount が書き換わることもあるため、最後に設定し直す）
-        _destroyWithFx(tgtPlayer, di, ctx,
+        // CPU が2体以上から選ぶときは「相手が対象を選択中…」を出してから（オンラインの相手と同じ見え方）
+        _cpuSelectPause(ctx, effectiveSide === 'ai' && !_dAuto && destroyTargets.length > 1, () => _destroyWithFx(tgtPlayer, di, ctx,
           (c, cb) => playEffect(action.code, { card: c, ctx }, cb, { visualType: action.visualType, frameColor: action.frameColor }),
-          (gone) => { if (ctx.bs) ctx.bs._lastActionCount = gone ? 1 : 0; callback(true); });
+          (gone) => { if (ctx.bs) ctx.bs._lastActionCount = gone ? 1 : 0; callback(true); }));
         break;
       }
       ctx.addLog(isOwn ? '🎯 自分のデジモンから消滅させる対象を選んでください' : '🎯 消滅させる対象を選んでください');
@@ -2549,7 +2567,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (effectiveSide === 'ai') {
           const picks = [];
           _cpuOrder(bounceTargets, opponent.battleArea, 'harm').forEach(i => { if (picks.length < bounceNeed && !(_bExclude && _bExclude(i, picks))) picks.push(i); });
-          _bounceSequential(picks, () => { ctx.renderAll(); callback(); });
+          _cpuSelectPause(ctx, bounceTargets.length > bounceNeed, () => _bounceSequential(picks, () => { ctx.renderAll(); callback(); }));
           break;
         }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
@@ -3289,9 +3307,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
-        discardFromTarget(edArea[ctx._forceTargetIdx ?? evoTargets[0]], (didDiscard) => {
+        // オンラインの相手が選んだときと同じく「相手が対象を選択中…」を出してから（AI対戦の CPU）
+        _cpuSelectPause(ctx, ctx._forceTargetIdx == null && evoTargets.length > 1, () => discardFromTarget(edArea[ctx._forceTargetIdx ?? evoTargets[0]], (didDiscard) => {
           afterDiscard(didDiscard, callback);
-        });
+        }));
         break;
       }
       // テイマーの下のカード（茨の女王 BT26-098 のコスト「自分のテイマーの下にある裏向きのカードを
@@ -3837,11 +3856,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if(effectiveSide === 'ai') {
         const ri = ctx._forceTargetIdx ?? _cpuOrder(restTargets, opponent.battleArea, 'rest')[0];
-        opponent.battleArea[ri].suspended = true;
-        ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
-        syncRest(ri);
-        ctx.renderAll();
-        finishWithTrigger([opponent.battleArea[ri]]);
+        // オンラインの相手が選んだときと同じく「相手が対象を選択中…」→ 結果の表示（AI対戦の CPU）
+        _cpuSelectPause(ctx, ctx._forceTargetIdx == null && restTargets.length > 1, () => {
+          if (_cpuHeadless(ctx)) sendEffectResult(opponent.battleArea[ri], 'rest', ctx);
+          opponent.battleArea[ri].suspended = true;
+          ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
+          syncRest(ri);
+          ctx.renderAll();
+          finishWithTrigger([opponent.battleArea[ri]]);
+        });
         break;
       }
       ctx.addLog('🎯 レストさせる対象を選んでください');
@@ -6157,6 +6180,31 @@ function _flipSideLabel(l) { l = String(l || ''); return l.indexOf('相手の') 
 function _cpuHeadless(ctx) {
   return !!(ctx && ctx.side === 'ai' && typeof window !== 'undefined' && window._aiBattleActive && typeof window._cpuLoopback === 'function'
     && !(window._isOnlineMode && window._isOnlineMode()) && typeof document !== 'undefined' && document.body);
+}
+// CPU が候補から対象を選ぶとき: オンラインの相手が対象を選ぶ画面を開いたときと同じく「相手が対象を選択中…」を出し、
+// 少し考えてから選ぶ（fn）。候補が選ぶ数以下（選ぶ余地が無い）・CPU でないときはすぐ fn
+function _cpuSelectPause(ctx, needChoice, fn, label) {
+  if (!needChoice || !_cpuHeadless(ctx)) { fn(); return; }
+  window._cpuLoopback({ type: 'fx_targetSelectStart', label: label || '' });
+  setTimeout(() => { window._cpuLoopback({ type: 'fx_targetSelectEnd' }); fn(); }, 1000);
+}
+// CPU の効果の発動の表示（受け取り側の「⚡ 相手: 〇〇」）を出しているか。効果が終わったら閉じる
+let _cpuAnnounceOpen = false;
+function _cpuCloseAnnounce() {
+  if (!_cpuAnnounceOpen) return;
+  _cpuAnnounceOpen = false;
+  try { if (typeof window !== 'undefined' && window._cpuLoopback) window._cpuLoopback({ type: 'fx_effectClose' }); } catch (_) {}
+}
+// 見張り: 効果の処理が止まっている（処理中でない）状態が続いたら閉じる（閉じる処理を通らない効果の経路でも残らないように）
+if (typeof window !== 'undefined') {
+  let _idleTicks = 0;
+  setInterval(() => {
+    if (!_cpuAnnounceOpen) { _idleTicks = 0; return; }
+    let busy = true;
+    try { busy = isEffectProcessing(); } catch (_) {}
+    _idleTicks = busy ? 0 : _idleTicks + 1;
+    if (_idleTicks >= 2) { _idleTicks = 0; _cpuCloseAnnounce(); }
+  }, 400);
 }
 function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
   opts = opts || {};
@@ -12155,10 +12203,20 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // オンライン: 自分側 (side='player') の効果のときだけ相手機に送信。
   // 自機の bs.ai 側の効果 (=相手のカード視点) を送るとオーナー機側で「相手の効果」
   // として誤表示されてしまうので、所有者の機械からだけ送る運用に戻す。
+  const _annCmd = { type: 'fx_effectAnnounce', cardName: evoSourceCard ? titleName + '（「' + card.name + '」の' + _srcRoleLabel(card, evoSourceCard) + (_evoPos ? '・' + _evoPos : '') + '）' : titleName, effectText: displayText.substring(0,400) };
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && side === 'player') {
-    try {
-      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: evoSourceCard ? titleName + '（「' + card.name + '」の' + _srcRoleLabel(card, evoSourceCard) + (_evoPos ? '・' + _evoPos : '') + '）' : titleName, effectText: displayText.substring(0,400) });
-    } catch (_) {}
+    try { window._onlineSendCommand(_annCmd); } catch (_) {}
+  }
+  // AI対戦の CPU の効果: オンラインの相手の効果と同じ表示（相手から届いた発動の知らせの受け取り処理）にする。
+  // CPU が読み終えたら「発動中」にして進む。表示は効果が終わったら閉じる（executeQueueEntry / 見張り _cpuAnnounceWatch）
+  if (side === 'ai' && _cpuHeadless({ side: 'ai' })) {
+    window._cpuLoopback(_annCmd);
+    _cpuAnnounceOpen = true;
+    setTimeout(() => {
+      window._cpuLoopback({ type: 'fx_confirmClose', accepted: true });
+      callback && callback();
+    }, Math.min(4500, 1800 + displayText.length * 15));
+    return;
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
 

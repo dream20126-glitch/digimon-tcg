@@ -3290,7 +3290,11 @@ window._cpuDeckOpenView = { start: (cmd) => showRemoteDeckOpenOverlay(cmd), act:
 // AI対戦: CPU の効果を、オンラインの相手と同じ処理（プレイヤーの処理を CPU が選んで進める）で動かし、その処理が相手に送る
 // 表示の知らせを、オンラインで相手から受け取ったときと同じ受け取り処理（onRemoteCommand）に渡す。
 // 盤面を書き換える知らせは CPU の処理がすでに盤面を変えているので渡さない（表示だけの知らせに限る）
-const _CPU_LOOPBACK_TYPES = new Set(['fx_remoteDeckOpenStart', 'fx_remoteDeckOpenAct', 'fx_remoteDeckOpenEnd', 'fx_moveBatch']);
+const _CPU_LOOPBACK_TYPES = new Set(['fx_remoteDeckOpenStart', 'fx_remoteDeckOpenAct', 'fx_remoteDeckOpenEnd', 'fx_moveBatch',
+  // 効果の発動の表示（「⚡ 相手: 〇〇」）・確認中/発動中・発動しなかった・閉じる、対象を選択中の表示
+  'fx_effectAnnounce', 'fx_confirmShow', 'fx_confirmClose', 'fx_effectDeclined', 'fx_effectClose', 'fx_targetSelectStart', 'fx_targetSelectEnd',
+  // 効果の結果の表示（カードの絵と「消滅！」「DP弱体化！」等。2.5秒で消える）
+  'fx_effectResult']);
 const _cpuBatchAckWaiters = {};
 window._cpuLoopback = (cmd) => {
   if (!cmd || !_CPU_LOOPBACK_TYPES.has(cmd.type) || _onlineMode) return false;

@@ -88,7 +88,35 @@ function descriptionText(c) {
     .map(v => String(v)).join('\n').toLowerCase();
 }
 
+// 検索結果の並び順（name: 同じ名称ごと／no: カードNo順／lv: Lv順／cost: コスト順）。このブラウザに覚えておく
+let sortMode = 'name';
+try { sortMode = localStorage.getItem('builder-sort') || 'name'; } catch (_) {}
+window.setSortMode = function(mode) {
+  sortMode = mode || 'name';
+  try { localStorage.setItem('builder-sort', sortMode); } catch (_) {}
+  filterCards();
+};
+function _numOr(v, dflt) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; }
+// 並べ替え。元の並び（カードNo順）を基準にし、同じ値の中では元の順を保つ。
+// 「同じ名称ごと」は、名称が最初に出てくる位置の順に、その名称のカードをまとめて並べる
+function sortResults(list) {
+  const base = list.map((c, i) => ({ c, i }));
+  const nameKey = (c) => String(c["名前"] || '');
+  if (sortMode === 'no') return list;
+  if (sortMode === 'name') {
+    const firstIdx = {};
+    base.forEach(({ c, i }) => { const k = nameKey(c); if (!(k in firstIdx)) firstIdx[k] = i; });
+    return base.sort((a, b) => (firstIdx[nameKey(a.c)] - firstIdx[nameKey(b.c)]) || (a.i - b.i)).map(x => x.c);
+  }
+  const valOf = sortMode === 'lv'
+    ? (c) => _numOr(c["レベル"] != null && c["レベル"] !== '' ? c["レベル"] : c["Lv"], 99) // Lvの無いテイマー・オプションは後ろ
+    : (c) => _numOr(String(c["タイプ"]) === 'オプション' ? c["使用コスト"] : c["登場コスト"], 99);
+  return base.sort((a, b) => (valOf(a.c) - valOf(b.c)) || nameKey(a.c).localeCompare(nameKey(b.c), 'ja') || (a.i - b.i)).map(x => x.c);
+}
+
 window.filterCards = function() {
+  const _sortSel = document.getElementById('s-sort');
+  if (_sortSel && _sortSel.value !== sortMode) _sortSel.value = sortMode;
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
   // 何も絞り込んでいないときは全件を出さず、案内だけ表示する
@@ -116,7 +144,7 @@ window.filterCards = function() {
     const matchType = selectedTypes.length === 0 || selectedTypes.some(t => String(c["タイプ"]) === t);
     return matchText && matchFeature && matchColor && matchLevel && matchType;
   });
-  renderResults(filtered);
+  renderResults(sortResults(filtered));
 };
 
 // 検索結果は一度に全件描画せず、PAGE_SIZE 件ずつ追加する。

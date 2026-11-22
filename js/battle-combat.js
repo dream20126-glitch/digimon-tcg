@@ -10,6 +10,7 @@ import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen 
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattleClashBegin, fxBattleClashReset, fxBattleResultBurst, registerClashLoser, consumeClashLoser } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
+import { classifyCard as _aiTagsOf, buildDeckProfile as _aiBuildProfile } from './ai-brain.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { fireOptionUsedTriggers as _fireOptionUsed, hasOwnMainEffect as _hasOwnMainEffect, mainEffectButtonState as _mainEffectButtonState } from './effect-engine.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, whenDestroyApplies as _whenDestroyApplies, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, fireBeforeEvolveEffects as _fireBeforeEvolveEffects, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
@@ -5356,7 +5357,71 @@ function _aiHighDefense() {
     (c.buffs || []).forEach(b => { if (b && b.type === 'security_attack_plus') n += parseInt(b.value, 10) || 0; });
     return s + n;
   }, 0);
-  return sec <= 2 || incoming >= sec;
+  // 相手を速攻型と読んだら、セキュリティ3枚から守りに入る
+  const opp = _aiOppRead();
+  return sec <= (opp && opp.style === 'aggro' ? 3 : 2) || incoming >= sec;
+}
+
+// ===== AIの作戦（デッキの設計図・相手のデッキの読み・勝ち筋の逆算）=====
+// 設計図は対戦開始時に作る（battle.js startBattleGame → ai-brain.js buildDeckProfile）。中・高とも使う
+function _aiProfile() { return (typeof window !== 'undefined' && window._aiProfile) || null; }
+// 勝ち筋のカード（設計図の一番上のレベルのデジモン）か
+function _aiIsFinisher(c) { const p = _aiProfile(); return !!(p && c && p.finisherNames.includes(c.name)); }
+// 勝ち筋へつながるデジモン（デッキの軸の特徴を持つ）か
+function _aiOnLine(c) {
+  const p = _aiProfile();
+  if (!p || !c || !_aiIsDigi(c)) return false;
+  return p.finisherNames.includes(c.name) || (!!p.axis && String(c.feature || '').split(/[\/／]/).map(s => s.trim()).includes(p.axis));
+}
+// 守りのカード（ブロッカー・相手のデジモンを取り除く・進化元を破棄する）
+function _aiIsDefensive(c) { const t = _aiTagsOf(c); return !!(t.blocker || t.removal || t.evoDiscard); }
+// 相手のデッキの読み（高だけ）: 相手が見せたカード（場・進化元・育成・テイマー・トラッシュ）を覚えておき、
+// 4種類以上見えたら設計図と同じやり方で型を推測する。読みが変わったらログに出す。手札・セキュリティ・デッキは見ない
+function _aiOppRead() {
+  if (!_aiIsHigh()) return null;
+  const seen = bs._aiSeenOpp || (bs._aiSeenOpp = new Map());
+  const add = (c) => { if (c && c.cardNo && String(c.level) !== '2' && !seen.has(c.cardNo)) seen.set(c.cardNo, c); };
+  const pl = bs.player;
+  [...(pl.battleArea || []), pl.ikusei].forEach(c => { if (!c) return; add(c); (c.stack || []).forEach(add); });
+  (pl.tamerArea || []).forEach(add);
+  (pl.trash || []).forEach(add);
+  if (seen.size < 4) return null;
+  if (bs._aiOppReadN !== seen.size) {
+    bs._aiOppReadN = seen.size;
+    try { bs._aiOppRead = _aiBuildProfile([...seen.values()]); } catch (_) { bs._aiOppRead = null; }
+    if (bs._aiOppRead && bs._aiOppRead.label !== bs._aiOppLabel) {
+      bs._aiOppLabel = bs._aiOppRead.label;
+      addLog('👑 ' + (window._aiName || 'デジモンマスター') + 'の読み: 相手は「' + bs._aiOppRead.label + '」');
+    }
+  }
+  return bs._aiOppRead || null;
+}
+// 勝ち筋の逆算（高だけ）: 今の盤面から、次に何をすべきかを決める
+//  'defend'  … 次の相手のターンに負けうる（_aiHighDefense）→ 守りのカードを優先、それ以外にメモリーを渡さない
+//  'push'    … 今の自分のデジモン（育成の Lv.3 以上も）で、次の自分のターンに勝ち切れる見込み → アタックできるデジモンを育てる
+//  'develop' … まだ届かない → 設計図の勝ち筋（一番上のレベルのデジモン）に向けて育てる
+function _aiPlan() {
+  if (!_aiIsHigh()) return 'develop';
+  if (_aiHighDefense()) return 'defend';
+  const own = (bs.ai.battleArea || []).filter(_aiIsDigi);
+  const chk = own.filter(c => !_aiCantHitPlayer(c)).map(_aiChecksOf);
+  if (bs.ai.ikusei && _lvOf(bs.ai.ikusei) >= 3) chk.push(1);
+  chk.sort((a, b) => b - a);
+  const blockers = (bs.player.battleArea || []).filter(c => c && _aiIsDigi(c) && isBlocker(c)).length;
+  let sec = (bs.player.security || []).length;
+  for (const k of chk.slice(blockers)) { if (sec === 0) return 'push'; sec = Math.max(0, sec - k); }
+  return 'develop';
+}
+const _AI_PLAN_JA = { defend: '守りを固める', push: '次のターンで勝ち切る準備', develop: '勝ち筋を育てる' };
+// 作戦が変わったらログに出す（高のメインフェイズ）
+function _aiLogPlan() {
+  if (!_aiIsHigh()) return;
+  const plan = _aiPlan();
+  const key = bs.turn + ':' + plan;
+  if (bs._aiPlanLog === key) return;
+  bs._aiPlanLog = key;
+  const p = _aiProfile();
+  addLog('👑 作戦: ' + _AI_PLAN_JA[plan] + (plan === 'develop' && p && p.finisherNames.length ? '（' + p.finisherNames[0] + '）' : ''));
 }
 // アタッカーとアタック先の組み合わせを全部見積もって、一番良いものを選ぶ。{ atkIdx, tgt } か null（アタックしない）
 //  ・勝ち切れるターン: 全員でプレイヤーへ（ブロックされても続ける）
@@ -5964,8 +6029,27 @@ if (typeof window !== 'undefined') window._aiSetOverflow = (v) => { _aiOverflowO
 // 先攻1ターン目はメモリー0から始まるので、相手に渡さないと何もできない）。低は10まで（できることは全てやる）
 function aiAvailableMemory(card) {
   // 高（デジモンマスター）は基本2まで（相手に渡すメモリーが少ないほど良い）。得な効果のカードはその分多く渡す
-  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? Math.min(10, (_aiIsHigh() ? 2 : 3) + _aiMidMemoryBonus(card)) : 10) : 0;
+  const over = (_aiOverflowOK && bs.memory <= 0) ? (_aiIsMid() ? _aiOverflowAllowance(card) : 10) : 0;
   return Math.abs(bs.memory) + over;
+}
+// 中・高: アタックの後、このカードのために相手に渡してよいメモリー（デッキの設計図・作戦・相手の読みで変える）
+//  基本: 中3・高2 ＋ 効果の得（_aiMidMemoryBonus）
+//  設計図: 勝ち筋のカード（一番上のレベル）は＋2。「自分のターン開始時にメモリーが3に戻る」テイマーが場にいれば＋1
+//  高の作戦: 守りを固めるときは守りのカード＋2・それ以外−1。相手を速攻型と読んだら守り以外−1
+function _aiOverflowAllowance(card) {
+  let n = (_aiIsHigh() ? 2 : 3) + _aiMidMemoryBonus(card);
+  const p = _aiProfile();
+  if (p && card) {
+    if (_aiIsFinisher(card)) n += 2;
+    if (p.memResetNames.length && (bs.ai.tamerArea || []).some(t => t && p.memResetNames.includes(t.name))) n += 1;
+  }
+  if (_aiIsHigh() && card) {
+    const def = _aiIsDefensive(card);
+    if (_aiPlan() === 'defend') n += def ? 2 : -1;
+    const opp = _aiOppRead();
+    if (opp && opp.style === 'aggro' && !def) n -= 1;
+  }
+  return Math.max(1, Math.min(10, n));
 }
 // 中: このカードを使うために、相手に3より多くメモリーを渡してもよいか（損得）。カードの効果から得の大きさを見積もる。
 //   相手のデジモンを消滅・手札/デッキに戻す・DP-・レスト（相手にデジモンがいるとき）＋2、相手のセキュリティを減らす＋2、
@@ -6183,6 +6267,8 @@ function _aiFindEvolve(base) {
 function _aiFindEvolveFrom(base) {
   let _best = null;
   const _high = _aiIsHigh();
+  const _plan = _high ? _aiPlan() : 'develop';
+  let _fin = null; // 中: 勝ち筋のカードに進化できるならそれを選ぶ
   for (const c of bs.ai.hand) {
     if (!c || c.type !== 'デジモン') continue;
     // 進化できるか・コストはプレイヤーの進化（doEvolve の _normalEvolve）と同じ判定（代替進化・常在の進化コスト増減も含む）
@@ -6194,11 +6280,18 @@ function _aiFindEvolveFrom(base) {
     if (cost === null || cost === undefined) continue;
     try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
     if (cost > aiAvailableMemory(c)) continue;
-    if (!_high) return { card: c, cost, alt: !!alt };
-    const score = _dpOf(c) + _lvOf(c) * 1500 + _aiMidMemoryBonus(c) * 1500 - cost * 300;
+    if (!_high) {
+      if (!_best) _best = { card: c, cost, alt: !!alt };
+      if (!_fin && _aiIsFinisher(c)) _fin = { card: c, cost, alt: !!alt };
+      continue;
+    }
+    // 高: 強さ＋効果の得に、設計図（勝ち筋のカード・勝ち筋につながるカード）と作戦（守るなら守りのカード）を加える
+    const score = _dpOf(c) + _lvOf(c) * 1500 + _aiMidMemoryBonus(c) * 1500 - cost * 300
+      + (_aiIsFinisher(c) ? 4000 : 0) + (_aiOnLine(c) ? 1000 : 0)
+      + (_plan === 'defend' && _aiIsDefensive(c) ? 3000 : 0);
     if (!_best || score > _best.score) _best = { card: c, cost, alt: !!alt, score };
   }
-  return _best;
+  return _fin || _best;
 }
 
 // 育成フェイズの判断用（battle-phase.js）: この CPU のデジモンを、今のメモリーで手札から進化させられるか
@@ -6342,6 +6435,14 @@ function aiPlayAuto(callback) {
 }
 function _aiPlayAutoBody(callback) {
   if (!aiCanAct()) { callback(); return; }
+  _aiLogPlan();
+  // 高: 相手をコントロール型（除去・進化元破棄が多い）と読んだら、1体に重ねて育てる前に、自分のメモリーで出せるデジモンを
+  // 先に出して2体以上並べる（1体だけだと、除去されたときに何も残らない）
+  if (_aiIsHigh() && !_aiOverflowOK) {
+    const opp = _aiOppRead();
+    if (opp && opp.style === 'control' && (bs.ai.battleArea || []).filter(_aiIsDigi).length <= 1
+        && _aiTryPlayDigimon(callback, c => _aiPlayCost(c) <= Math.abs(bs.memory))) return;
+  }
 
   // ① 育成エリアで進化（プレイヤーの doEvolveIku と同じ処理: 代替進化・進化コスト-の予約 → 状態を引き継いだ新しい1体 →
   //    コスト支払い → 進化ドロー → 【進化時】）
@@ -6423,8 +6524,12 @@ function _aiPlayAutoBody(callback) {
     !(_aiIsMid() && _aiMidOptionIsWasted(c)) &&
     !(_aiIsHigh() && _aiHighHoldOption(c))
   );
-  // 高: メモリーを増やすテイマーを優先して出す
-  if (_aiIsHigh()) _otCands.sort((a, b) => ((b.type === 'テイマー' && /メモリー/.test(String(b.effect || ''))) ? 1 : 0) - ((a.type === 'テイマー' && /メモリー/.test(String(a.effect || ''))) ? 1 : 0));
+  // 高: メモリーを増やすテイマーを優先して出す。守りを固める作戦なら、守りのカード（除去・ブロッカー等）をその次に
+  if (_aiIsHigh()) {
+    const _defPlan = _aiPlan() === 'defend';
+    const _rank = (c) => ((c.type === 'テイマー' && /メモリー/.test(String(c.effect || ''))) ? 2 : 0) + (_defPlan && _aiIsDefensive(c) ? 1 : 0);
+    _otCands.sort((a, b) => _rank(b) - _rank(a));
+  }
   const optionOrTamer = _otCands[0];
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);
@@ -6477,24 +6582,34 @@ function _aiPlayAutoBody(callback) {
   }
 
   // ④ デジモン登場
+  if (!_aiTryPlayDigimon(callback)) callback();
+}
+
+// ④ デジモン登場（出したら true）。extra で候補をさらに絞れる
+function _aiTryPlayDigimon(callback, extra) {
   const playable = bs.ai.hand.filter(c =>
     c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c)
     // 中・高: 【移動時】のカードは育成エリアで育てて移動する（手札から登場させない）
     && !_aiKeepForNursery(c)
+    && (!extra || extra(c))
   );
-  if (playable.length > 0) {
-    // 低: 安いものから。中: 出せる中で一番強い（コストの高い）ものから
-    if (_aiIsMid()) playable.sort((a, b) => (_aiPlayCost(b) - _aiPlayCost(a)) || (_lvOf(b) - _lvOf(a)));
-    else playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
-    const c = playable[0];
-    const handIdx = bs.ai.hand.indexOf(c);
-    aiPlayCard(c, handIdx, (turnEnded) => {
-      if (turnEnded) { setTimeout(() => callback(), 500); return; }
-      setTimeout(() => aiPlayAuto(callback), 500);
-    });
-  } else {
-    callback();
-  }
+  if (playable.length === 0) return false;
+  // 低: 安いものから。中: 出せる中で一番強い（コストの高い）ものから
+  // 高: さらに作戦で並べ替える（守るならブロッカー等の守りのデジモン、育てるなら勝ち筋につながるデジモンを先に）
+  if (_aiIsHigh()) {
+    const plan = _aiPlan();
+    const rank = (c) => (plan === 'defend' && _aiIsDefensive(c) ? 20000 : 0) + (plan !== 'defend' && _aiOnLine(c) ? 3000 : 0)
+      + _aiPlayCost(c) * 1000 + _lvOf(c);
+    playable.sort((a, b) => rank(b) - rank(a));
+  } else if (_aiIsMid()) playable.sort((a, b) => (_aiPlayCost(b) - _aiPlayCost(a)) || (_lvOf(b) - _lvOf(a)));
+  else playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
+  const c = playable[0];
+  const handIdx = bs.ai.hand.indexOf(c);
+  aiPlayCard(c, handIdx, (turnEnded) => {
+    if (turnEnded) { setTimeout(() => callback(), 500); return; }
+    setTimeout(() => aiPlayAuto(callback), 500);
+  });
+  return true;
 }
 
 // ===== ターン終了チェック =====

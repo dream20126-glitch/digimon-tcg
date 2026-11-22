@@ -8,6 +8,7 @@
 import { getCardImageUrl, loadCardsByNo, loadCardAndKeywordData } from './cards.js';
 // Phase 1: 状態管理
 import { bs, resetBattleState, drawCards } from './battle-state.js';
+import { buildDeckProfile, describeProfile } from './ai-brain.js';
 // Phase 2: UI・描画
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js';
@@ -638,6 +639,16 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // デッキパース
   const plCards = parseDeck(playerDeckData);
   const aiCards = parseDeck(aiDeckData);
+  // AI対戦（中・高）: AIに持たせたデッキの中身を読んで「設計図」（勝ち筋・進化の流れ・型）を作る（js/ai-brain.js）。
+  // 相手のデッキの読み・作戦の記録は対戦ごとに消す
+  bs._aiSeenOpp = null; bs._aiOppRead = null; bs._aiOppLabel = null; bs._aiOppReadN = 0; bs._aiPlanLog = null;
+  window._aiProfile = null;
+  if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high')) {
+    try {
+      window._aiProfile = buildDeckProfile(aiCards);
+      addLog('🧠 ' + (window._aiName || 'AI') + 'のデッキの設計図: ' + describeProfile(window._aiProfile));
+    } catch (e) { console.error('[aiProfile]', e); window._aiProfile = null; }
+  }
 
   // シャッフル & デッキセット
   bs.player.tamaDeck = shuffle(plCards.filter(c => c.level === '2'));

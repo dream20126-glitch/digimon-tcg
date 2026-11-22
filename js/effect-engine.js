@@ -15362,7 +15362,11 @@ function _discardToLegacyStep(step) {
   delete base.cost; delete base.limit; delete base.alt_actions; delete base.alt_actions_op;
   base._costsResolved = true;
   if (f && f.target_evo_source) {
-    const pos = f.target_evo_source_position;
+    // 値の数え方「全て」（value_mode:'all'。エディタの「全て」）は、進化元を全て破棄する（ユキナモン ED01-02「進化元を全て破棄」・
+    // ST26-05「相手のデジモン/テイマー1体の下のカードを全て破棄」が1枚しか破棄されていなかった）。テイマーの下にも対応している
+    // 「下から破棄」で、枚数を全部（重なっている枚数以上）にする
+    const _allMode = step.value_mode === 'all';
+    const pos = _allMode ? 'bottom' : f.target_evo_source_position;
     const rest = Object.assign({}, f);
     delete rest.target_evo_source; delete rest.target_evo_source_position;
     // 「相手のデジモンの進化元を選んで4枚破棄する」（target: opponent:4・value 無し・「1体」と書いていない。ヴァイクモン LM-040）:
@@ -15372,9 +15376,10 @@ function _discardToLegacyStep(step) {
       _evoPooled: _pooled || undefined,
       action: pos === 'top' ? 'evo_discard_top' : pos === 'bottom' ? 'evo_discard_bottom' : pos === 'select' ? 'evo_discard_select' : pos === 'all' ? 'evo_discard_all' : 'evo_discard',
       // 「相手のデジモン/テイマーの下から選んで4枚」（target: opponent_card:4・value 無し）は :N を枚数として扱い、対象は1体
-      value: hasVal ? step.value : (sufN || 1),
+      value: _allMode ? 999 : (hasVal ? step.value : (sufN || 1)),
       target: (!hasVal && sufN) ? zone + ':1' : tgt,
     });
+    if (_allMode) delete out.value_mode;
     if (Object.keys(rest).length > 0) out.filter = rest; else delete out.filter;
     return out;
   }

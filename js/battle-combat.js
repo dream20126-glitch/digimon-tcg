@@ -6141,9 +6141,46 @@ function _aiCarryEvolveState(evo, base) {
 }
 
 // CPU: base に進化できる手札のカードと、その進化コスト（進化条件の色・特徴・名称どおり。払えるものだけ）
+// 【移動時】（育成エリアからバトルエリアへ移動したとき）の効果を持つカードか（レシピのキーに on_move があるか）
+function _aiHasOnMove(c) {
+  if (!c || !c.recipe) return false;
+  try {
+    const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe;
+    return !!(r && typeof r === 'object' && Object.keys(r).some(k => k.split(',').map(s => s.trim()).includes('on_move')));
+  } catch (_) { return false; }
+}
+if (typeof window !== 'undefined') window._aiHasOnMove = (c) => _aiHasOnMove(c);
+// 中・高: 手札の【移動時】のカードは、育成エリアで育ててから移動した方が得（登場コストがかからず【移動時】も発揮する）。
+// 育成エリアのデジモン（Lv.2 等）から進化させられる見込みがあれば、手札から登場させずに取っておく
+function _aiKeepForNursery(c) {
+  if (!_aiIsMid() || !_aiHasOnMove(c)) return false;
+  const iku = bs.ai.ikusei;
+  const lv = _lvOf(c);
+  // 育成エリアにいるデジモンが、このカードの1つ下のレベル（今かこの先に進化させられる）
+  if (iku && iku.type === 'デジモン' && _lvOf(iku) === lv - 1) return true;
+  // 育成エリアが空でデジタマが残っている Lv.3 は、次のターンに孵化して育てられる（場にデジモンがいて、急いで出す必要が無いとき）
+  if (!iku && lv === 3 && (bs.ai.tamaDeck || []).length > 0 && (bs.ai.battleArea || []).some(x => x && x.type === 'デジモン')) return true;
+  return false;
+}
 function _aiFindEvolve(base) {
   if (!base || base.cantEvolve || (Array.isArray(base.buffs) && base.buffs.some(b => b && b.type === 'cant_evolve'))) return null;
   // 高: 進化できるカードを全部比べて、進化後に一番良くなるもの（DP・Lv・【進化時】等の得な効果、安いコスト）を選ぶ
+  // 中・高の育成エリアでの進化: 【移動時】を持つカードを優先する（移動したときに効果を発揮できる）
+  const _iku = base === bs.ai.ikusei && _aiIsMid();
+  if (_iku) {
+    const _onMove = bs.ai.hand.filter(c => c && c.type === 'デジモン' && _aiHasOnMove(c));
+    if (_onMove.length > 0) {
+      const _hand0 = bs.ai.hand;
+      // 【移動時】のカードだけで探し、無ければふつうに探す
+      bs.ai.hand = _onMove;
+      let _r = null;
+      try { _r = _aiFindEvolveFrom(base); } finally { bs.ai.hand = _hand0; }
+      if (_r) return _r;
+    }
+  }
+  return _aiFindEvolveFrom(base);
+}
+function _aiFindEvolveFrom(base) {
   let _best = null;
   const _high = _aiIsHigh();
   for (const c of bs.ai.hand) {
@@ -6442,6 +6479,8 @@ function _aiPlayAutoBody(callback) {
   // ④ デジモン登場
   const playable = bs.ai.hand.filter(c =>
     c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c)
+    // 中・高: 【移動時】のカードは育成エリアで育てて移動する（手札から登場させない）
+    && !_aiKeepForNursery(c)
   );
   if (playable.length > 0) {
     // 低: 安いものから。中: 出せる中で一番強い（コストの高い）ものから

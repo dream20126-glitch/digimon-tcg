@@ -1148,6 +1148,8 @@ function _aiMidHoldInNursery(iku) {
   const isDigi = (c) => c && (c.type === 'デジモン' || c.type === 'デュアル');
   if (!(bs.ai.battleArea || []).some(isDigi)) return false;
   if (lv >= 5) return false;
+  // 【移動時】を持つデジモンは移動して効果を使う（育成エリアで進化させると一番上が変わり【移動時】が使えなくなる）
+  if (typeof window._aiHasOnMove === 'function' && window._aiHasOnMove(iku)) return false;
   // 高（デジモンマスター）: 出してもすぐ倒されそう（相手にこのデジモンよりDPの高いデジモンがいて、ブロッカーでもない）で、
   // セキュリティに余裕があるなら、今は進化できなくても育成エリアで育て続ける
   if (window._aiLevel === 'high' && (bs.ai.security || []).length > 2) {

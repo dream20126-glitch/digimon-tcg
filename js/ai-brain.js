@@ -51,7 +51,21 @@ export function classifyCard(c) {
     onMove: items.some((x) => /(^|,)on_move(,|$)/.test(x.trig)) || /【移動時】/.test(main),
     assembly: flags.has('assembly') || /【アセンブリ/.test(main),
     pump: acts.some((x) => x.st.action === 'dp_plus' && /^own|^self/.test(String(x.st.target || ''))),
+    // 相手のセキュリティを効果で減らす（破棄・トラッシュ・手札に加える等）
+    secTrash: acts.some((x) => /^opp(onent)?_security/.test(String(x.st.target || '')) && !/^(dp_plus|dp_minus|grant_keyword|place|add)/.test(String(x.st.action)))
+      || /相手のセキュリティ[^。]*?(破棄|トラッシュ)/.test(main),
+    // 【アタック時】・【消滅時】を持つ（アタックする／消滅することに意味がある）。進化元の効果も含む
+    // 一番上のカードとしての効果（main）と、進化元にあるときの効果（evo）を分ける
+    onAttack: items.some((x) => !/^evo_source/.test(x.trig) && /(^|,)on_attack(,|$)/.test(x.trig)) || /【アタック時】/.test(main),
+    onDestroy: items.some((x) => !/^evo_source/.test(x.trig) && /(^|,)on_destroy(,|$)/.test(x.trig)) || /【消滅時】/.test(main),
+    onAttackEvo: items.some((x) => /^evo_source/.test(x.trig) && /(^|,)on_attack(,|$)/.test(x.trig)) || /【アタック時】/.test(String(c.evoSourceEffect || '')),
+    onDestroyEvo: items.some((x) => /^evo_source/.test(x.trig) && /(^|,)on_destroy(,|$)/.test(x.trig)) || /【消滅時】/.test(String(c.evoSourceEffect || '')),
   };
+  // セキュリティからめくれたとき、アタックしてきたデジモンを弱らせる・取り除くオプション
+  // （【セキュリティ】の効果か、「このカードの【メイン】効果を発揮する」で【メイン】が相手のデジモンに効くもの）
+  const sec = String(c.securityEffect || '');
+  const harm = /相手の(デジモン)?[^。]*?(消滅|DP\s*[-－−]|手札に戻|デッキの(下|上)に戻|レスト)/;
+  tags.secHarm = c.type === 'オプション' && (harm.test(sec) || (/【メイン】/.test(sec) && (harm.test(main) || tags.removal)));
   if (key) _tagCache.set(key, tags);
   return tags;
 }

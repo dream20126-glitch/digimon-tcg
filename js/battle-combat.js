@@ -5276,6 +5276,50 @@ function _aiPlayerBlockersFor(atk, exceptIdx) {
     && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))
     && !(noEvoOnly && (!c.stack || c.stack.length === 0)));
 }
+// ===== セキュリティへのアタックの危険（中・高）=====
+// セキュリティからめくれそうなデジモンの最高DPの見積もり。めくれたデジモンにはプレイヤー側のセキュリティDP+も乗る
+//  中（ベテラン）: 相手が見せた Lv.5 以下のデジモンの最高DP（見えていなければ 5000）
+//  高（マスター）: 相手が見せたデジモン全ての最高DP（相手のデッキの型の読み。4種類見えるまでは 7000 と考える）
+function _aiEstSecDp() {
+  const seen = [..._aiCollectSeenOpp().values()].filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
+  let est;
+  if (_aiIsHigh()) {
+    const mx = Math.max(0, ...seen.map(c => parseInt(c.baseDp != null ? c.baseDp : c.dp, 10) || 0));
+    est = _aiCollectSeenOpp().size >= 4 ? Math.max(mx, 3000) : Math.max(mx, 7000);
+  } else {
+    const mx = Math.max(0, ...seen.filter(c => _lvOf(c) <= 5).map(c => parseInt(c.baseDp != null ? c.baseDp : c.dp, 10) || 0));
+    est = mx || 5000;
+  }
+  (bs._securityBuffs || []).forEach(b => {
+    if (!b || (b.secSide || b.owner) !== 'player') return;
+    const v = parseInt(b.value, 10) || 0;
+    if (b.type === 'dp_plus') est += v; else if (b.type === 'dp_minus') est -= v;
+  });
+  return est;
+}
+// このデジモンがアタックすることに意味があるか（DPが低くてセキュリティのデジモンに負けそうでも行く理由）:
+// 【アタック時】の効果がある／【消滅時】の効果がある（負けて消滅しても得をする）。進化元の効果も含む
+function _aiAttackMeaningful(c) {
+  if (!c) return false;
+  const top = _aiTagsOf(c);
+  if (top.onAttack || top.onDestroy) return true;
+  return (c.stack || []).some(x => { const t = _aiTagsOf(x); return t.onAttackEvo || t.onDestroyEvo; });
+}
+// セキュリティへアタックしてよいか: DPが見積もりより高い（めくれたデジモンに勝てる）か、アタックする意味があるとき
+function _aiSecAttackSafe(c) {
+  if (_dpOf(c) > _aiEstSecDp()) return true;
+  return _aiAttackMeaningful(c);
+}
+// 高: 相手のセキュリティから、アタックしたデジモンを弱らせる・取り除くオプションが出てきそうか（相手のデッキの型から）。
+// 相手のオプションが2種類以上見えていて、そういうカードが1枚も無ければ「入っていない」と読む。まだ読めないうちは「ありうる」
+function _aiOppSecOptionThreat() {
+  if (!_aiIsHigh()) return false;
+  const seen = [..._aiCollectSeenOpp().values()];
+  const opts = seen.filter(c => c && c.type === 'オプション');
+  if (opts.some(c => _aiTagsOf(c).secHarm)) return true;
+  return !(seen.length >= 4 && opts.length >= 2);
+}
+
 // 中のアタック先: 相手のセキュリティが0ならとどめ（プレイヤーへ）→ 勝てるデジモン（強い順）→ セキュリティ。
 // 負けるアタックはしない（ブロックしてくるデジモンのDPがアタッカー以上なら、そのアタック自体をやめる）。null＝アタックしない
 function _aiMidPickTarget(c) {
@@ -5305,6 +5349,8 @@ function _aiMidPickTarget(c) {
   }
   if (cantPlayer) return null;
   if (strongBlock(-1)) return null;
+  // セキュリティからめくれそうなデジモンに負けるDPなら、【アタック時】【消滅時】などアタックする意味があるときだけ行く
+  if (!_aiSecAttackSafe(c)) return null;
   return { mode: 'security' };
 }
 // 中のブロック: 勝てる・相打ちならブロック。負けるブロックは、自分のセキュリティが2枚以下のプレイヤーへのアタック
@@ -5380,14 +5426,19 @@ function _aiOnLine(c) {
 function _aiIsDefensive(c) { const t = _aiTagsOf(c); return !!(t.blocker || t.removal || t.evoDiscard); }
 // 相手のデッキの読み（高だけ）: 相手が見せたカード（場・進化元・育成・テイマー・トラッシュ）を覚えておき、
 // 4種類以上見えたら設計図と同じやり方で型を推測する。読みが変わったらログに出す。手札・セキュリティ・デッキは見ない
-function _aiOppRead() {
-  if (!_aiIsHigh()) return null;
+// 相手が見せたカード（場・進化元・育成・テイマー・トラッシュ）を覚えて返す（中・高）。カードNoごとに1枚
+function _aiCollectSeenOpp() {
   const seen = bs._aiSeenOpp || (bs._aiSeenOpp = new Map());
   const add = (c) => { if (c && c.cardNo && String(c.level) !== '2' && !seen.has(c.cardNo)) seen.set(c.cardNo, c); };
   const pl = bs.player;
   [...(pl.battleArea || []), pl.ikusei].forEach(c => { if (!c) return; add(c); (c.stack || []).forEach(add); });
   (pl.tamerArea || []).forEach(add);
   (pl.trash || []).forEach(add);
+  return seen;
+}
+function _aiOppRead() {
+  if (!_aiIsHigh()) return null;
+  const seen = _aiCollectSeenOpp();
   if (seen.size < 4) return null;
   if (bs._aiOppReadN !== seen.size) {
     bs._aiOppReadN = seen.size;
@@ -5440,6 +5491,7 @@ function _aiHighPickAttack(canAttack) {
   const defense = !lethal && _aiHighDefense();
   const pa = bs.player.battleArea || [];
   const secLeft = (bs.player.security || []).length;
+  const _secThreat = !lethal && _aiOppSecOptionThreat();
   let best = null;
   const consider = (v, atkIdx, tgt) => { if (!best || v > best.v) best = { v, atkIdx, tgt }; };
   for (const i of idxs) {
@@ -5449,8 +5501,11 @@ function _aiHighPickAttack(canAttack) {
     if (!_aiCantHitPlayer(c)) {
       const checks = _aiChecksOf(c);
       if (lethal) consider(1000000 + checks * 10 - atkDp / 1000, i, { mode: 'security' });
-      else if (!_aiPlayerBlockersFor(c, -1).some(b => _dpOf(b) >= atkDp)) {
-        consider(checks * (secLeft <= 2 ? 6000 : 2500) - atkDp * 0.05, i, { mode: 'security' });
+      else if (!_aiPlayerBlockersFor(c, -1).some(b => _dpOf(b) >= atkDp) && _aiSecAttackSafe(c)) {
+        // 相手のセキュリティから弱らせるオプションが出てきそうなら、価値の低いデジモンから先にセキュリティを削る
+        // （強いデジモンはあとに残す）
+        const _risk = _secThreat ? _aiOwnValue(c) * 0.05 : 0;
+        consider(checks * (secLeft <= 2 ? 6000 : 2500) - atkDp * 0.05 - _risk, i, { mode: 'security' });
       }
     }
     if (lethal) continue;
@@ -6053,6 +6108,8 @@ function _aiOverflowAllowance(card) {
     if (_aiPlan() === 'defend') n += def ? 2 : -1;
     const opp = _aiOppRead();
     if (opp && opp.style === 'aggro' && !def) n -= 1;
+    // セキュリティを効果で破棄するカード: 相手のセキュリティから弱らせるオプションが出てきそうなら＋1
+    if (_aiTagsOf(card).secTrash && _aiOppSecOptionThreat()) n += 1;
   }
   return Math.max(1, Math.min(10, n));
 }
@@ -6328,7 +6385,8 @@ function _aiFindEvolveFrom(base) {
     // 高: 強さ＋効果の得に、設計図（勝ち筋のカード・勝ち筋につながるカード）と作戦（守るなら守りのカード）を加える
     const score = _dpOf(c) + _lvOf(c) * 1500 + _aiMidMemoryBonus(c) * 1500 - cost * 300
       + (_aiIsFinisher(c) ? 4000 : 0) + (_aiOnLine(c) ? 1000 : 0)
-      + (_plan === 'defend' && _aiIsDefensive(c) ? 3000 : 0);
+      + (_plan === 'defend' && _aiIsDefensive(c) ? 3000 : 0)
+      + (_aiTagsOf(c).secTrash && _aiOppSecOptionThreat() ? 2000 : 0);
     if (!_best || score > _best.score) _best = { card: c, cost, alt: !!alt, score };
   }
   return _fin || _best;
@@ -6616,7 +6674,10 @@ function _aiPlayAutoBody(callback) {
   // 高: メモリーを増やすテイマーを優先して出す。守りを固める作戦なら、守りのカード（除去・ブロッカー等）をその次に
   if (_aiIsHigh()) {
     const _defPlan = _aiPlan() === 'defend';
-    const _rank = (c) => ((c.type === 'テイマー' && /メモリー/.test(String(c.effect || ''))) ? 2 : 0) + (_defPlan && _aiIsDefensive(c) ? 1 : 0);
+    // 相手のセキュリティから弱らせるオプションが出てきそうなら、セキュリティを効果で破棄するカードも先に使う
+    const _secT = _aiOppSecOptionThreat();
+    const _rank = (c) => ((c.type === 'テイマー' && /メモリー/.test(String(c.effect || ''))) ? 2 : 0) + (_defPlan && _aiIsDefensive(c) ? 1 : 0)
+      + (_secT && _aiTagsOf(c).secTrash ? 1.5 : 0);
     _otCands.sort((a, b) => _rank(b) - _rank(a));
   }
   const optionOrTamer = _otCands[0];
@@ -6687,7 +6748,9 @@ function _aiTryPlayDigimon(callback, extra) {
   // 高: さらに作戦で並べ替える（守るならブロッカー等の守りのデジモン、育てるなら勝ち筋につながるデジモンを先に）
   if (_aiIsHigh()) {
     const plan = _aiPlan();
+    const _secT = _aiOppSecOptionThreat();
     const rank = (c) => (plan === 'defend' && _aiIsDefensive(c) ? 20000 : 0) + (plan !== 'defend' && _aiOnLine(c) ? 3000 : 0)
+      + (_secT && _aiTagsOf(c).secTrash ? 5000 : 0)
       + _aiPlayCost(c) * 1000 + _lvOf(c);
     playable.sort((a, b) => rank(b) - rank(a));
   } else if (_aiIsMid()) playable.sort((a, b) => (_aiPlayCost(b) - _aiPlayCost(a)) || (_lvOf(b) - _lvOf(a)));

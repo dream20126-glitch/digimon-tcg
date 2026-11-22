@@ -260,8 +260,18 @@ function keywordsInText(text) {
 }
 
 // 効果の文を HTML にする。キーワード辞書にあるキーワード（【〇〇】≪〇〇≫《〇〇》。数値つきも）はボタンにし、押すと説明を出す
+// キーワード辞書（スプレッドシート）に無いルールのキーワード。説明は総合ルールの文から（7-3 アセンブリ・4-19 オーバーフロー）
+const EXTRA_KEYWORDS = [
+  { keyword: 'アセンブリ', description: 'このカードを登場させるとき、アセンブリ条件で指定された自分のトラッシュのカードを、指定された枚数このカードの下に置くことで、指定された数値分、登場コストをマイナスする。指定された枚数を全て置かなければならない（一部だけ置くことはできない）。' },
+  { keyword: 'オーバーフロー', description: 'このカードがバトルエリアか重ねられているカードの下から、それ以外の場所に置かれたとき、指定された数値だけメモリーを動かす。エリアや重ねられているカードの下に置かれたときは処理されない。' },
+];
+function _keywordDict() {
+  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects.slice() : [];
+  EXTRA_KEYWORDS.forEach(e => { if (!dict.some(k => k.keyword === e.keyword)) dict.push(e); });
+  return dict;
+}
 function _keywordEntryFor(inner) {
-  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects : [];
+  const dict = _keywordDict();
   const t = String(inner || '').replace(/^[0-9０-９]+/, '');
   let best = null;
   dict.forEach(k => {
@@ -298,8 +308,7 @@ window.showKeywordPopover = function(btn, ev) {
   const cur = document.getElementById('kw-popover');
   if (cur && cur.dataset.anchor === btn.dataset.kwIdx) { hideKeywordPopover(); return; }
   hideKeywordPopover();
-  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects : [];
-  const k = dict.find(x => x.keyword === name);
+  const k = _keywordDict().find(x => x.keyword === name);
   if (!k) return;
   const p = document.createElement('div');
   p.id = 'kw-popover';

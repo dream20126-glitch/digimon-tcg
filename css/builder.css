@@ -274,18 +274,37 @@
 .kw-chip {
   font: inherit;
   font-size: inherit;
-  line-height: inherit;
-  display: inline;
-  padding: 0 2px;
-  margin: 0 1px;
-  border: none;
-  border-bottom: 1px dashed var(--main-cyan);
-  border-radius: 3px;
-  background: rgba(0, 251, 255, 0.12);
+  font-weight: bold;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  margin: 1px 2px;
+  border: 1px solid var(--main-cyan);
+  border-radius: 4px;
+  background: rgba(0, 251, 255, 0.15);
   color: var(--main-cyan);
   cursor: pointer;
+  vertical-align: baseline;
+  box-shadow: 0 0 4px rgba(0, 251, 255, 0.25);
 }
-.kw-chip:hover, .kw-chip:focus-visible { background: rgba(0, 251, 255, 0.25); outline: none; }
+/* 押すと説明が開くことが分かる印（ⓘ） */
+.kw-chip::after {
+  content: 'i';
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--main-cyan);
+  color: #001014;
+  font-size: 9px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+}
+.kw-chip:hover, .kw-chip:focus-visible { background: rgba(0, 251, 255, 0.3); outline: none; box-shadow: 0 0 8px rgba(0, 251, 255, 0.5); }
 #kw-popover {
   position: fixed;
   z-index: 100000;

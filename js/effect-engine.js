@@ -2405,8 +2405,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 画面が真っ黒のままになった。メガドラモン EX12-064 台帳）
       const _dVsOv = typeof document !== 'undefined' ? document.getElementById('security-check-overlay') : null;
       const _dVsOpen = !!(_dVsOv && _dVsOv.style.display !== 'none') || (typeof window !== 'undefined' && typeof window._clashIsPending === 'function' && window._clashIsPending());
-      const _dAuto = !isOwn && !_dVsOpen && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length === 1);
-      console.log('[destroy auto]', 'cands=' + destroyTargets.length, 'vsOpen=' + _dVsOpen, 'auto=' + _dAuto);
+      // 「〜ごとに、以下の効果を発揮できる」（per_count_mode:'repeat'）でくり返す消滅は、残りの回数（今回を含む）以下しか
+      // 候補がいなければ、どれも消滅させることになるので選ばない（ルビウスドラモン BT27-018: DP27000で3回、
+      // 最もDPの低い相手のデジモンが2体並んでいたのに1回目で選ぶ画面が出ていた）
+      const _dRepeatLeft = (ctx._repeatTotal > 1 && ctx._repeatIndex >= 1) ? (ctx._repeatTotal - ctx._repeatIndex + 1) : 1;
+      const _dAuto = !isOwn && !_dVsOpen && ((ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) || destroyTargets.length <= _dRepeatLeft);
+      console.log('[destroy auto]', 'cands=' + destroyTargets.length, 'repeatLeft=' + _dRepeatLeft, 'vsOpen=' + _dVsOpen, 'auto=' + _dAuto);
       if(effectiveSide === 'ai' || _dAuto) {
         const di = (ctx._forceTargetIdx !== undefined && destroyTargets.includes(ctx._forceTargetIdx)) ? ctx._forceTargetIdx : (effectiveSide === 'ai' ? _cpuOrder(destroyTargets, tgtPlayer.battleArea, isOwn ? 'weak' : 'harm')[0] : destroyTargets[0]);
         const card = tgtPlayer.battleArea[di];

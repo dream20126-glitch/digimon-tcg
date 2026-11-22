@@ -86,7 +86,7 @@ const KEYWORD_DISPLAY_NAMES = {
   vortex: 'ヴォルテクス', overclock: 'オーバークロック',
   ice_armor: '氷装', decode: 'デコード', fragment: 'フラグメント',
   execute: 'エグゼキュート', attack_immunity: 'プログレス', training: 'トレーニング',
-  prevent_destroy: '消滅耐性', prevent_battle_destroy: 'バトル耐性',
+  prevent_destroy: '消滅耐性', prevent_battle_destroy: 'バトル耐性', prevent_nonbattle_destroy: 'バトル以外で消滅しない',
   immune: '効果耐性',
   // 耐性バフ（cant_* のバフから _collectActiveKeywords が変換する。巨神兵器 BT26-085 等）
   no_dp_minus: 'DP-されない', no_discard: '破棄されない', no_return_hand: '手札に戻らない', no_return_deck: 'デッキに戻らない', no_redirect: 'アタック対象変更不可',
@@ -95,7 +95,7 @@ const KEYWORD_DISPLAY_NAMES = {
 // キーワード→色カテゴリ
 function _keywordColor(code) {
   if (['michizure', 'penetrate', 'piercing', 'rush', 'charge', 'execute', 'vortex', 'overclock'].includes(code)) return '#ff5577'; // 攻撃系
-  if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'ice_armor', 'no_dp_minus', 'no_discard', 'no_return_hand', 'no_return_deck', 'no_redirect'].includes(code)) return '#5599ff'; // 防御系
+  if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'prevent_nonbattle_destroy', 'ice_armor', 'no_dp_minus', 'no_discard', 'no_return_hand', 'no_return_deck', 'no_redirect'].includes(code)) return '#5599ff'; // 防御系
   if (['blocker', 'combo', 'collision', 'decoy', 'force_block'].includes(code)) return '#44dd88'; // ブロック・支援系
   if (['jamming', 'attack_immunity', 'immune', 'reboot'].includes(code)) return '#44ddcc'; // 状態系
   if (['absorb_evolve', 'blast_evolve', 'blast_jogress', 'save', 'material_save', 'mind_link', 'partition', 'delay'].includes(code)) return '#cc77ff'; // 進化・配置系

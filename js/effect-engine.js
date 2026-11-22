@@ -8633,7 +8633,7 @@ function _keywordJpName(flag) {
     overclock:'オーバークロック', ice_armor:'氷装', decode:'デコード',
     fragment:'フラグメント', execute:'エグゼキュート', attack_immunity:'プログレス',
     training:'トレーニング', prevent_destroy:'消滅耐性',
-    prevent_battle_destroy:'バトル耐性', immune:'効果耐性',
+    prevent_battle_destroy:'バトル耐性', prevent_nonbattle_destroy:'バトル以外で消滅しない', immune:'効果耐性',
     security_attack_plus:'Sアタック+', attack_at_end_phase:'急襲',
   };
   if (map[flag]) return map[flag];
@@ -25897,15 +25897,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback();
         break;
       }
-      if (effectiveSide === 'ai' || _crCands.length === 1) {
-        _crApply(_crCands[0]);
+      // 体数（opponent_card:2 等。「相手のデジモン/テイマー2体はレストできない」ユキナモン＆氷獣戯画 ST26-05）:
+      // 候補が体数以下なら選ばずに全部、多ければ体数分を選ぶ（以前は常に1体だけだった）
+      const _crN = Math.max(1, parseInt((/:(\d+)$/.exec(_crTgtStr) || [])[1], 10) || 1);
+      if (effectiveSide === 'ai' || _crCands.length <= _crN) {
+        _crCands.slice(0, _crN).forEach(_crApply);
         ctx.renderAll();
         callback();
         break;
       }
-      showCardListPicker(_crCands, 1, '🔒 レストできなくする対象を選んでください', (picked) => {
-        const c = picked && picked[0];
-        if (c) _crApply(c);
+      showCardListPicker(_crCands, _crN, '🔒 レストできなくする対象を' + (_crN > 1 ? _crN + '体' : '') + '選んでください', (picked) => {
+        (Array.isArray(picked) ? picked : []).forEach((c) => { if (c) _crApply(c); });
         ctx.renderAll();
         callback();
       });

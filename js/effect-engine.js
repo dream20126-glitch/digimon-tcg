@@ -7667,6 +7667,35 @@ function _deckOpenPlaceEvo(card, sel, ctx, player) {
 // CPU（ctx.side==='ai'）のデッキオープン: UIを出さずに自動で選ぶ。各選択は条件に合うカードを
 // 先頭から指定枚数まで選び（任意の選択も選ぶ）、残りは return_to に従って戻す
 // （deck_top は上へ、それ以外のデッキ戻しは下へ、trash はトラッシュへ）
+// AI対戦の CPU が、デッキオープンで条件に合うカードの中から1枚選ぶ（難易度で選び方を変える。同じ点数なら上から）
+//  ベテランテイマー（中）: 今の場（育成エリアを含む）のデジモンから進化できるカード > 手札にテイマーが無いならテイマー
+//  デジモンマスター（高）: 上に加えて、手札に無いレベルのデジモン（次に進化できるつなぎ）も優先する
+//  見習いテイマー（低）・オンライン・CPU でないとき: 今までどおり条件に合う一番上のカード
+function _cpuDeckOpenPick(cands, owner, ctx) {
+  if (!Array.isArray(cands) || cands.length === 0) return null;
+  const lvl = typeof window !== 'undefined' ? window._aiLevel : null;
+  const smart = ctx && ctx.side === 'ai' && typeof window !== 'undefined' && window._aiBattleActive
+    && !(window._isOnlineMode && window._isOnlineMode()) && (lvl === 'mid' || lvl === 'high');
+  if (!smart || cands.length === 1 || !owner) return cands[0];
+  const field = [...(owner.battleArea || []), owner.ikusei].filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || c.type === 'デジタマ'));
+  const canEvo = (c) => {
+    if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || typeof window.canEvolveOnto !== 'function') return false;
+    return field.some(b => { try { return window.canEvolveOnto(c, b); } catch (_) { return false; } });
+  };
+  const hand = owner.hand || [];
+  const noTamerInHand = !hand.some(h => h && h.type === 'テイマー');
+  const handLvs = new Set(hand.filter(h => h && (h.type === 'デジモン' || h.type === 'デュアル')).map(h => String(h.level)));
+  const score = (c) => {
+    let s = 0;
+    if (canEvo(c)) s += 100;
+    if (noTamerInHand && c.type === 'テイマー') s += 80;
+    if (lvl === 'high' && (c.type === 'デジモン' || c.type === 'デュアル') && c.level && !handLvs.has(String(c.level))) s += 60;
+    return s;
+  };
+  let best = cands[0], bestS = score(cands[0]);
+  for (let i = 1; i < cands.length; i++) { const s = score(cands[i]); if (s > bestS) { best = cands[i]; bestS = s; } }
+  return best;
+}
 function _deckOpenAuto(opened, step, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   // 行き先を選ぶグループ（group_op:'or'）を選んだ1つに置き換えるので、元のレシピを書き換えないよう写しを使う
@@ -7721,7 +7750,8 @@ function _deckOpenAuto(opened, step, ctx, callback) {
     let picked = 0;
     const pickNext = () => {
       if (picked >= maxCount) { nextSel(); return; }
-      const c = left.find(match);
+      // 条件に合うカードのうち、CPU の難易度に応じて選ぶ（見習いテイマーは今までどおり一番上）
+      const c = _cpuDeckOpenPick(left.filter(match), player, ctx);
       if (!c) { nextSel(); return; }
       left.splice(left.indexOf(c), 1);
       picked++;

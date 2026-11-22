@@ -3468,7 +3468,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           .map(s => (s && typeof s.display_text === 'string') ? s.display_text.trim() : '')
           .filter(Boolean).join('\n');
         if (!_umeText && ctx.card.effect) {
-          const _mm = String(ctx.card.effect).match(/【メイン】[\s\S]*?(?=\n【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
+          const _mm = String(ctx.card.effect).match(/【メイン】[\s\S]*?(?=\r?\n\s*【|$)/);
           if (_mm) _umeText = _mm[0].trim();
         }
         if (_umeText && !_umeAlready) {
@@ -5158,6 +5158,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     const _cardAt = (v) => targetSide === 'both' ? _boardCardOf(_b, v) : ((targetSide === 'ai' ? _b.ai : _b.player).battleArea || [])[v];
     const _kept = _stepAllowsImmunePick ? validIndices : validIndices.filter(v => !_isImmuneToEffect(_cardAt(v)));
     if (_kept.length !== validIndices.length) {
+      _logImmuneExcluded(validIndices.filter(v => !_kept.includes(v)).map(_cardAt));
       if (_kept.length === 0) { console.log('[showTargetSelection] 候補が全て効果を受けない'); callback(null); return; }
       validIndices = _kept;
     }
@@ -6798,6 +6799,24 @@ function _isImmuneToEffect(card, ctx, effectAction) {
   }
   return hasActiveImmuneEffects(card, ctx.side, _effectSourceTypeOf(ctx), effectAction);
 }
+// 「効果を受けない」で選ぶ候補から外したカードを、バトルログに理由つきで出す（どのカードの何の効果として判定したか。
+// 本堂カナタ ST25-06「相手のオプションの効果を受けない」デジモンが、相手のデジモン（レナモン）の効果で選べなかった調査用）
+const _IMMUNE_TYPE_LBL = { digimon: 'デジモン', option: 'オプション', tamer: 'テイマー', digitama: 'デジタマ' };
+function _logImmuneExcluded(cards) {
+  try {
+    const ctx = _curEffectCtx;
+    if (!ctx || !ctx.addLog || !Array.isArray(cards) || !cards.length) return;
+    const st = _effectSourceTypeOf(ctx);
+    const why = (c) => {
+      const b = (Array.isArray(c && c.buffs) ? c.buffs : []).find(x => x && x.type === 'keyword_immune');
+      return b ? ('受けない効果: ' + (_IMMUNE_TYPE_LBL[b.sourceType] || (b.sourceType ? b.sourceType : 'すべて'))) : '継続効果';
+    };
+    cards.filter(Boolean).forEach((c) => {
+      ctx.addLog('🛡 「' + c.name + '」は効果を受けないため選べない（今の効果: 「' + ((ctx.card && ctx.card.name) || '?') + '」の' + (_IMMUNE_TYPE_LBL[st] || '種別不明') + 'の効果／' + why(c) + '）');
+    });
+    console.log('[immune-excluded]', cards.map(c => c && c.name), 'ctx.card=', ctx.card && ctx.card.name, 'type=', ctx.card && ctx.card.type, 'srcType=', st, 'buffs=', cards.map(c => c && c.buffs));
+  } catch (_) {}
+}
 // ctx.card（この効果を発動しているカード自身）の種別を immune_effects の source_type
 // 判定用コードへ変換する（デジモン/オプション/テイマー。不明なら undefined）
 function _effectSourceTypeOf(ctx) {
@@ -8340,6 +8359,7 @@ function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
   if (Array.isArray(candidates) && _curEffectCtx) {
     const _kept = _stepAllowsImmunePick ? candidates : candidates.filter(c => !_isImmuneToEffect(c));
     if (_kept.length !== candidates.length) {
+      _logImmuneExcluded(candidates.filter(c => !_kept.includes(c)));
       if (_kept.length === 0) { callback([]); return; }
       candidates = _kept;
       wantCount = Math.min(wantCount || 1, candidates.length);
@@ -11955,7 +11975,9 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // card.effect 内の【メイン】ブロックを抽出して併記（プレイヤーがメイン効果の中身を確認できるように）
   const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(displayText);
   if (mentionsMain && card.effect) {
-    const mainMatch = card.effect.match(/【メイン】[\s\S]*?(?=\n【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
+    // 【メイン】の文は、次の行頭の【（次の効果）の前まで。以前は「【自分のターン】」のような完全一致の区切りだけを見ていて、
+    // 「【自分のターン終了時】【ディレイ】」（雪片の絆 ED01-10）や2つ目の「【メイン】【ディレイ】」（P-036）まで併記していた
+    const mainMatch = card.effect.match(/【メイン】[\s\S]*?(?=\r?\n\s*【|$)/);
     if (mainMatch) {
       const mainBlock = mainMatch[0].trim();
       if (mainBlock && !displayText.includes(mainBlock)) {

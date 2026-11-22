@@ -275,6 +275,13 @@ window.aiPeekHand = function() {
   ov.id = 'ai-peek-overlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:70000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
   ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  // 開いている間は1秒ごとに中身を更新する（AIが引いた・使ったカードがすぐ反映される）
+  const _sig = () => (b.ai.hand || []).map((c) => c.cardNo || c.name).join(',') + '|' + b.memory + '|' + (b.ai.deck || []).length + '|' + (b.ai.security || []).length;
+  const _s0 = _sig();
+  const _iv = setInterval(() => {
+    if (!document.body.contains(ov) || !window._aiBattleActive) { clearInterval(_iv); return; }
+    if (_sig() !== _s0) { clearInterval(_iv); window.aiPeekHand(); }
+  }, 1000);
   const imgOf = (c) => c.imgSrc || getGoogleDriveDirectLink(c.imageUrl || c['ImageURL'] || '') || '';
   const cards = (b.ai.hand || []).map((c) => {
     const cost = c.playCost != null && c.playCost !== '' ? c.playCost : '-';
@@ -287,10 +294,10 @@ window.aiPeekHand = function() {
   }).join('');
   ov.innerHTML = `<div style="background:#0b0f18;border:1px solid #ff00fb;border-radius:14px;padding:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;box-sizing:border-box;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <div style="color:#ff9cff;font-weight:bold;font-size:14px;">🔍 AIの手札（テスト用）</div>
+      <div style="color:#ff9cff;font-weight:bold;font-size:14px;">👁 AIの手札</div>
       <button onclick="document.getElementById('ai-peek-overlay').remove()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
-    <div style="color:#888;font-size:11px;margin-bottom:10px;">手札 ${(b.ai.hand || []).length}枚 / デッキ ${(b.ai.deck || []).length}枚 / デジタマ ${(b.ai.tamaDeck || []).length}枚 / セキュリティ ${(b.ai.security || []).length}枚</div>
+    <div style="color:#888;font-size:11px;margin-bottom:10px;">AI側のメモリー ${Math.max(0, -b.memory)}（${b.isPlayerTurn ? 'あなたのターン' : 'AIのターン'}） / 手札 ${(b.ai.hand || []).length}枚 / デッキ ${(b.ai.deck || []).length}枚 / デジタマ ${(b.ai.tamaDeck || []).length}枚 / セキュリティ ${(b.ai.security || []).length}枚</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">${cards || '<div style="color:#666;font-size:12px;padding:16px;">手札はありません</div>'}</div>
   </div>`;
   document.body.appendChild(ov);

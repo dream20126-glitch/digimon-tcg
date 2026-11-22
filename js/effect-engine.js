@@ -6184,9 +6184,43 @@ function _cpuHeadless(ctx) {
 // CPU が候補から対象を選ぶとき: オンラインの相手が対象を選ぶ画面を開いたときと同じく「相手が対象を選択中…」を出し、
 // 少し考えてから選ぶ（fn）。候補が選ぶ数以下（選ぶ余地が無い）・CPU でないときはすぐ fn
 function _cpuSelectPause(ctx, needChoice, fn, label) {
-  if (!needChoice || !_cpuHeadless(ctx)) { fn(); return; }
+  // 手順の入口（executeRecipeStep）ですでに出している（ctx._cpuPauseHold）なら、二重に出さない
+  if (!needChoice || !_cpuHeadless(ctx) || (ctx && ctx._cpuPauseHold > 0)) { fn(); return; }
   window._cpuLoopback({ type: 'fx_targetSelectStart', label: label || '' });
   setTimeout(() => { window._cpuLoopback({ type: 'fx_targetSelectEnd' }); fn(); }, 1000);
+}
+// CPU の手順に選ぶ余地があるか（オンラインならプレイヤーに選ぶ画面が出る手順か）:
+//  ・対象が先に決まっている（_forceTargetIdx）・条件を満たさない・アタック（アタック自体が選ぶ）は無し
+//  ・手札/トラッシュから選ぶ（取得元 from）は有り（オンラインでは候補が1枚でも選ぶ画面を出す）
+//  ・盤面の N 体（opponent / own / both[_card|_tamer|_digimon][:N|:up_to_N]）は、条件に合うカードが N より多いとき
+function _cpuStepNeedsChoice(step, ctx) {
+  try {
+    if (!step || !step.action || ctx._forceTargetIdx !== undefined) return false;
+    if (step.action === 'attack' || step.action === 'delay' || step.action === 'deck_open' || step.action === 'choose_effect') return false;
+    if (!_stepCondsPassNow(step, ctx)) return false;
+    const zones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+    if (zones.some(z => z === 'hand' || z === 'trash')) return true;
+    const m = /^(opponent|own|both)(_card|_tamer|_digimon)?(?::(\d+|up_to_\d+))?$/.exec(String(step.target || ''));
+    if (!m) return false;
+    const n = m[3] ? (parseInt(String(m[3]).replace('up_to_', ''), 10) || 1) : 1;
+    const bs = ctx.bs;
+    const sides = m[1] === 'both' ? ['player', 'ai'] : [m[1] === 'own' ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player')];
+    const f = (step.filter && typeof step.filter === 'object' && !step.filter.target_evo_source && !step.filter.target_stack) ? step.filter : null;
+    let count = 0;
+    sides.forEach((sd) => {
+      const p = bs && bs[sd];
+      if (!p) return;
+      const pool = [...(m[2] !== '_tamer' ? (p.battleArea || []) : []), ...((m[2] === '_card' || m[2] === '_tamer') ? (p.tamerArea || []) : [])];
+      pool.forEach((c) => {
+        if (!c) return;
+        // 進化元を破棄する等（target_evo_source）は、進化元を持つカードだけを数える
+        if (step.filter && step.filter.target_evo_source && !(Array.isArray(c.stack) && c.stack.length > 0)) return;
+        if (f) { try { if (!cardMatchesFilter(c, resolveDpFilterMarkers(f, ctx.card, bs, ctx.side), bs, ctx.side, ctx.card)) return; } catch (_) {} }
+        count++;
+      });
+    });
+    return count > n;
+  } catch (_) { return false; }
 }
 // CPU の効果の発動の表示（受け取り側の「⚡ 相手: 〇〇」）を出しているか。効果が終わったら閉じる
 let _cpuAnnounceOpen = false;
@@ -19334,6 +19368,20 @@ function _applyEffectCapMods(step, ctx) {
 // 選んでも、効果を受けない間は付かない＝発揮待ちのバフになる）。その場で終わる効果（消滅・レスト等）では従来どおり候補から外す
 let _stepAllowsImmunePick = false;
 function executeRecipeStep(step, ctx, store, callback) {
+  // AI対戦の CPU: 選ぶ余地のある手順は、オンラインの相手が選ぶ画面を開いたときと同じく「相手が対象を選択中…」を出してから進める。
+  // この手順の中で入れ子に呼ばれる処理（コスト・形の変換等）では出さない（ctx._cpuPauseHold）
+  if (step && ctx && !(ctx._cpuPauseHold > 0) && _cpuHeadless(ctx) && _cpuStepNeedsChoice(step, ctx)) {
+    ctx._cpuPauseHold = (ctx._cpuPauseHold || 0) + 1;
+    const _cb0 = callback;
+    let _released = false;
+    const _release = () => { if (!_released) { _released = true; ctx._cpuPauseHold = Math.max(0, (ctx._cpuPauseHold || 1) - 1); } };
+    window._cpuLoopback({ type: 'fx_targetSelectStart', label: '' });
+    setTimeout(() => {
+      window._cpuLoopback({ type: 'fx_targetSelectEnd' });
+      executeRecipeStep(step, ctx, store, (...a) => { _release(); _cb0 && _cb0(...a); });
+    }, 1000);
+    return;
+  }
   if (step && step.action) _curStepForLabel = step;
   _stepAllowsImmunePick = !!(step && step.duration && !_COST_STEP_SET.has(step)
     && !/until_(battle|attack)_end/.test(String(normalizeRecipeDuration(step.duration) || step.duration)));

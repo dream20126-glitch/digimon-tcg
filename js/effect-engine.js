@@ -12597,7 +12597,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // 反応専用ステップは、発動元自身のイベントとしては発動させない（ティンカーモン BT26-024 が
     // 自分の登場で誤発火する等）。除外があったときだけ _grantedSteps で実行ステップを絞る
     const _selfOnlyCodes = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end'];
-    const _narrowSelf = (steps) => (_selfOnlyCodes.includes(triggerCode) ? _selfEventSteps(steps, triggerCode) : steps);
+    const _narrowSelf = (steps) => (_selfOnlyCodes.includes(triggerCode) ? _selfEventSteps(steps, triggerCode, sourceCard) : steps);
     // 同じトリガーの効果がレシピの複数キーに分かれている（=カードに別々の効果として印刷されている。
     // 例: ロゼモン：バーストモード BT26-050 の「【進化時】A」と「【進化時】【アタック時】B」）なら、
     // それぞれを独立した効果としてキューに積む（以前は1つの効果にまとめて実行していたため、
@@ -13016,9 +13016,19 @@ function _filterStepChains(steps, pred) {
 }
 // 発動元自身のイベント（自分の登場時/アタック時 等）として実行してよいステップだけに絞る
 // （他の自分の/相手の〜のときに反応する専用ステップを除外する）。除外が無ければ元の配列をそのまま返す
-function _selfEventSteps(steps, triggerCode) {
+// 発動主体が「自分のデジモン」（own / own_digimon / both / both_digimon）の反応は、発動元がデジモンでない（テイマー・オプション）とき、
+// 発動元自身の登場等では発動しない（本堂カナタ BT27-086 / ST25-06「自分のデジモンが登場/進化したとき」が、このテイマー自身の登場で反応していた）。
+// own_card（デジモン/テイマー）等、テイマーを含む発動主体はそのまま
+const _DIGIMON_ONLY_SUBJECTS = new Set(['own', 'own_digimon', 'both', 'both_digimon']);
+function _selfEventSteps(steps, triggerCode, sourceCard) {
   if (!Array.isArray(steps)) return steps;
-  const out = _filterStepChains(steps, (s) => !_isSelfExcludingSubject(_resolveStepSubject(s, triggerCode)));
+  const _notDigimon = !!(sourceCard && sourceCard.type && sourceCard.type !== 'デジモン' && sourceCard.type !== 'デュアル' && sourceCard.type !== 'デジタマ');
+  const out = _filterStepChains(steps, (s) => {
+    const subj = _resolveStepSubject(s, triggerCode);
+    if (_isSelfExcludingSubject(subj)) return false;
+    if (_notDigimon && _DIGIMON_ONLY_SUBJECTS.has(String(subj || ''))) return false;
+    return true;
+  });
   return out.length === steps.length ? steps : out;
 }
 function _lookupTriggerStepsBase(recipeObj, triggerCode) {

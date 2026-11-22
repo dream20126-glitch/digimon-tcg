@@ -5490,8 +5490,10 @@ function _aiHighChooseBlocker(atk, cands, targetIdx) {
 }
 // 高: 相手のデジモンを取り除くオプションは、弱い相手には使わず強い相手が出るまで手札に残す（負けそうなら今使う）
 function _aiHighHoldOption(c) {
-  if (!c || c.type !== 'オプション') return false;
+  if (!c || (c.type !== 'オプション' && c.type !== 'デュアル')) return false;
   if ((bs.ai.security || []).length <= 2) return false;
+  // 守りを固める作戦（このままだと次の相手のターンに負けうる）なら、取っておかずに今使う
+  if (_aiPlan() === 'defend') return false;
   let r = c.recipe;
   if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
   const steps = (r && Array.isArray(r.main)) ? r.main.filter(Boolean) : [];
@@ -6457,7 +6459,8 @@ function _aiDualMode(c) {
   const bases = [...(bs.ai.battleArea || []), bs.ai.ikusei].filter(b => b && _aiIsDigi(b) && canEvolveOnto(c, b));
   const evoCosts = bases.map(b => getEvolveCostFor(c, b)).filter(v => v !== null && v !== undefined);
   const canEvo = evoCosts.length > 0 && Math.min(...evoCosts) <= avail;
-  if (!canEvo) return canOpt ? 'option' : null;
+  // 進化できないとき: オプション効果に価値があるときだけ使う。無ければ手札に残して、あとの進化に取っておく
+  if (!canEvo) return canOpt && _aiDualOptionValuable(c) ? 'option' : null;
   if (!canOpt) return 'evolve';
   return _aiDualOptionValuable(c) ? 'option' : 'evolve';
 }

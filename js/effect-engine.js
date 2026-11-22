@@ -1503,6 +1503,12 @@ function executeQueueEntry(entry, context, callback0) {
     }
     // 【ディレイ】は「【ディレイ】しますか？」の確認がポップアップの役目（delay アクション内）
     if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.some(st => st && st.action === 'delay')) { runEffectNow(callback); return; }
+    // 「進化元を破棄する。この効果で破棄しなかったなら〜できる」で破棄できる相手がいない: 発揮するのは任意の効果2だけなので、
+    // その確認（「〜しますか？」。同じ文が出る）だけにして、発動のポップアップは出さない（同じ文が2回続いていた。セッカモン BT27-029 進化元）
+    if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length === 1) {
+      const _ha = _altHeadForEmptyEvoDiscard(_recipeStepsForLookup[0], ctx.bs, actualSide);
+      if (_ha && _ha.optional) { runEffectNow(callback); return; }
+    }
     // 「強制 → その後、〇〇することで（任意）」も、強制部分は通常の効果と同じくアナウンス（自分・相手の
     // 両画面）を出してから対象選択へ進む。任意部分に来た時点で確認ダイアログを出す（runRecipe 参照）。
     // （ブテンモン BT26-015 c1: 自分の画面にも効果がわかるように出してほしい）
@@ -1559,6 +1565,13 @@ function executeQueueEntry(entry, context, callback0) {
     )
       // 先頭が強制で、2つ目以降のコスト持ちステップだけが任意なら、効果の最初では確認しない
       && !_isInlineCostConfirmRecipe(_recipeStepsForLookup);
+    // 「進化元を破棄する。この効果で破棄しなかったなら〜できる（任意）」で、破棄できる相手がいない: 発揮するのは任意の効果2だけなので、
+    // その文（displayEffText も効果2の文にしてある）で「発動しますか？」の確認を1回だけ出す（セッカモン BT27-029 進化元。
+    // 以前は発動のポップアップの後に同じ文が続き、確認なしでアクティブになっていた）
+    if (!block.isOptional && Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length === 1) {
+      const _ha = _altHeadForEmptyEvoDiscard(_recipeStepsForLookup[0], ctx.bs, actualSide);
+      if (_ha && _ha.optional) block.isOptional = true;
+    }
   }
 
   // 任意の「このデジモンでアタックできる」だけの効果（≪急襲≫等）は、アタックの処理自体が

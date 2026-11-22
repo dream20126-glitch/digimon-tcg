@@ -16787,6 +16787,9 @@ export function canAttackDigimonTarget(atk, def, bs, atkSide) {
   if (isProtectedFromAttack(def, bs, defSide)) return false;
   if (def.suspended) return true;
   if (atk && atk._executeAttacking) return true;
+  // 効果でのアタックの「この効果では、アクティブ状態の相手のデジモンにもアタックできる」（allow_active。雪片の絆 ED01-10）。
+  // _confirmAndDeclareEffectAttack がそのアタック1回分だけ立て、アタック先を確定する判定（battle-combat.js resolveAttackTarget）で使い切る
+  if (atk && bs && bs._effectAttackAllowActive === atk) return true;
   const _allowsDef = (st) => st && st.action === 'attack'
     && /^opponent/.test(String(st.target || '')) && _evalStepConditionGate(st, atk, bs, atkSide)
     && (!st.filter || cardMatchesFilter(def, st.filter, bs, atkSide, atk));
@@ -18654,6 +18657,9 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     }
     // ≪エグゼキュート≫でのアタック: アタック終了時の消滅（_adjustExecuteSteps）の判定に使う印
     if (isExecute) atkCard._executeAttacking = true;
+    // 「この効果では、アクティブ状態の相手のデジモンにもアタックできる」: アタック先を確定する判定（canAttackDigimonTarget）に伝える。
+    // 以前は対象選びでは選べたのに、アタックを始めるところで「アクティブ状態のデジモンにはアタックできません」と止まっていた（ED01-10）
+    if (allowActive && !isExecute && ctx.bs && targetType === 'digimon') ctx.bs._effectAttackAllowActive = atkCard;
     // 【自分のターン終了時】の効果（≪急襲≫≪エグゼキュート≫等）でアタックした時点で「ターン終了時」のタイミングは
     // 過ぎるので、まだ発揮していない他の【ターン終了時】の効果は発揮しない（もう1体の急襲等でアタックはできない）
     if (waitResolve) {
@@ -18671,7 +18677,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     // （≪急襲≫でアタック → 相手のセキュリティのソローブルー ST2-14 の対象選択）
     if (window._onlineSendCommand) { try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
     window.startAttack(atkCard, slotIdx, (ok) => {
-      if (!ok) { delete atkCard._executeAttacking; finish(false); return; }
+      if (!ok) { delete atkCard._executeAttacking; if (ctx.bs && ctx.bs._effectAttackAllowActive === atkCard) delete ctx.bs._effectAttackAllowActive; finish(false); return; }
       if (waitResolve) {
         if (!Array.isArray(ctx.bs._effectAttackResolveCbs)) ctx.bs._effectAttackResolveCbs = [];
         ctx.bs._effectAttackResolveCbs.push(() => { delete atkCard._executeAttacking; finish(true); });

@@ -3581,6 +3581,12 @@ export function resolveAttackTarget(target, targetIdx) {
       bs._attackResolving = false;
       if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'attack_end' }); } catch (_) {} }
       renderAll();
+      // 【自分のターン終了時】の効果（≪急襲≫・雪片の絆 ED01-10 の【ディレイ】等）でのアタックが成立しなかったときも、
+      // アタックの終わりを待っているその効果（とターン終了処理）を再開する（以前は待ったままでターンが終わらなかった）
+      if (Array.isArray(bs._effectAttackResolveCbs) && bs._effectAttackResolveCbs.length > 0) {
+        const cbs = bs._effectAttackResolveCbs.splice(0);
+        cbs.forEach(cb => { try { cb(); } catch (e) { console.error('[effectAttackResolve]', e); } });
+      }
     };
     if (!def) { _abortAttack(); return; }
     // アクティブ状態のデジモンには宣言できない（公式ルール）。突進は宣言時の対象拡張ではなく
@@ -3589,7 +3595,10 @@ export function resolveAttackTarget(target, targetIdx) {
     // ≪エグゼキュート≫でのアタック（_executeAttacking）は「アクティブ状態の相手のデジモンにもアタックできる」
     // （スカージキロプモン＆デスペアブラストでアクティブ状態のデジモンを選んでもアタックが始まらなかった）
     // 「アタックされない」・継続効果の「アクティブ状態の相手にもアタックできる」（P-051 / P-058）もここで判定する
-    if (!(window._canAttackDigimonTarget ? window._canAttackDigimonTarget(atk, def, bs, 'player') : (def.suspended || atk._executeAttacking))) {
+    const _canAtkDef = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(atk, def, bs, 'player') : (def.suspended || atk._executeAttacking);
+    // 効果でのアタック1回分の「アクティブ状態にもアタックできる」（ED01-10）はここで使い切る（後の通常のアタックに残さない）
+    delete bs._effectAttackAllowActive;
+    if (!_canAtkDef) {
       addLog(def.suspended ? '🚨 このデジモンにはアタックできません' : '🚨 アクティブ状態のデジモンにはアタックできません');
       _abortAttack();
       return;

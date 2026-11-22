@@ -1069,6 +1069,20 @@ function onRemoteCommand(cmd) {
           secCard.effect = originalEffect;
           // 効果の処理中に外していたカードをトラッシュへ戻す（手札に加えるなら下でトラッシュから手札へ移る）
           const _secReal = _secHeld;
+          // 効果で「このカードをバトルエリアに置く」（オプションのセキュリティ効果・【メイン】の「その後、このカードを
+          // バトルエリアに置く」）なら、置いたのは表示用に作った secCard なので、本物のカードに差し替えてトラッシュには戻さない
+          // （以前は本物をトラッシュに戻していて、バトルエリアとトラッシュの両方に同じカードがあった。雪片の絆 ED01-10）
+          const _secPlacedIdx = (bs.player.tamerArea || []).indexOf(secCard);
+          const _secPlacedBa = _secPlacedIdx === -1 ? (bs.player.battleArea || []).indexOf(secCard) : -1;
+          if (_secHeld && (_secPlacedIdx !== -1 || _secPlacedBa !== -1)) {
+            ['_placedInBattleArea', '_placedTurnKey', 'summonedThisTurn', 'suspended', 'buffs', 'stack', 'linkedCards'].forEach((k) => {
+              if (Object.prototype.hasOwnProperty.call(secCard, k)) _secHeld[k] = secCard[k]; else delete _secHeld[k];
+            });
+            if (_secPlacedIdx !== -1) bs.player.tamerArea[_secPlacedIdx] = _secHeld;
+            else bs.player.battleArea[_secPlacedBa] = _secHeld;
+            _secHeld = null;
+            renderAll();
+          }
           if (_secHeld) { bs.player.trash.push(_secHeld); _secHeld = null; }
           // ヘブンズゲート/ヘブンズチャーム等: secCard._returnToHand が立っていれば
           // P2 のローカル状態でも、すでに security_remove でトラッシュに送られた実カードを

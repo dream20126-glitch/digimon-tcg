@@ -153,6 +153,10 @@ export function checkTurnStartEffects(side, cb) {
   }
   bs._usedLimits = {};
   const p = side === 'player' ? bs.player : bs.ai;
+  // ターンの始まりで、相手のターンにバトルエリアに置かれたオプションの「置かれたターン」の印を外す（≪ディレイ≫は置かれた
+  // ターンだけ使えない。公式 16-17-3）。以前はアクティブフェイズ（execUnsuspend）で外していたため、それより前の
+  // 【自分のターン開始時】【ディレイ】（ブルー・スクランブル LM-028 等）が、相手のターンにセキュリティから置いたカードで使えなかった
+  [...(p.tamerArea || []), ...(p.battleArea || [])].forEach(c => { if (c && c._placedTurnKey) delete c._placedTurnKey; });
   const area = [...p.battleArea, ...(p.tamerArea || [])];
   // ターンを始めた側のカードは【自分のターン開始時】。以前は CPU のターン開始で CPU のカードの【相手のターン開始時】を
   // 発揮していた（逆）。もう一方の側の【相手のターン開始時】は、自分の効果の後に fireOppTurnStart で発揮する

@@ -6152,10 +6152,30 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
 // その枚数ぶん省略される（相手への fx_remoteCardMove も送らない）。2枚以下ならそのまま start()。
 // opts: { faceDown, remoteFaceDown, remoteFrom, remoteTo }（_fxMoveSync と同じ意味）
 function _flipSideLabel(l) { l = String(l || ''); return l.indexOf('相手の') === 0 ? l.slice(3) : (l ? '相手の' + l : l); }
+// AI対戦で CPU の効果を、オンラインの相手と同じ処理（プレイヤーの処理を CPU が選んで進める）で動かすか。
+// このとき CPU 側の画面（選ぶ画面・CPU 側の移動演出）は出さず、相手に送る表示の知らせを自分の受け取り処理に渡す（window._cpuLoopback）
+function _cpuHeadless(ctx) {
+  return !!(ctx && ctx.side === 'ai' && typeof window !== 'undefined' && window._aiBattleActive && typeof window._cpuLoopback === 'function'
+    && !(window._isOnlineMode && window._isOnlineMode()) && typeof document !== 'undefined' && document.body);
+}
 function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
   opts = opts || {};
   const list = (cards || []).filter(Boolean);
   if (list.length < 3 || typeof window === 'undefined' || typeof window._showMoveBatch !== 'function') { start(); return; }
+  // CPU（オンラインの相手と同じ処理）: 一覧は受け取り側（オンラインで相手から届いたときと同じ表示）にだけ出し、OK を押したら進む
+  if (_cpuHeadless(ctx) && !opts.noRemote) {
+    const hide = !!(opts.faceDown || opts.remoteFaceDown);
+    const batchId = 'cpu' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    window._cpuWaitBatchAck(batchId, () => start());
+    window._cpuLoopback({
+      type: 'fx_moveBatch',
+      cards: list.map(c => hide ? { name: '', imgSrc: '' } : { name: c.name || '', cardNo: c.cardNo || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' }),
+      fromLabel: opts.remoteFrom != null ? opts.remoteFrom : _flipSideLabel(fromLabel),
+      toLabel: opts.remoteTo != null ? opts.remoteTo : _flipSideLabel(toLabel),
+      faceDown: hide, batchId,
+    });
+    return;
+  }
   // noRemote: 相手の画面の演出は別のコマンド（fx_evoDiscard / fx_dedigivolve 等）の受信側が出すので送らない
   let _batchId = null;
   if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
@@ -7798,34 +7818,13 @@ function _deckOpenAuto(opened, step, ctx, callback) {
 // step: { value, selections, return_to, optional }
 function showDeckOpenUI(opened, step, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-  // CPU は UI を出さずに自動で選ぶ
-  if (ctx.side === 'ai') {
-    // AI対戦の CPU のデッキオープン: オープンしたカードを画面に見せてから振り分け、どこへ行ったかを1枚ずつ見せる
-    // （以前は何も表示されず、ログにしか残らなかった）。オンラインの相手の分は相手の端末から届く表示を使う
-    const _view = (!(window._isOnlineMode && window._isOnlineMode()) && window._cpuDeckOpenView && typeof document !== 'undefined' && document.body) ? window._cpuDeckOpenView : null;
-    if (!_view || step.private) { _deckOpenAuto(opened, step, ctx, callback); return; }
-    const _owner = ctx.bs[step._deckOwnerSide || 'ai'] || ctx.bs.ai;
-    try { _view.start({ sourceCardName: ctx.card ? ctx.card.name : '', cards: opened.map(c => ({ cardNo: c.cardNo, name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '' })), receiverZone: _owner === ctx.bs.player }); } catch (e) { console.error('[cpu deckOpen view]', e); }
-    setTimeout(() => {
-      _deckOpenAuto(opened, step, ctx, () => {
-        // 行き先: 振り分け後にそのカードがある場所
-        const _inField = (c) => (_owner.battleArea || []).some(b => b && (b === c || (Array.isArray(b.stack) && b.stack.includes(c)))) || (_owner.tamerArea || []).includes(c);
-        const acts = opened.map(c => ({ c, to: (_owner.hand || []).includes(c) ? 'hand'
-          : _inField(c) ? ((_owner.battleArea || []).includes(c) || (_owner.tamerArea || []).includes(c) ? 'play' : 'evolve')
-          : (_owner.trash || []).includes(c) ? 'trash'
-          : (_owner.deck || [])[0] === c ? 'deck_top' : 'deck_bottom' }));
-        let i = 0;
-        const next = () => {
-          if (i >= acts.length) { setTimeout(() => { try { _view.end(); } catch (_) {} callback(); }, 900); return; }
-          const a = acts[i++];
-          try { _view.act({ cardNo: a.c.cardNo, name: a.c.name, to: a.to, receiverZone: _owner === ctx.bs.player }); } catch (_) {}
-          setTimeout(next, 700);
-        };
-        next();
-      });
-    }, 1600);
-    return;
-  }
+  // AI対戦の CPU: オンラインの相手と同じ処理（下のプレイヤーの処理）を、CPU が選んで進める（_cpu）。CPU 側の選ぶ画面は見せず、
+  // 相手に送る表示の知らせ（sendRemote）を、オンラインで相手から受け取ったときと同じ受け取り処理に渡す（window._cpuLoopback）
+  const _cpu = _cpuHeadless(ctx) && !step.private;
+  // それ以外の CPU（効果テスト等）は UI を出さずに自動で選ぶ
+  if (ctx.side === 'ai' && !_cpu) { _deckOpenAuto(opened, step, ctx, callback); return; }
+  // CPU が選ぶまでの間（考えている時間）
+  const _cpuThink = (fn, ms) => setTimeout(fn, ms == null ? 900 : ms);
   const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
   // 行き先を選ぶグループ（group_op:'or'）を選んだ1つに置き換えるので、元のレシピを書き換えないよう写しを使う
   const selections = Array.isArray(step.selections) ? step.selections.slice() : [];
@@ -7842,6 +7841,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     // private: セキュリティ非公開確認（高石タケル等）→ 中身を相手に送らない。
     // 公開はオプション側（security_open）が選択カードのみ個別に行う。
     if (step.private) return;
+    // CPU: オンラインの相手から届いたときと同じ受け取り処理へ（相手＝受け手のデッキなら受け手の領域として）
+    if (_cpu) { window._cpuLoopback(oppDeck ? Object.assign({}, cmd, { receiverZone: true }) : cmd); return; }
     if (!isOnlineSelf()) {
       console.log('[deckOpen sendRemote] skip', { ctxSide: ctx.side, online: !!(window._isOnlineMode && window._isOnlineMode()), hasSend: !!window._onlineSendCommand });
       return;
@@ -7861,6 +7862,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // === オーバーレイ ===
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
+  // CPU の選ぶ画面は見せない（受け取り側の表示＝オンラインの相手のデッキオープンの表示だけを見せる）
+  if (_cpu) { overlay.style.visibility = 'hidden'; overlay.style.pointerEvents = 'none'; }
   document.body.appendChild(overlay);
 
   const titleEl = document.createElement('div');
@@ -8049,6 +8052,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       const _ok = _og.filter(x => _leftCards.some(c => cardMatchesFilter(c, x.filter || {})));
       if (_ok.length <= 1) {
         _deckOpenOrGroupReplace(selections, selIdx, _og, _ok[0] || _og[0]);
+      } else if (_cpu) {
+        // CPU: 候補のあるいちばん前の行き先にする
+        _deckOpenOrGroupReplace(selections, selIdx, _og, _ok[0]);
       } else {
         cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
         stepEl.innerText = 'どちらにしますか？';
@@ -8216,7 +8222,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
                 _playAs('evolve', slotIdx);
               }, entry.card, sel);
             };
-            if (_kinds.length === 1) { _go(_kinds[0]); return; }
+            if (_kinds.length === 1 || _cpu) { _go(_kinds[0]); return; }
             const _kindLabel = { summon: '🌟 登場', use: '✦ 使用', evolve: '⬆ 進化' };
             showAltActionChoice(_kinds.map(k => _kindLabel[k] || k).concat(['キャンセル']), (ki) => _go(_kinds[ki]));
             return;
@@ -8249,8 +8255,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
           };
           // 相手画面にもどこへ移動したか通知（カード移動演出付き）
           sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: entry.card.cardNo, name: entry.card.name, to: dest });
-          // 「カード移動演出」を挟む（hand / trash のみ。fxCardMove が無い環境ではフォールバック）
-          if ((dest === 'hand' || dest === 'trash') && window._fxCardMove) {
+          // 「カード移動演出」を挟む（hand / trash のみ。fxCardMove が無い環境ではフォールバック）。CPU は受け取り側が演出を出す
+          if ((dest === 'hand' || dest === 'trash') && window._fxCardMove && !_cpu) {
             const toLabel = dest === 'hand' ? '手札' : 'トラッシュ';
             // 選択カードを一旦dimして演出に集中させる
             entry.wrap.style.transition = 'opacity 0.15s';
@@ -8282,6 +8288,18 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         ob.style.cssText = 'background:#00ff88;color:#002211;border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
         ob.onclick = () => { if (!_act[0].removed) _act[0]._pick(); };
         buttonArea.insertBefore(ob, buttonArea.firstChild);
+      }
+      // CPU: 選べるカードの中から、難易度に応じて1枚選ぶ（_cpuDeckOpenPick。見習いテイマーは一番上）。少し考えてから
+      if (_cpu && pickedCount < maxCount && _act.length > 0) {
+        const _tok = (_autoTok = {});
+        _cpuThink(() => {
+          if (_autoTok !== _tok) return;
+          const live = cardEls.filter(e => !e.removed && selMatch(e.card) && typeof e._pick === 'function');
+          if (live.length === 0) return;
+          const c = _cpuDeckOpenPick(live.map(e => e.card), player, ctx);
+          const e = live.find(x => x.card === c) || live[0];
+          e._pick();
+        });
       }
     }
 
@@ -8345,6 +8363,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         removeEntry(e);
       });
       ctx.renderAll && ctx.renderAll();
+      // CPU: 移動演出は受け取り側が出す（3枚以上は一覧を受け取り側に出し、OK を押したら次へ）
+      if (_cpu) { if (many) _moveBatchIntro(ctx, cards, 'オープンしたカード', ownLbl + 'トラッシュ', finishReturnPhase); else finishReturnPhase(); return; }
       if (typeof window === 'undefined' || typeof window._fxCardMove !== 'function') { finishReturnPhase(); return; }
       overlay.style.display = 'none';
       const runMoves = () => {
@@ -8379,6 +8399,12 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       const many = _order.length >= 3;
       overlay.style.display = 'none';
       const done = () => { ctx.renderAll && ctx.renderAll(); finishReturnPhase(); };
+      // CPU: 移動演出は受け取り側が出す（3枚以上は一覧を受け取り側に出し、OK を押したら置く）
+      if (_cpu) {
+        if (many) _moveBatchIntro(ctx, _order, 'オープンしたカード', toLabel, () => { placeList.forEach((c) => placeFn(c, pos, true)); done(); });
+        else { placeList.forEach((c) => placeFn(c, pos, false)); done(); }
+        return;
+      }
       if (many) {
         _moveBatchIntro(ctx, _order, 'オープンしたカード', toLabel, () => {
           placeList.forEach((c) => placeFn(c, pos, true));
@@ -8414,6 +8440,11 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         _finishOrder();
         return;
       }
+      // CPU: 戻す順番は今の並びのまま（少し考えてから）
+      if (_cpu) {
+        _cpuThink(() => { left.forEach(e => { _order.push(e.card); removeEntry(e); }); _finishOrder(); });
+        return;
+      }
       let labelText = '戻す順番を選んでください（タップした順）';
       if (returnTo === 'deck_top') labelText = '戻す順番を選んでください（タップした順にデッキの上へ積みます）';
       else if (returnTo === 'deck_choice' || returnTo === 'deck_bottom') labelText = '戻す順番を選んでください（タップした順にデッキの下へ）';
@@ -8436,6 +8467,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   }
 
   function showTopBottomChoice(card, cb) {
+    // CPU: デッキの下へ（今までの CPU の処理と同じ）
+    if (_cpu) { cb('bottom'); return; }
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:65000;display:flex;align-items:center;justify-content:center;';
     const box = document.createElement('div');

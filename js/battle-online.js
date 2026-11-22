@@ -2449,7 +2449,11 @@ function onRemoteCommand(cmd) {
     case 'fx_moveBatch': {
       // 相手の効果で3枚以上のカードがまとめて動いた（effect-engine.js の _moveBatchIntro）→ 一覧の演出を1回出す
       // こちらで「OK」を押したら相手に知らせる（相手は両者が押すまで待つ）
-      const _ack = () => { if (cmd.batchId) sendCommand({ type: 'fx_moveBatchAck', batchId: cmd.batchId }); };
+      const _ack = () => {
+        if (cmd.batchId) sendCommand({ type: 'fx_moveBatchAck', batchId: cmd.batchId });
+        // AI対戦: CPU の処理（_cpuLoopback で届いた一覧）は、こちらが「OK」を押すのを待っている
+        if (cmd.batchId && _cpuBatchAckWaiters[cmd.batchId]) { const w = _cpuBatchAckWaiters[cmd.batchId]; delete _cpuBatchAckWaiters[cmd.batchId]; w(); }
+      };
       if (typeof window._showMoveBatch === 'function') {
         enqueueFx((done) => window._showMoveBatch(cmd.cards || [], cmd.fromLabel || '', cmd.toLabel || '', () => { _ack(); done(); }, !!cmd.faceDown));
       } else _ack();
@@ -3281,8 +3285,20 @@ export function cleanupOnline() {
 // ===== window公開（effect-engine等から参照用） =====
 
 window._isOnlineMode = () => _onlineMode;
-// AI対戦: CPU のデッキオープンも、オンラインの相手のデッキオープンと同じ画面で見せる（effect-engine.js showDeckOpenUI）
+// AI対戦: CPU のオープン表示（セキュリティ・手札のオープン。effect-engine.js _cpuOpenView）
 window._cpuDeckOpenView = { start: (cmd) => showRemoteDeckOpenOverlay(cmd), act: (cmd) => handleRemoteDeckOpenAct(cmd), end: () => hideRemoteDeckOpenOverlay() };
+// AI対戦: CPU の効果を、オンラインの相手と同じ処理（プレイヤーの処理を CPU が選んで進める）で動かし、その処理が相手に送る
+// 表示の知らせを、オンラインで相手から受け取ったときと同じ受け取り処理（onRemoteCommand）に渡す。
+// 盤面を書き換える知らせは CPU の処理がすでに盤面を変えているので渡さない（表示だけの知らせに限る）
+const _CPU_LOOPBACK_TYPES = new Set(['fx_remoteDeckOpenStart', 'fx_remoteDeckOpenAct', 'fx_remoteDeckOpenEnd', 'fx_moveBatch']);
+const _cpuBatchAckWaiters = {};
+window._cpuLoopback = (cmd) => {
+  if (!cmd || !_CPU_LOOPBACK_TYPES.has(cmd.type) || _onlineMode) return false;
+  try { onRemoteCommand(Object.assign({ from: 'cpu', seq: 0, time: Date.now() }, cmd)); } catch (e) { console.error('[cpuLoopback]', cmd.type, e); }
+  return true;
+};
+// CPU の「まとめて移動」の一覧: こちらが「OK」を押したら cb（オンラインで相手の OK を待つのと同じ）
+window._cpuWaitBatchAck = (batchId, cb) => { _cpuBatchAckWaiters[batchId] = cb; };
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();

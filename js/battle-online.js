@@ -335,6 +335,8 @@ export function sendCommand(cmd) {
 
 export function sendStateSync() {
   if (!_onlineMode) return;
+  // 読み込み直しても対戦に戻れるよう、盤面をこの端末にも保存する（online-resume.js。少し待ってまとめて保存）
+  try { if (window._onlineResume) window._onlineResume.saveSnapshotSoon(); } catch (_) {}
   const safeNum = (v) => (v === undefined || v === null || isNaN(v)) ? 0 : v;
   const serializeCard = (c) => {
     if (!c) return null;
@@ -398,10 +400,13 @@ export function sendMemoryUpdate() {
 
 // ===== Firebaseリスナー =====
 
+// 再接続（resumeOnline）で読み取った相手のコマンドの最後の番号。そこまでは処理済みとして読み飛ばす
+let _resumeLastSeq = null;
 export function startOnlineListener() {
   if (_onlineCmdListener) _onlineCmdListener();
   const startTime = Date.now();
-  _lastSeqBySender = {};
+  _lastSeqBySender = Object.assign({}, _resumeLastSeq || {});
+  _resumeLastSeq = null;
   _onlineCmdListener = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     const bySender = snap.val();
     if (!bySender) return;
@@ -440,6 +445,44 @@ export async function initOnline(roomId, myKey) {
   _fxQueue = [];
   _fxRunning = false;
   await set(ref(rtdb, `rooms/${_onlineRoomId}/commands`), null);
+}
+
+// 読み込み直した後に対戦へ戻る（online-resume.js → battle.js resumeOnlineBattle）。initOnline と同じく状態を初期化するが、
+// ルームのコマンドは消さない。自分の送信番号は Firebase に残っている自分の最後の番号の続きから、相手のコマンドは今ある分まで
+// 処理済みとして扱う（盤面は相手に送り直してもらう: resync_request）
+export async function resumeOnline(roomId, myKey) {
+  _onlineMode = true;
+  _onlineRoomId = roomId;
+  _onlineMyKey = myKey;
+  _lastSeqBySender = {};
+  _pendingBlockCallback = null;
+  _pendingBlockResponse = null;
+  _pendingSecEffectCallback = null;
+  _pendingSecEffectResponse = null;
+  _reactionDelegateWaiters = [];
+  _pendingReactionDelegateResponse = null;
+  _pendingLeaveBattleDelegateCallback = null;
+  _pendingHandDiscardCallback = null;
+  _pendingHandDiscardResponse = null;
+  _pendingOppDeckPeekCallback = null;
+  _recentlyDestroyed = [];
+  _fxQueue = [];
+  _fxRunning = false;
+  const all = await new Promise((resolve) => onValue(ref(rtdb, `rooms/${roomId}/commands`), (s) => resolve(s.val()), { onlyOnce: true }));
+  const maxSeqOf = (v) => {
+    if (!v || typeof v !== 'object') return 0;
+    return Object.keys(v).map(Number).filter(n => Number.isFinite(n)).reduce((a, b) => Math.max(a, b), 0);
+  };
+  let myMax = 0;
+  const others = {};
+  if (all && typeof all === 'object') {
+    Object.keys(all).forEach((sender) => {
+      const mx = maxSeqOf(all[sender]);
+      if (sender === myKey) myMax = mx; else others[sender] = mx;
+    });
+  }
+  _onlineCmdSeq = myMax;
+  _resumeLastSeq = others;
 }
 
 // ===== コマンド受信 =====
@@ -1603,7 +1646,27 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    // 相手が読み込み直してから対戦に戻ってきた: こちらの盤面を送り直し、ターン・フェイズ・メモリーも知らせる
+    case 'resync_request': {
+      addLog('🔌 相手が対戦に戻りました');
+      try { sendStateSync(); } catch (_) {}
+      sendCommand({ type: 'resync_info', turn: bs.turn, isPlayerTurn: !!bs.isPlayerTurn, phase: bs.phase, memory: bs.memory });
+      break;
+    }
+    // （戻った側）相手から今のターン・フェイズ・メモリーを受け取って合わせる。相手の視点なので反転する
+    case 'resync_info': {
+      if (typeof cmd.turn === 'number') bs.turn = cmd.turn;
+      bs.isPlayerTurn = !cmd.isPlayerTurn;
+      if (!bs.isPlayerTurn && cmd.phase) bs._oppPhase = cmd.phase;
+      if (typeof cmd.memory === 'number') bs.memory = -cmd.memory;
+      updateMemGauge();
+      updatePhaseBadge();
+      renderAll();
+      addLog('🔌 対戦に戻りました（' + (bs.isPlayerTurn ? '自分' : '相手') + 'のターン）');
+      break;
+    }
     case 'player_exit': {
+      try { if (window._onlineResume) window._onlineResume.onBattleEnded(); } catch (_) {}
       const exitOv = document.createElement('div');
       exitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:60000;display:flex;align-items:center;justify-content:center;';
       const exitBox = document.createElement('div');
@@ -3192,6 +3255,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 // ===== クリーンアップ =====
 
 export function cleanupOnline() {
+  // 対戦を終える（勝敗・退出）: 再接続の見張りと端末の保存をやめる
+  try { if (window._onlineResume) window._onlineResume.onBattleEnded(); } catch (_) {}
   bs._battleAborted = true;
   // オーバーレイ全消し
   ['your-turn-overlay', 'phase-announce-overlay', 'skip-announce-overlay', 'security-check-overlay', 'battle-result-overlay', 'draw-overlay', 'effect-confirm-overlay', 'b-card-detail', 'card-action-menu', 'evolve-overlay', 'hatch-overlay', 'option-overlay', 'destroy-overlay', 'trash-modal'].forEach(id => {

@@ -132,6 +132,7 @@
 <script type="module" src="js/sample-deck.js"></script>
 <script type="module" src="js/admin-scenario.js"></script>
 <script type="module" src="js/ai-battle.js"></script>
+<script type="module" src="js/online-resume.js"></script>
 
 <!-- 各画面のHTMLを動的に読み込み -->
 <script type="module">
@@ -158,6 +159,9 @@ await Promise.all([
 ]);
 
 console.log('All pages loaded');
+// 画面の読み込みが終わった合図（online-resume.js が「対戦に戻りますか？」を出す）
+window._appPagesLoaded = true;
+window.dispatchEvent(new Event('app-pages-loaded'));
 </script>
 
 </body>

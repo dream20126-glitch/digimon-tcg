@@ -20,7 +20,7 @@ import { registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
-import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
+import { initOnline, resumeOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
 
 // 共通コード
 import { makeEffectContext, checkTurnStartEffects, buildOnlineEffectHooks, setupCommonHooks } from './battle-common.js';
@@ -747,6 +747,54 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
   if (oppLabel) oppLabel.innerText = '🎮 ' + (oppName || '相手プレイヤー');
   // リスナー開始
   startOnlineListener();
+  // 読み込み直しても対戦に戻れるよう、ルームと自分の情報を端末に覚える（online-resume.js）
+  try {
+    if (window._onlineResume) window._onlineResume.onBattleStarted({
+      roomId, myKey, playerFirst, oppName: oppName || '',
+      myName: window.currentPlayerName || '', password: window.currentSessionPassword || '',
+      myList: playerDeckData && playerDeckData.list, oppList: oppDeckData && oppDeckData.list,
+      // 読み込み直したとき、Firebase のルームに戻す自分の参加情報（onDisconnect で消えるため）
+      myNode: { name: window.currentPlayerName || '', active: true, ready: true, enterBattle: true, dice: 0,
+        deckName: '', deckList: (playerDeckData && playerDeckData.list) || '' },
+    });
+  } catch (e) { console.warn('[online-resume] 開始の記録に失敗', e); }
+};
+
+// ===== 読み込み直した後、オンライン対戦に戻る（online-resume.js から） =====
+// 端末に保存しておいた盤面（snap）を戻し、ルームのコマンドの続きから再開する。相手には盤面を送り直してもらう
+window.resumeOnlineBattle = async function(info, snap, applySnapshot) {
+  const { roomId, myKey, playerFirst, oppName, myList, oppList } = info;
+  await resumeOnline(roomId, myKey);
+  setFirstPlayer(playerFirst);
+  window._isFirstPlayer = playerFirst;
+  setOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
+  setCombatOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
+  setOnlineInfo(true, myKey);
+  // カードDB（両方のデッキのカードと、レシピで登場させるトークン）
+  const deckCardNos = Array.from(new Set([...extractCardNos({ list: myList }), ...extractCardNos({ list: oppList })]));
+  await loadCardsByNo(deckCardNos);
+  const deckCards = deckCardNos.map(no => allCards.find(c => c["カードNo"] === no)).filter(Boolean);
+  const tokenCardNos = collectTokenCardNos(deckCards);
+  if (tokenCardNos.length > 0) await loadCardsByNo(tokenCardNos);
+  // 盤面を戻す
+  resetBattleState(playerFirst);
+  // 保存では省いた効果の文・レシピ等は、カードNoからカードデータで作り直して補う
+  const makeCard = (cardNo, name) => { try { return parseDeck({ list: (name || '?') + '(' + cardNo + ')x1' })[0] || null; } catch (_) { return null; } };
+  if (!applySnapshot(bs, snap, makeCard)) throw new Error('保存した盤面が読めません');
+  const battleScreenEl = document.getElementById('battle-screen');
+  if (battleScreenEl) battleScreenEl.classList.toggle('side-p2', !playerFirst);
+  const myNameLabel = document.getElementById('my-name-label');
+  if (myNameLabel) myNameLabel.innerText = window.currentPlayerName || 'あなた';
+  const oppLabel = document.getElementById('opponent-name-label');
+  if (oppLabel) oppLabel.innerText = '🎮 ' + (oppName || '相手プレイヤー');
+  showScreen('battle-screen');
+  updateMemGauge();
+  renderAll();
+  addLog('🔌 対戦に戻りました。相手の盤面を受け取っています…');
+  // コマンドの受信を再開 → 相手に盤面・ターンを送り直してもらい、こちらの盤面も送る
+  startOnlineListener();
+  sendCommand({ type: 'resync_request' });
+  sendStateSync();
 };
 
 // ===== 初期化 =====

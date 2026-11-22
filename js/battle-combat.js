@@ -7519,6 +7519,9 @@ function showSAttackPlusAnnounce(n, callback) {
 // ----- 勝敗演出 -----
 
 export function showGameEndOverlay(text, type, callback) {
+  // 勝敗が決まったら、オンライン対戦の再接続の見張り（相手の接続待ちの表示）と端末の保存をやめる
+  // （相手が先に結果を閉じてルームを消すと、こちらの結果画面の上に「相手がルームを退出しました」が出ないように）
+  try { if (window._onlineResume) window._onlineResume.onBattleEnded(); } catch (_) {}
   const isVictory = type === 'victory';
   const color = isVictory ? '#00ff88' : '#ff4444';
   const bgColor = isVictory ? 'rgba(0,40,20,0.95)' : 'rgba(40,0,0,0.95)';

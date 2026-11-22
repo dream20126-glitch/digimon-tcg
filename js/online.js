@@ -157,6 +157,8 @@ window.joinRoom = function() {
   diceRolling = false;
   onValue(ref(rtdb, 'rooms/' + roomId), (snapshot) => {
     const data = snapshot.val();
+    // 対戦中のルーム（片方が読み込み直して接続を待っている間も）には、新しく入れない。退出済み（closed）のルームも
+    if (data && (data.inBattle || data.closed)) { alert(data.closed ? 'このルームは終了しています' : 'このルームは対戦中です'); return; }
     let assignedKey = null;
     if (!data || !data.player1) assignedKey = 'player1';
     else if (!data.player2) assignedKey = 'player2';

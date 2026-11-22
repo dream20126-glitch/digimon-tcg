@@ -3281,6 +3281,8 @@ export function cleanupOnline() {
 // ===== window公開（effect-engine等から参照用） =====
 
 window._isOnlineMode = () => _onlineMode;
+// AI対戦: CPU のデッキオープンも、オンラインの相手のデッキオープンと同じ画面で見せる（effect-engine.js showDeckOpenUI）
+window._cpuDeckOpenView = { start: (cmd) => showRemoteDeckOpenOverlay(cmd), act: (cmd) => handleRemoteDeckOpenAct(cmd), end: () => hideRemoteDeckOpenOverlay() };
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();

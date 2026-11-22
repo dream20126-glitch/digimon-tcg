@@ -7769,7 +7769,33 @@ function _deckOpenAuto(opened, step, ctx, callback) {
 function showDeckOpenUI(opened, step, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   // CPU は UI を出さずに自動で選ぶ
-  if (ctx.side === 'ai') { _deckOpenAuto(opened, step, ctx, callback); return; }
+  if (ctx.side === 'ai') {
+    // AI対戦の CPU のデッキオープン: オープンしたカードを画面に見せてから振り分け、どこへ行ったかを1枚ずつ見せる
+    // （以前は何も表示されず、ログにしか残らなかった）。オンラインの相手の分は相手の端末から届く表示を使う
+    const _view = (!(window._isOnlineMode && window._isOnlineMode()) && window._cpuDeckOpenView && typeof document !== 'undefined' && document.body) ? window._cpuDeckOpenView : null;
+    if (!_view || step.private) { _deckOpenAuto(opened, step, ctx, callback); return; }
+    const _owner = ctx.bs[step._deckOwnerSide || 'ai'] || ctx.bs.ai;
+    try { _view.start({ sourceCardName: ctx.card ? ctx.card.name : '', cards: opened.map(c => ({ cardNo: c.cardNo, name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '' })), receiverZone: _owner === ctx.bs.player }); } catch (e) { console.error('[cpu deckOpen view]', e); }
+    setTimeout(() => {
+      _deckOpenAuto(opened, step, ctx, () => {
+        // 行き先: 振り分け後にそのカードがある場所
+        const _inField = (c) => (_owner.battleArea || []).some(b => b && (b === c || (Array.isArray(b.stack) && b.stack.includes(c)))) || (_owner.tamerArea || []).includes(c);
+        const acts = opened.map(c => ({ c, to: (_owner.hand || []).includes(c) ? 'hand'
+          : _inField(c) ? ((_owner.battleArea || []).includes(c) || (_owner.tamerArea || []).includes(c) ? 'play' : 'evolve')
+          : (_owner.trash || []).includes(c) ? 'trash'
+          : (_owner.deck || [])[0] === c ? 'deck_top' : 'deck_bottom' }));
+        let i = 0;
+        const next = () => {
+          if (i >= acts.length) { setTimeout(() => { try { _view.end(); } catch (_) {} callback(); }, 900); return; }
+          const a = acts[i++];
+          try { _view.act({ cardNo: a.c.cardNo, name: a.c.name, to: a.to, receiverZone: _owner === ctx.bs.player }); } catch (_) {}
+          setTimeout(next, 700);
+        };
+        next();
+      });
+    }, 1600);
+    return;
+  }
   const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
   // 行き先を選ぶグループ（group_op:'or'）を選んだ1つに置き換えるので、元のレシピを書き換えないよう写しを使う
   const selections = Array.isArray(step.selections) ? step.selections.slice() : [];

@@ -79,6 +79,15 @@ window.toggleFilter = function(btn, type, val) {
   filterCards();
 };
 
+// 記述検索の対象（総合ルール 4-23-1「カード全体の記述されている情報」・公式Q&A Q7603）:
+// 名称・特徴・効果・進化元効果・セキュリティ効果・進化条件・リンク条件・使用条件。ジョグレス／デジクロス／アセンブリ等の条件は効果の文に含まれる。
+// 以前は「効果」欄だけを見ていて、進化元効果・進化条件（「ジェムモン」記述Lv.5 等）・名称・特徴にだけ書かれたカードが出なかった
+const DESCRIPTION_FIELDS = ['名前', '特徴', '効果', '効果テキスト', '進化元効果', '進化元テキスト', 'セキュリティ効果', 'セキュリティテキスト', '進化条件', 'リンク条件', '使用条件（オプション）'];
+function descriptionText(c) {
+  return DESCRIPTION_FIELDS.map(k => c[k]).filter(v => v != null && String(v).trim() && String(v).trim() !== 'なし')
+    .map(v => String(v)).join('\n').toLowerCase();
+}
+
 window.filterCards = function() {
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
@@ -99,7 +108,7 @@ window.filterCards = function() {
     if (!isBehaviorOk(c)) return false;
     const targetText = (searchMode === 'name')
       ? (String(c["名前"]) + String(c["カードNo"])).toLowerCase()
-      : String(c["効果"]).toLowerCase();
+      : descriptionText(c);
     const matchText = targetText.includes(input);
     const matchFeature = String(c["特徴"]).toLowerCase().includes(feature);
     const matchColor = selectedColors.length === 0 || selectedColors.some(col => String(c["色"]).includes(col));

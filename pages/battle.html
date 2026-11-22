@@ -370,19 +370,7 @@
   </div>
 </div>
 
-<!-- ===== モバイル用 画面内ログビューア ===== -->
-<!-- 常時表示（小さい）。デバッグ完了時は対応コミットを revert で消す。
-     位置はブラウザナビバーに隠れないよう bottom:90px、左寄せに変更 -->
-<div id="mobile-log-toggle" style="position:fixed; bottom:90px; left:6px; z-index:90001; background:#222; color:#0f0; border:1px solid #0f0; border-radius:50%; width:36px; height:36px; font-size:16px; cursor:pointer; pointer-events:auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(0,255,0,0.5); opacity:0.85;" onclick="document.getElementById('mobile-log-panel').style.display = (document.getElementById('mobile-log-panel').style.display==='none'?'block':'none')">📋</div>
-<div id="mobile-log-panel" style="display:none; position:fixed; bottom:130px; left:6px; right:6px; max-height:40vh; z-index:90000; background:rgba(0,0,0,0.92); color:#0f0; border:1px solid #0f0; border-radius:6px; padding:6px; font-size:10px; font-family:monospace; overflow-y:auto; pointer-events:auto;">
-  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-    <span style="color:#0f0;">🔍 ログ</span>
-    <button onclick="document.getElementById('mobile-log-list').innerHTML=''" style="background:#330; color:#0f0; border:1px solid #0f0; padding:1px 6px; font-size:10px; cursor:pointer;">クリア</button>
-  </div>
-  <div id="mobile-log-list" style="white-space:pre-wrap; word-break:break-all; line-height:1.4;"></div>
-</div>
-<!-- モバイルログビューアの console フックは index.html 側で実装（innerHTML 経由で
-     挿入される battle.html 内 <script> は実行されないため） -->
+<!-- モバイル用の画面内ログビューア（📋）は本番から外した（効果テストは test-effects-online.html の 🐛 を使う） -->
 
 
 <!-- ===== チュートリアル 指差しマーカー + 吹き出し ===== -->

@@ -3218,6 +3218,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           (picked) => _doPooled(picked), _cands, { labelOf: (c) => { const t = _ownerOf(c); return t ? '「' + t.name + '」の下' : ''; } });
         break;
       }
+      // 「相手のデジモン全ての進化元を〜破棄する」（target opponent:all）: 破棄できるデジモン全員から、選ばずに順に破棄する
+      // （ユキナモン BT27-033「相手のデジモン全ての進化元を上から2枚破棄」で1体を選ぶ画面が出て、1体分しか破棄されなかった）
+      if (_edRawCode === 'target_all_opponent' && !_edSelfOnly) {
+        const _allT = evoTargets.map(i => edArea[i]).filter(Boolean);
+        let _allK = 0;
+        const _allNext = () => {
+          if (_allK >= _allT.length) { callback(); return; }
+          discardFromTarget(_allT[_allK++], (didDiscard) => { afterDiscard(didDiscard, _allNext); });
+        };
+        _allNext();
+        break;
+      }
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
         discardFromTarget(edArea[ctx._forceTargetIdx ?? evoTargets[0]], (didDiscard) => {
@@ -8701,6 +8713,7 @@ function _refreshGlobalEffects(bs, side) {
       }
       // 行動制限のフラグ（表示・判定に使う）をバフと合わせる
       if (g.type === 'cant_evolve') c.cantEvolve = c.buffs.some(b => b && b.type === 'cant_evolve');
+      if (g.type === 'cant_rest') c.cantRest = c.buffs.some(b => b && b.type === 'cant_rest');
       if (g.type === 'cant_attack' || g.type === 'cant_attack_block') c.cantAttack = c.buffs.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block'));
       if (g.type === 'cant_block' || g.type === 'cant_attack_block') c.cantBlock = c.buffs.some(b => b && (b.type === 'cant_block' || b.type === 'cant_attack_block'));
     });
@@ -17559,7 +17572,10 @@ function runWithAltActions(step, ctx, store, callback) {
         // 効果2以降に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す（効果1とは別の文章。
         // エディタの効果2以降の「効果発動ポップアップの表示テキスト」）。「〜なら」を満たさないときは出さない
         if (aRun && typeof aRun.display_text === 'string' && aRun.display_text.trim() && !aRun.no_announce
-            && !(aRun.condition && !checkConditions(parseRecipeCondition(aRun.condition), ctx.card, ctx.bs, ctx.side))) {
+            // 「〜なら」は condition だけでなく when・追加条件まで含めて判定する（「進化元を持つ相手のデジモンがいないなら」＝
+            // cond_not_exists@opp ＋ when cond_has_evo:1。condition だけだと「相手のデジモンがいないなら」になり、
+            // 満たしているのに「さらに」のポップアップが出なかった。ヴァルナー・ドラグノフ BT27-088）
+            && _stepCondsPassNow(aRun, ctx)) {
           const _evoSrcA = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
           showEffectAnnounce(ctx.card, aRun.display_text.trim(), ctx.side, () => executeRecipeStep(aRun, ctx, store, () => nextAlt()), _evoSrcA);
           return;
@@ -25864,6 +25880,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 「〜全てはレストできない」（opponent:all / own:all 等。ユキナモン BT27-033「進化元を持たない相手のデジモン全ては
       // 進化できず、レストできない」）: 対象の条件に合うもの全てに付ける（以前は1体だけ選んでいた）
       if (/:all$/.test(_crTgtStr)) {
+        // 対象の条件（進化元を持たない等）があり期限つきなら、継続する全体処理にする（総合ルール 11-2-2）。あとから条件を
+        // 満たしたデジモン（この後に進化元を破棄された等）にも付き、満たさなくなったら外れる（ユキナモン BT27-033。以前は
+        // 発揮した時点のデジモンにだけ付いていた。進化できない cant_evolve と同じ扱い）
+        const _crStateFilter = _crFilter ? Object.assign({}, _crFilter, /_card:all$/.test(_crTgtStr) ? {} : { type_in: _crFilter.type_in || ['デジモン'] }) : null;
+        if (_crStateFilter && _registerStateAllEffect(ctx, _crIsOpponent, 'cant_rest', _crDur, _crStateFilter, null, _crCands,
+          (c) => { c.cantRest = true; addBuffDirect(c, 'cant_rest', 0, _crDur, ctx); })) {
+          _crCands.forEach(c => ctx.addLog('🔒 「' + c.name + '」はレストできない'));
+          ctx.addLog('🔒 ' + (_crIsOpponent ? '相手' : '自分') + 'の条件を満たすカード全て（あとから条件を満たしたものにも）');
+          ctx.renderAll();
+          callback();
+          break;
+        }
         _crCands.forEach(_crApply);
         ctx.renderAll();
         callback();

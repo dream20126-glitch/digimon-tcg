@@ -220,14 +220,12 @@ window.showPreview = function(id) {
   // 効果（メイン効果／進化元効果。デュアルカードの下段はオプション効果、リンクカードはリンク効果）とセキュリティ効果
   const sections = previewEffectSections(card);
   document.getElementById('effect-preview-area').innerHTML = sections.length
-    ? sections.map(s => `<div class="effect-item"><span class="effect-label">${escHtml(s.label)}</span><div class="effect-text">${escHtml(s.text)}</div></div>`).join('')
+    ? sections.map(s => `<div class="effect-item"><span class="effect-label">${escHtml(s.label)}</span><div class="effect-text">${effectTextHtml(s.text)}</div></div>`).join('')
     : '<div class="effect-item"><div class="effect-text" style="color:#666;">効果なし</div></div>';
-  // キーワード効果の説明（キーワード辞書 data/keyword-effects.json）。カードの文に書かれているキーワードだけ
-  const kws = keywordsInText(sections.map(s => s.text).join('\n'));
-  document.getElementById('keyword-preview-area').innerHTML = kws.map(k =>
-    `<div class="keyword-item"><span class="keyword-name">【${escHtml(k.keyword)}】</span><div class="keyword-desc">${escHtml(k.description)}</div></div>`
-  ).join('');
-  document.getElementById('keyword-preview-wrap').style.display = kws.length ? 'block' : 'none';
+  // キーワード効果の説明は、効果の文の中のキーワード（ボタン）を押したときに小さなボックスで出す（showKeywordPopover）
+  const _kwWrap = document.getElementById('keyword-preview-wrap');
+  if (_kwWrap) _kwWrap.style.display = 'none';
+  hideKeywordPopover();
   previewCardId = id;
   renderQtyButtons(id);
   updateQtyMsg(id);
@@ -260,6 +258,72 @@ function keywordsInText(text) {
     return names.some(n => new RegExp('[【≪《][0-9０-９]*' + esc(n)).test(t));
   });
 }
+
+// 効果の文を HTML にする。キーワード辞書にあるキーワード（【〇〇】≪〇〇≫《〇〇》。数値つきも）はボタンにし、押すと説明を出す
+function _keywordEntryFor(inner) {
+  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects : [];
+  const t = String(inner || '').replace(/^[0-9０-９]+/, '');
+  let best = null;
+  dict.forEach(k => {
+    (KEYWORD_ALIASES[k.keyword] || [k.keyword]).forEach(n => {
+      // 一番長く一致する見出し（「マテリアルセーブ」を「セーブ」と取り違えない）
+      if (t.startsWith(n) && (!best || n.length > best.len)) best = { k, len: n.length };
+    });
+  });
+  return best ? best.k : null;
+}
+function effectTextHtml(text) {
+  const s = String(text || '');
+  const re = /([【≪《])([^】≫》\n]+)([】≫》])/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(s)) !== null) {
+    out += escHtml(s.slice(last, m.index));
+    const k = _keywordEntryFor(m[2]);
+    out += k
+      ? `<button type="button" class="kw-chip" data-kw="${escHtml(k.keyword)}" onclick="showKeywordPopover(this, event)" aria-haspopup="dialog">${escHtml(m[0])}</button>`
+      : escHtml(m[0]);
+    last = m.index + m[0].length;
+  }
+  return out + escHtml(s.slice(last));
+}
+// キーワードの説明の小さなボックス（押したボタンの近くに出す。もう一度押す・外を押す・スクロールで閉じる）
+function hideKeywordPopover() {
+  const p = document.getElementById('kw-popover');
+  if (p) p.remove();
+}
+window.showKeywordPopover = function(btn, ev) {
+  if (ev) ev.stopPropagation();
+  const name = btn && btn.getAttribute('data-kw');
+  if (!btn.dataset.kwIdx) btn.dataset.kwIdx = String(Math.random()).slice(2, 10);
+  const cur = document.getElementById('kw-popover');
+  if (cur && cur.dataset.anchor === btn.dataset.kwIdx) { hideKeywordPopover(); return; }
+  hideKeywordPopover();
+  const dict = Array.isArray(window.keywordEffects) ? window.keywordEffects : [];
+  const k = dict.find(x => x.keyword === name);
+  if (!k) return;
+  const p = document.createElement('div');
+  p.id = 'kw-popover';
+  p.setAttribute('role', 'dialog');
+  p.dataset.anchor = btn.dataset.kwIdx;
+  p.innerHTML = `<div class="kw-pop-name">【${escHtml(k.keyword)}】</div><div class="kw-pop-desc">${escHtml(k.description)}</div>`;
+  document.body.appendChild(p);
+  // 位置: ボタンの下（画面の下にはみ出すなら上）。左右は画面内に収める
+  const r = btn.getBoundingClientRect();
+  const w = Math.min(300, window.innerWidth - 24);
+  p.style.width = w + 'px';
+  const left = Math.min(Math.max(12, r.left), window.innerWidth - w - 12);
+  let top = r.bottom + 6;
+  const h = p.offsetHeight;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  p.style.left = left + 'px';
+  p.style.top = top + 'px';
+};
+document.addEventListener('click', (e) => {
+  const p = document.getElementById('kw-popover');
+  if (p && !p.contains(e.target)) hideKeywordPopover();
+});
+window.addEventListener('scroll', hideKeywordPopover, true);
+window.addEventListener('resize', hideKeywordPopover);
 
 let previewCardId = null; // 開いているカード詳細のカードNo
 // カード詳細の枚数ボタン（0〜4）。押した数をこのカードの枚数にする（0＝デッキから外す）。今の枚数のボタンを光らせる
@@ -297,6 +361,7 @@ window.setDeckCount = function(id, n) {
 };
 
 window.hidePreview = function() {
+  hideKeywordPopover();
   document.getElementById('card-preview-window').style.display = 'none';
 };
 

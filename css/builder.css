@@ -270,6 +270,43 @@
   font-size: 11px;
   line-height: 1.5;
 }
+/* 効果の文の中のキーワード（押すと説明の小さなボックスが開く） */
+.kw-chip {
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  display: inline;
+  padding: 0 2px;
+  margin: 0 1px;
+  border: none;
+  border-bottom: 1px dashed var(--main-cyan);
+  border-radius: 3px;
+  background: rgba(0, 251, 255, 0.12);
+  color: var(--main-cyan);
+  cursor: pointer;
+}
+.kw-chip:hover, .kw-chip:focus-visible { background: rgba(0, 251, 255, 0.25); outline: none; }
+#kw-popover {
+  position: fixed;
+  z-index: 100000;
+  background: #0a0f18;
+  border: 1px solid var(--main-cyan);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 0 16px rgba(0, 251, 255, 0.35);
+}
+.kw-pop-name {
+  color: var(--main-cyan);
+  font-weight: bold;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.kw-pop-desc {
+  color: #ddd;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
 /* カード詳細の枚数ボタン（0〜4）: 今の枚数を光らせる */
 .qty-btn.active {
   background: rgba(0, 251, 255, 0.2);

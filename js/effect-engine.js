@@ -4760,7 +4760,17 @@ function _cpuOrder(idxs, area, mode, opt) {
   const act = (i) => (at(i) && !at(i).suspended ? 1 : 0);
   const s = idxs.slice();
   if (mode === 'weak') return s.sort((a, b) => str(a) - str(b));
-  if (mode === 'buff') return s.sort((a, b) => (act(b) - act(a)) || (str(b) - str(a)));
+  if (mode === 'buff') {
+    // AI対戦: 先を見て選ぶ（このターンにアタックするデジモン・【急襲】で進化してアタックする予定のデジモン・
+    // DP+でセキュリティのデジモンに負けなくなるデジモン等。battle-combat.js _aiBuffScore）
+    if (typeof window !== 'undefined' && typeof window._aiBuffScore === 'function') {
+      try {
+        const sc = new Map(s.map(i => [i, window._aiBuffScore(at(i), opt || {})]));
+        return s.sort((a, b) => (sc.get(b) - sc.get(a)) || (str(b) - str(a)));
+      } catch (_) {}
+    }
+    return s.sort((a, b) => (act(b) - act(a)) || (str(b) - str(a)));
+  }
   if (mode === 'rest') {
     const blk = (i) => (act(i) && _cpuIsBlocker(at(i)) ? 1 : 0);
     return s.sort((a, b) => (blk(b) - blk(a)) || (act(b) - act(a)) || (str(b) - str(a)));
@@ -8871,7 +8881,7 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     if(validTargets.length === 0) { showEffectFailed(null, callback); return; }
     // _forceTargetIdx で対象が事前確定済みなら UI スキップして自動適用（same_target など）
     if(ctx.side === 'ai' || ctx._forceTargetIdx !== undefined) {
-      const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, player.battleArea, isPlus ? 'buff' : 'weak')[0];
+      const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, player.battleArea, isPlus ? 'buff' : 'weak', isPlus ? { value: val, duration: dur } : undefined)[0];
       const tgtCard = player.battleArea[fixedIdx];
       if (tgtCard) {
         ctx.bs._lastPickedCard = tgtCard;
@@ -22672,7 +22682,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
         if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
-          const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, tgtPlayer.battleArea, tgtPlayer === player ? 'buff' : 'harm')[0];
+          const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : _cpuOrder(validTargets, tgtPlayer.battleArea, tgtPlayer === player ? 'buff' : 'harm', tgtPlayer === player ? { keyword: step.keyword, duration: step.duration } : undefined)[0];
           _gePick(tgtPlayer.battleArea[fixedIdx]);
           ctx.renderAll && ctx.renderAll(); callback();
           return;

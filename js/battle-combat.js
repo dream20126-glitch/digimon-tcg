@@ -5704,6 +5704,51 @@ function _aiRaidEvolveFor(c, maxCost) {
   return best;
 }
 
+// ===== DP+・キーワード付与の対象選び（中・高。effect-engine.js _cpuOrder 'buff' から呼ぶ）=====
+// 先を見て、効果が一番役に立つデジモンを選ぶ。点数が高いほど優先
+//  CPU のターン・このターンだけの効果:
+//   ・【急襲】になるカードに進化してターン終了時にアタックする予定のデジモン（今は残しておく分も）＋15000
+//   ・このターンに勝ち筋のカード（ルビウスドラモン等）へ進化できるデジモン ＋8000
+//   ・このターンにアタックできるデジモン（アクティブ・登場したターンでない or ≪速攻≫）＋10000
+//   ・DP+で、セキュリティから出てくるデジモンのDPを超える（負けなくなる）＋6000
+//   ・「DP8000ごとに〜」を持ち、DP+で段階が上がる ＋4000
+//   ・アタックできない（レスト中・登場したターン）デジモンは −8000（このターンの効果が無駄になる）
+//  相手のターンまで続く効果／相手のターン中: 狙われやすい（レスト中）・ブロッカー・勝ち筋のデジモンを守る
+if (typeof window !== 'undefined') window._aiBuffScore = (c, opt) => {
+  if (!c || !_aiIsMid()) return 0;
+  const ownTurn = bs.isPlayerTurn === false;
+  const dur = String((opt && opt.duration) || 'dur_this_turn');
+  const thisTurn = /this_turn|until_(attack|battle)_end/.test(dur) || dur === '';
+  const val = parseInt(opt && opt.value, 10) || 0;
+  const dp = _dpOf(c);
+  let v = dp / 1000;
+  if (ownTurn && thisTurn) {
+    const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
+    const canSwing = !c.suspended && !c.cantAttack && (!c.summonedThisTurn || rush);
+    const raidPlan = !c.suspended && ((bs._aiRaidPlanTurn === bs.turn && bs._aiRaidPlanCard === c) || !!_aiRaidEvolveFor(c, Math.abs(Math.min(0, bs.memory)) + 10));
+    if (raidPlan) v += 15000;
+    if (!c.suspended && (bs.ai.hand || []).some(e => {
+      if (!e || !_aiIsFinisher(e)) return false;
+      try { if (_resolveEvolveMatch(e, c) === null && !_getAltEvolve(e, c, bs, 'ai')) return false; } catch (_) { return false; }
+      const cost = getEvolveCostFor(e, c);
+      return cost !== null && cost !== undefined && cost <= Math.abs(Math.min(0, bs.memory)) + _aiOverflowAllowance(e, c);
+    })) v += 8000;
+    if (canSwing) v += 10000;
+    else if (!raidPlan) v -= 8000;
+    if (val > 0) {
+      const est = _aiEstSecDp();
+      if (dp <= est && dp + val > est) v += 6000;
+      if (/DP\s*8000ごと/.test(String(c.effect || '')) && Math.floor((dp + val) / 8000) > Math.floor(dp / 8000)) v += 4000;
+    }
+  } else {
+    // 守り: 相手のターンにアタックされるのはレスト中のデジモン。ブロッカー・勝ち筋のデジモンも守る
+    if (c.suspended) v += 6000;
+    if (isBlocker(c)) v += 5000;
+    if (_aiIsFinisher(c)) v += 3000;
+  }
+  return v;
+};
+
 // 高（デジモンマスター）はアタックのたびに「考え中」を出してから決める
 export function aiAttackPhase(callback) {
   if (_aiIsHigh() && !bs._battleAborted && !(bs.memory > 0 && !bs._aiScriptInProgress && !_aiRaidMode)) { _aiThink(() => _aiAttackPhaseBody(callback)); return; }

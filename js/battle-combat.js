@@ -5655,6 +5655,11 @@ function _aiThink(cb) {
   }, 700);
 }
 
+// AI対戦: 画面の演出が終わるまで待ってから fn（battle-online.js window._cpuFxIdle）
+function _aiAfterFx(fn) {
+  if (typeof window !== 'undefined' && window._aiBattleActive && !_onlineMode && typeof window._cpuFxIdle === 'function') { window._cpuFxIdle(fn); return; }
+  fn();
+}
 // ===== 【急襲】（自分のターン終了時、このデジモンでアタックできる）=====
 // CPU の効果からのアタックはエンジン側で動かない（効果のアタックはプレイヤー専用）ため、CPU のターン終了時に
 // 【急襲】を持つデジモンのアタックをここで行う（battle-phase.js endAiTurn から呼ぶ）。選び方はふつうのアタックと同じ
@@ -5750,7 +5755,9 @@ if (typeof window !== 'undefined') window._aiBuffScore = (c, opt) => {
 };
 
 // 高（デジモンマスター）はアタックのたびに「考え中」を出してから決める
-export function aiAttackPhase(callback) {
+export function aiAttackPhase(callback, _fxWaited) {
+  // 前の演出（デッキオープン・カードの移動等）が終わってからアタックを決める（アタックのたびに）
+  if (!_fxWaited) { _aiAfterFx(() => aiAttackPhase(callback, true)); return; }
   if (_aiIsHigh() && !bs._battleAborted && !(bs.memory > 0 && !bs._aiScriptInProgress && !_aiRaidMode)) { _aiThink(() => _aiAttackPhaseBody(callback)); return; }
   _aiAttackPhaseBody(callback);
 }
@@ -6752,7 +6759,10 @@ function _aiDualOptionValuable(c) {
 }
 
 // 高（デジモンマスター）は1つ行動するたびに「考え中」を出してから決める
-function aiPlayAuto(callback) {
+function aiPlayAuto(callback, _fxWaited) {
+  // 前の演出（デッキオープン・手札に加えたカードの表示・カードの移動等）が終わってから次の行動を決める（行動のたびに）
+  // （演出の途中で進化の演出等が重なっていた。オンラインの相手の操作を見ているときと同じ間合いにする）
+  if (!_fxWaited) { _aiAfterFx(() => aiPlayAuto(callback, true)); return; }
   if (_aiIsHigh() && aiCanAct() && !bs._battleAborted) { _aiThink(() => _aiPlayAutoBody(callback)); return; }
   _aiPlayAutoBody(callback);
 }

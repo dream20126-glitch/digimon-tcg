@@ -6281,6 +6281,12 @@ function _cpuStepNeedsChoice(step, ctx) {
 }
 // CPU の効果の発動の表示（受け取り側の「⚡ 相手: 〇〇」）を出しているか。効果が終わったら閉じる
 let _cpuAnnounceOpen = false;
+// AI対戦の CPU: 画面の演出（デッキオープン・カードの移動・相手が手札に加えたカードの表示等）が終わるまで待ってから fn
+// （battle-online.js _cpuFxIdle。オンラインの相手の操作を見ているときと同じく、演出の途中で次の行動が重ならないように）
+function _cpuAfterFx(fn) {
+  if (typeof window !== 'undefined' && typeof window._cpuFxIdle === 'function') { try { window._cpuFxIdle(fn); return; } catch (_) {} }
+  fn();
+}
 function _cpuCloseAnnounce() {
   if (!_cpuAnnounceOpen) return;
   _cpuAnnounceOpen = false;
@@ -12303,12 +12309,15 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // AI対戦の CPU の効果: オンラインの相手の効果と同じ表示（相手から届いた発動の知らせの受け取り処理）にする。
   // CPU が読み終えたら「発動中」にして進む。表示は効果が終わったら閉じる（executeQueueEntry / 見張り _cpuAnnounceWatch）
   if (side === 'ai' && _cpuHeadless({ side: 'ai' })) {
-    window._cpuLoopback(_annCmd);
-    _cpuAnnounceOpen = true;
-    setTimeout(() => {
-      window._cpuLoopback({ type: 'fx_confirmClose', accepted: true });
-      callback && callback();
-    }, Math.min(4500, 1800 + displayText.length * 15));
+    // 前の演出が終わってから次の効果を出す（演出が重ならないように）
+    _cpuAfterFx(() => {
+      window._cpuLoopback(_annCmd);
+      _cpuAnnounceOpen = true;
+      setTimeout(() => {
+        window._cpuLoopback({ type: 'fx_confirmClose', accepted: true });
+        callback && callback();
+      }, Math.min(4500, 1800 + displayText.length * 15));
+    });
     return;
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
@@ -19442,11 +19451,14 @@ function executeRecipeStep(step, ctx, store, callback) {
     const _cb0 = callback;
     let _released = false;
     const _release = () => { if (!_released) { _released = true; ctx._cpuPauseHold = Math.max(0, (ctx._cpuPauseHold || 1) - 1); } };
-    window._cpuLoopback({ type: 'fx_targetSelectStart', label: '' });
-    setTimeout(() => {
-      window._cpuLoopback({ type: 'fx_targetSelectEnd' });
-      executeRecipeStep(step, ctx, store, (...a) => { _release(); _cb0 && _cb0(...a); });
-    }, 1000);
+    // 前の演出（デッキオープン・カードの移動・手札に加えたカードの表示等）が終わってから選び始める
+    _cpuAfterFx(() => {
+      window._cpuLoopback({ type: 'fx_targetSelectStart', label: '' });
+      setTimeout(() => {
+        window._cpuLoopback({ type: 'fx_targetSelectEnd' });
+        executeRecipeStep(step, ctx, store, (...a) => { _release(); _cb0 && _cb0(...a); });
+      }, 1000);
+    });
     return;
   }
   if (step && step.action) _curStepForLabel = step;

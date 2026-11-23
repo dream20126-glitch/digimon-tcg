@@ -3301,6 +3301,23 @@ window._cpuLoopback = (cmd) => {
   try { onRemoteCommand(Object.assign({ from: 'cpu', seq: 0, time: Date.now() }, cmd)); } catch (e) { console.error('[cpuLoopback]', cmd.type, e); }
   return true;
 };
+// AI対戦: 画面の演出が全て終わるまで待ってから cb（CPU の次の行動・次の効果が演出に重ならないように）。
+// 待つもの: 演出の列（カードの移動等）・デッキオープンの観戦表示・「相手が手札に加えたカード」の大きな表示・盤面の動き。
+// 演出が終わってから少し（400ms）空けて進む。念のため最大20秒
+window._cpuFxIdle = (cb) => {
+  const t0 = Date.now();
+  let idleSince = null;
+  const busy = () => _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0) || (Date.now() < (window._fxBoardBusyUntil || 0))
+    || !!_remoteDeckOpenState || !!window._cpuRevealOpen;
+  const tick = () => {
+    if (Date.now() - t0 > 20000) { cb && cb(); return; }
+    if (busy()) { idleSince = null; setTimeout(tick, 150); return; }
+    if (idleSince === null) idleSince = Date.now();
+    if (Date.now() - idleSince < 400) { setTimeout(tick, 100); return; }
+    cb && cb();
+  };
+  tick();
+};
 // CPU の「まとめて移動」の一覧: こちらが「OK」を押したら cb（オンラインで相手の OK を待つのと同じ）
 window._cpuWaitBatchAck = (batchId, cb) => { _cpuBatchAckWaiters[batchId] = cb; };
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
@@ -3626,7 +3643,7 @@ function handleRemoteDeckOpenAct(cmd) {
       const x = chip.querySelector('._rrc-x'); if (x) x.onclick = (e) => { e.stopPropagation(); if (chip.parentNode) chip.parentNode.removeChild(chip); };
       document.body.appendChild(chip);
     };
-    const close = (keepChip) => { if (closed) return; closed = true; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); if (keepChip !== false) showChip(); };
+    const close = (keepChip) => { if (closed) return; closed = true; window._cpuRevealOpen = false; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); if (keepChip !== false) showChip(); };
     // 「🔍 詳細を見る」: カード詳細（効果テキスト）を開く。相手の操作は止めない（こちらの画面だけの表示）
     const openDetail = () => {
       const raw = (window.allCards || []).find(c => c && c['カードNo'] === cmd.cardNo);
@@ -3647,8 +3664,10 @@ function handleRemoteDeckOpenAct(cmd) {
     const _im = big.querySelector('img'); if (_im) { _im.style.cursor = 'pointer'; _im.onclick = (e) => { e.stopPropagation(); openDetail(); }; }
     big.onclick = close;
     document.body.appendChild(big);
+    // AI対戦: この表示が閉じるまで CPU は次の行動をしない（window._cpuFxIdle）
+    if (cmd.from === 'cpu') window._cpuRevealOpen = true;
     // 何もしなければ少し長めに表示して閉じる（詳細はその前にボタンから開ける）
-    setTimeout(close, 6000);
+    setTimeout(close, cmd.from === 'cpu' ? 3000 : 6000);
     // 相手の効果の処理が全て終わったら（fx_effectClose）、大きな表示も左下の表示も消す（いつまでも残さない）
     window._remoteRevealCleanup = () => {
       close(false);

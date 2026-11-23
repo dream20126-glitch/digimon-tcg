@@ -1292,6 +1292,10 @@ function aiPhaseMain() {
 async function endAiTurn() {
   // CPU の【急襲】（自分のターン終了時、このデジモンでアタックできる）: メモリーが相手側に渡っていてもアタックする
   // （AI対戦。battle-combat.js _aiRunRaidAttacks）
+  // AI対戦: 画面の演出が終わってからターン終了の処理に進む
+  if (window._aiBattleActive && typeof window._cpuFxIdle === 'function') {
+    try { await new Promise((res) => window._cpuFxIdle(res)); } catch (_) {}
+  }
   if (window._aiBattleActive && typeof window._aiRunRaidAttacks === 'function') {
     try { await new Promise((res) => window._aiRunRaidAttacks(res)); } catch (_) {}
     if (bs._battleAborted) return;

@@ -13265,11 +13265,18 @@ const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', when_hand_discard: 'd
 // on_win_battle（=on_battle_win）は「バトルで相手のデジモンを消滅させたとき」なので、セキュリティデジモン
 // （負けても消滅しない。総合ルール14-2-3）とのバトルでは発動しない
 const TRIGGER_EXTRA_KEYS = { on_battle_win: ['on_win_battle_any'], on_battle_win_security: ['on_win_battle_any'] };
+// 相打ちで、アタックしたデジモンが「消滅しない」「離れない」等で残ったとき: 相手のデジモンを消滅させたので「消滅させたとき」
+// （on_win_battle）・≪貫通≫は発揮するが、バトルに勝ってはいないので「バトルに勝ったとき」（on_win_battle_any）は発揮しない。
+// battle-combat.js が相打ちの後処理の間だけ window._battleTieNoWin を立てる
+function _extraKeysOf(triggerCode) {
+  if (triggerCode === 'on_battle_win' && typeof window !== 'undefined' && window._battleTieNoWin) return [];
+  return TRIGGER_EXTRA_KEYS[triggerCode] || [];
+}
 function _triggerMatchCodes(triggerCode) {
   const out = [triggerCode];
   const ak = TRIGGER_KEY_ALIASES[triggerCode];
   if (ak) out.push(ak);
-  (TRIGGER_EXTRA_KEYS[triggerCode] || []).forEach((k) => out.push(k));
+  _extraKeysOf(triggerCode).forEach((k) => out.push(k));
   return out;
 }
 // トリガーごとに発動主体が異なるカード（例:「相手がレストしたとき」か「自分のテイマーの
@@ -13374,7 +13381,7 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
     const aliasSteps = recipeObj[aliasKey];
     if (Array.isArray(aliasSteps)) result = result ? result.concat(aliasSteps) : aliasSteps.slice();
   }
-  const _extraKeys = TRIGGER_EXTRA_KEYS[triggerCode] || [];
+  const _extraKeys = _extraKeysOf(triggerCode);
   _extraKeys.forEach((ek) => {
     const extraSteps = recipeObj[ek];
     if (Array.isArray(extraSteps)) result = result ? result.concat(extraSteps) : extraSteps.slice();

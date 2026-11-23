@@ -4612,7 +4612,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     _expireBuffs(bs, 'dur_until_battle_end');
     // 相手のデジモン（def）だけがバトルで消滅した後（勝ったとき・相打ちで自分が消滅を回避したとき共通）:
     // 「バトルで相手のデジモンを消滅させたとき」の効果・≪貫通≫（公式ルール 16-7-1。相打ちでも自分が残っていれば発揮する）・≪道連れ≫
-    const _afterAtkDestroyedDef = () => {
+    const _afterAtkDestroyedDef = (isTie) => {
             // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
             // 「バトル勝利」から同時誘発するターンプレイヤー(atk)側の効果なので、
             // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
@@ -4624,8 +4624,11 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
               // 正しく参照できるようにする（メタルティラノモン等）
               bs._lastBattleDefeatedCard = def;
+              // 相打ちで残ったときは「バトルに勝ったとき」を除く（「消滅させたとき」と≪貫通≫だけ）
+              if (isTie) window._battleTieNoWin = true;
               const winCtx = _hooks.makeEffectContext(atk, 'player');
               _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
+                window._battleTieNoWin = false;
                 bs._lastBattleWinner = null;
                 bs._lastBattleDefeatedCard = null;
                 afterDone();
@@ -4699,7 +4702,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           showBattleResult('撃破！', '#00ff88', '「' + def.name + '」を撃破（自分は消滅回避）', () => {
             showDestroyEffect(def, () => {
               addLog('💥 「' + def.name + '」を撃破！'); renderAll();
-              _afterAtkDestroyedDef();
+              _afterAtkDestroyedDef(true);
             });
           }, '回避！', '#00fbff');
         });
@@ -4874,15 +4877,18 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();
                 addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
                 showPenetrateAnnounce(() => {
-                  _setPendingBattleTriggers(null, (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }, { player: atk }); });
+                  _setPendingBattleTriggers((proceed) => { _aiTieFireDestroyedTrigger(atk, def, proceed); }, (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }, { player: atk }); });
                   doAiSecurityCheck(atk, atkIdx, () => { _consumePendingBattleTriggers(callback); });
                 });
               }, '回避！', '#00fbff');
               return;
             }
-            _fireDestroyChain(['player'], () => {
+            const _defChain = () => _fireDestroyChain(['player'], () => {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された（相手は消滅回避）', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, '回避！', '#00fbff');
             }, { player: def }, { player: atk });
+            // CPU のデジモンが残っていれば「消滅させたとき」を先に（ターンプレイヤー側から。「バトルに勝ったとき」は除く）
+            if (bs.ai.battleArea.indexOf(atk) >= 0) _aiTieFireDestroyedTrigger(atk, def, _defChain);
+            else _defChain();
           });
         });
       }, () => {
@@ -5673,6 +5679,19 @@ function _aiThink(cb) {
   }, 700);
 }
 
+// 相打ちで CPU のアタックしたデジモンが残ったとき: 「バトルで相手のデジモンを消滅させたとき」を発揮する
+// （「バトルに勝ったとき」は相打ちなので除く。window._battleTieNoWin）
+function _aiTieFireDestroyedTrigger(atk, def, done) {
+  bs._lastBattleWinner = atk;
+  bs._lastBattleDefeatedCard = def;
+  window._battleTieNoWin = true;
+  _hooks.triggerEffect('on_battle_win', atk, 'ai', _hooks.makeEffectContext(atk, 'ai'), () => {
+    window._battleTieNoWin = false;
+    bs._lastBattleWinner = null;
+    bs._lastBattleDefeatedCard = null;
+    done && done();
+  });
+}
 // AI対戦: 画面の演出が終わるまで待ってから fn（battle-online.js window._cpuFxIdle）
 function _aiAfterFx(fn) {
   if (typeof window !== 'undefined' && window._aiBattleActive && !_onlineMode && typeof window._cpuFxIdle === 'function') { window._cpuFxIdle(fn); return; }

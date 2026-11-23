@@ -275,6 +275,73 @@ window._aiWhyPush = (msg) => {
   if (_aiWhyList.length > 400) _aiWhyList.splice(0, _aiWhyList.length - 400);
   _renderWhy();
 };
+// ===== キャラクターの口調（「AIの考え」の表示だけを変える。判断の中身は同じ）=====
+// ベテランテイマー: 気さくで熱い先輩タイプ（〜するぜ！ / 〜だからな）。プレイヤーは「キミ」
+// デジモンマスター: 冷静で余裕のある策士タイプ（〜する。/ 〜だからだ。/ ほう… / フッ）。プレイヤーは「お前」
+const _VOICE_COMMON = [
+  // 動詞の丁寧語 → 普通の形（長いものから順に）
+  ['使えなくなります', '使えなくなる'], ['出し直せます', '出し直せる'], ['下げられます', '下げられる'], ['増やせます', '増やせる'],
+  ['させられるからです', 'させられるから'], ['得られるからです', '得られるから'],
+  ['置いておきます', '置いておく'], ['並べておきます', '並べておく'], ['増やしておきます', '増やしておく'], ['育てておきます', '育てておく'],
+  ['確認しています', '確認している'], ['考えています', '考えている'], ['注意しています', '注意している'], ['見ています', '見ている'],
+  ['判断しました', '判断した'], ['確認しました', '確認した'], ['決めました', '決めた'], ['読みました', '読んだ'], ['選びました', '選んだ'],
+  ['出てきました', '出てきた'], ['登場しました', '登場した'],
+  ['守れません', '守れない'], ['使いません', '使わない'], ['しません', 'しない'],
+  ['させます', 'させる'], ['使います', '使う'], ['育てます', '育てる'], ['狙います', '狙う'], ['残します', '残す'], ['急ぎます', '急ぐ'],
+  ['攻めます', '攻める'], ['進めます', '進める'], ['守ります', '守る'], ['出します', '出す'], ['変えます', '変える'], ['刺します', '刺す'],
+  ['削ります', '削る'], ['なります', 'なる'], ['できます', 'できる'], ['始まります', '始まる'], ['出せます', '出せる'], ['選ぶ', '選ぶ'],
+  ['します', 'する'],
+];
+const _VOICE = {
+  mid: {
+    name: '🎖 ベテランテイマー', you: 'キミ', me: 'オレ',
+    tail: [['からです。', 'からな。'], ['からです', 'からな'], ['ためです。', 'ためだ。'], ['ためです', 'ためだ'], ['です。', 'だ。'], ['です', 'だ']],
+    act: (t) => t.replace(/(する|させる|使う|育てる|狙う|残す|進める|出す|守る|移動させる)([（(]|$)/, '$1ぜ！$2').replace(/(しない|使わない)$/, '$1ぜ'),
+    flair: (act, mine) => {
+      if (!mine) return /登場した|出てきた/.test(act) ? 'おっ、' : '';
+      if (/アタックしない|これ以上アタック/.test(act)) return 'ここは我慢だ。';
+      if (/アタック/.test(act)) return 'いくぜ！';
+      if (/進化/.test(act)) return '進化だ！';
+      if (/ブロックしない/.test(act)) return '……くっ、';
+      if (/ブロック/.test(act)) return 'させるか！';
+      if (/ターンを終了/.test(act)) return 'よし、';
+      if (/方針|守りを固め|準備|目指して/.test(act)) return 'よーし、';
+      if (/使わない/.test(act)) return '今はやめとくぜ。';
+      return '';
+    },
+  },
+  high: {
+    name: '👑 デジモンマスター', you: 'お前', me: '私',
+    tail: [['からです。', 'からだ。'], ['からです', 'からだ'], ['ためです。', 'ためだ。'], ['ためです', 'ためだ'], ['です。', 'だ。'], ['です', 'だ']],
+    act: (t) => t,
+    flair: (act, mine) => {
+      if (!mine) return /登場した|出てきた/.test(act) ? 'ほう…' : '';
+      if (/アタックしない|これ以上アタック/.test(act)) return '……深追いはしない。';
+      if (/とどめ|セキュリティにアタック/.test(act)) return 'フッ、';
+      if (/アタック/.test(act)) return '仕掛ける。';
+      if (/進化/.test(act)) return '……時は来た。';
+      if (/ブロックしない/.test(act)) return '……くれてやる。';
+      if (/ブロック/.test(act)) return '通さん。';
+      if (/ターンを終了/.test(act)) return '……今はこれでいい。';
+      if (/読んだ/.test(act)) return '見えたぞ。';
+      if (/方針|守りを固め|準備|目指して/.test(act)) return '盤面は読めている。';
+      if (/使わない/.test(act)) return '……まだ早い。';
+      return '';
+    },
+  },
+};
+function _voiceOf() { const lv = window._aiLevel; return _VOICE[lv] || null; }
+function _applyVoice(text, v, isAct) {
+  if (!v || !text) return text;
+  let t = String(text);
+  t = t.replace(/あなた/g, v.you);
+  if (v.me) t = t.replace(/こちら(は|の|が|には|も)/g, v.me + '$1');
+  v.tail.forEach(([a, b]) => { t = t.split(a).join(b); });
+  _VOICE_COMMON.forEach(([a, b]) => { t = t.split(a).join(b); });
+  if (isAct && v.act) t = v.act(t);
+  return t;
+}
+
 function _renderWhy() {
   const panel = document.getElementById('ai-why-panel');
   const btn = document.getElementById('ai-why-btn');
@@ -285,13 +352,18 @@ function _renderWhy() {
   let lastKey = '';
   list.innerHTML = _aiWhyList.map((e) => {
     const key = e.turn + ':' + e.mine;
-    const head = key !== lastKey ? '<div style="margin:10px 0 4px;color:#c9b6ff;font-size:11px;font-weight:bold;border-bottom:1px solid #3a2a66;padding-bottom:2px;">ターン' + esc(e.turn) + (e.mine ? '（AIのターン）' : '（あなたのターン）') + '</div>' : '';
+    const _v0 = _voiceOf();
+    const head = key !== lastKey ? '<div style="margin:10px 0 4px;color:#c9b6ff;font-size:11px;font-weight:bold;border-bottom:1px solid #3a2a66;padding-bottom:2px;">ターン' + esc(e.turn) + (e.mine ? '（' + (_v0 ? _v0.name.split(' ')[1] : 'AI') + 'のターン）' : '（あなたのターン）') + '</div>' : '';
     lastKey = key;
     // 「行動 ← 理由」の形なら、行動を太字、理由をその下に文章で出す
     const k = e.msg.indexOf(' ← ');
-    const act = k >= 0 ? e.msg.slice(0, k) : e.msg;
-    const why = k >= 0 ? e.msg.slice(k + 3) : '';
-    const icon = e.mine ? '🤖' : '👀';
+    const v = _voiceOf();
+    const act0 = k >= 0 ? e.msg.slice(0, k) : e.msg;
+    const why0 = k >= 0 ? e.msg.slice(k + 3) : '';
+    const fl = v && v.flair ? v.flair(_applyVoice(act0, v, true), e.mine) : '';
+    const act = (fl ? fl + ' ' : '') + _applyVoice(act0, v, true);
+    const why = _applyVoice(why0, v, false);
+    const icon = e.mine ? (v ? v.name.split(' ')[0] : '🤖') : '👀';
     return head + '<div style="margin:6px 0;padding:6px 8px;border-left:3px solid ' + (e.mine ? '#6a2cff' : '#ff9f43') + ';background:rgba(255,255,255,0.03);border-radius:0 6px 6px 0;">'
       + '<div style="color:#fff;font-size:12.5px;font-weight:bold;line-height:1.5;">' + icon + ' ' + esc(act) + '</div>'
       + (why ? '<div style="color:#c8c8d8;font-size:12px;line-height:1.6;margin-top:2px;">' + esc(why) + '</div>' : '')
@@ -307,7 +379,7 @@ window.aiToggleWhy = function() {
   panel.style.cssText = 'position:fixed;right:8px;top:60px;bottom:80px;width:min(360px,calc(100vw - 16px));z-index:69000;background:rgba(12,8,24,0.96);'
     + 'border:1px solid #6a2cff;border-radius:12px;box-shadow:0 0 18px rgba(106,44,255,0.5);display:flex;flex-direction:column;';
   panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #3a2a66;">'
-    + '<div style="color:#c9b6ff;font-weight:bold;font-size:14px;">🧠 ' + esc(window._aiName || 'AI') + 'の考え</div>'
+    + '<div style="color:#c9b6ff;font-weight:bold;font-size:14px;">' + esc((_voiceOf() ? _voiceOf().name : '🧠 ' + (window._aiName || 'AI'))) + 'の頭の中</div>'
     + '<button onclick="aiToggleWhy()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button></div>'
     + '<div class="_why-list" style="flex:1;overflow-y:auto;padding:4px 12px 12px;"></div>';
   document.body.appendChild(panel);

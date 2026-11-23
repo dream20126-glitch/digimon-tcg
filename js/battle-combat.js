@@ -3881,6 +3881,9 @@ if (typeof window !== 'undefined') {
   window._runPenetrateCheck = (atk, done) => {
     const atkIdx = atk ? bs.player.battleArea.indexOf(atk) : -1;
     if (atkIdx === -1) { done && done(); return; }
+    // チェックする相手のセキュリティが無ければ何もしない。≪貫通≫はセキュリティチェックで、プレイヤーへのアタックではないので、
+    // セキュリティ0枚でも勝利にはならない（公式ルール 1-2-3-1・11-5-1-2：勝利はプレイヤーへのアタックが成立したとき）
+    if ((bs.ai.security || []).length === 0) { addLog('🗡 【貫通】: 相手のセキュリティが0枚なので、チェックするカードが無い'); done && done(); return; }
     addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
     bs._penetrateResume = done;
     showPenetrateAnnounce(() => { resolveSecurityCheck(atk, atkIdx); });
@@ -4896,7 +4899,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           showDestroyEffect(def, () => {
             // ≪貫通≫: 相打ちでもアタックしたデジモンが消滅を回避して残っていれば、バトルで相手のデジモンを
             // 消滅させたので発揮する（公式ルール 16-7-1・16-7-6）
-            if (hasPenetrate(atk) && bs.ai.battleArea.indexOf(atk) >= 0) {
+            if (hasPenetrate(atk) && bs.ai.battleArea.indexOf(atk) >= 0 && (bs.player.security || []).length > 0) {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された（相手は消滅回避）', () => {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();
                 addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
@@ -5001,8 +5004,9 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               }); }, 'Win!!', '#00ff88');
               return;
             }
-            // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック
-            if (hasPenetrate(atk)) {
+            // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック（相手のセキュリティが0枚ならチェックするカードが無いので行わない。
+            // ≪貫通≫はプレイヤーへのアタックではないので勝利にはならない。公式ルール 1-2-3-1）
+            if (hasPenetrate(atk) && (bs.player.security || []).length > 0) {
               addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();

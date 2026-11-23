@@ -13926,11 +13926,20 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   }
   _fireKeywordAttackGroup(card, card, flags, steps, side, bs, ctxBase, finish);
 }
-function _fireKeywordAttackGroup(card, holder, flags, steps, side, bs, ctxBase, finish) {
-  if (steps.length === 0) { finish(); return; }
+function _fireKeywordAttackGroup(card, holder, flags0, steps0, side, bs, ctxBase, finish) {
+  if (steps0.length === 0) { finish(); return; }
   // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
   // （巨神兵器 BT26-085）。任意のキーワードが混ざる場合は従来通り確認する
   const MANDATORY_ATTACK_KEYWORDS = ['collision'];
+  // 任意のキーワード効果で、実行できることが何も無いもの（≪突進≫で、アクティブ状態の相手のデジモンがいない等）は
+  // 確認（「発動しますか？」）にも出さない（ほかの効果の確認の前の判定 _stepNothingToDo と同じ。公式ルール 3-2）
+  const _chk = { card, bs, side, _sourceCard: holder || card };
+  const steps = steps0.filter(st => {
+    if (!st || MANDATORY_ATTACK_KEYWORDS.includes(st._kwFlag)) return true;
+    try { return !_stepNothingToDo(Object.assign({}, st, { optional: true }), _chk); } catch (_) { return true; }
+  });
+  const flags = flags0.filter(f => MANDATORY_ATTACK_KEYWORDS.includes(f) || steps.some(st => st && st._kwFlag === f));
+  if (steps.length === 0) { console.log('[keywordAttack] 実行できることが無いので確認を出さない', flags0); finish(); return; }
   // 強制キーワードは何が起きるかをポップアップ（相手画面の効果待ち表示にもそのまま出る）で説明する
   const KEYWORD_RULE_TEXT = {
     collision: '【衝突】このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない。',

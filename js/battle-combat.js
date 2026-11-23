@@ -5697,10 +5697,12 @@ function _aiAfterFx(fn) {
   if (typeof window !== 'undefined' && window._aiBattleActive && !_onlineMode && typeof window._cpuFxIdle === 'function') { window._cpuFxIdle(fn); return; }
   fn();
 }
-// ===== 【急襲】（自分のターン終了時、このデジモンでアタックできる）=====
-// CPU の効果からのアタックはエンジン側で動かない（効果のアタックはプレイヤー専用）ため、CPU のターン終了時に
-// 【急襲】を持つデジモンのアタックをここで行う（battle-phase.js endAiTurn から呼ぶ）。選び方はふつうのアタックと同じ
-let _aiRaidMode = false;
+// ===== CPU の「効果でアタックする」（【急襲】・【ディレイ】の「〜でアタックできる」等）=====
+// 効果の発動・確認・表示はプレイヤーと同じエンジンの流れ（【自分のターン終了時】の誘発 → 「発動しますか？」→ 効果の
+// attack アクション）で行い、アタックそのもの（アタック先の選び方・バトル）は CPU のアタックの処理で行う。
+// effect-engine.js の attack アクションが ctx.side==='ai' のとき window._aiEffectAttack を呼ぶ
+let _aiEffectAtkSet = null; // 効果でアタックしてよいデジモン（この中の1体が1回アタックする）
+let _aiRaidMode = false;    // 効果のアタック中（メモリーが相手側でもアタックする）
 // 進化元の【自分のターン】「〜このデジモンは【急襲】を得る」（レプティリモン ST25-04/BT27-014 の進化元）で得た【急襲】は
 // _evoGrantedKeywords に入る（_permEffects には入らない）ので、そちらも見る。以前は見ておらず、進化元のレプティリモンで
 // 【急襲】を得たルビウスドラモンがターン終了時にアタックしなかった
@@ -5710,12 +5712,27 @@ function _aiHasRaid(c) {
   const ek = c._evoGrantedKeywords;
   return !!(ek && typeof ek.has === 'function' && ek.has('attack_at_end_phase'));
 }
-if (typeof window !== 'undefined') window._aiRunRaidAttacks = (cb) => {
-  if (!window._aiBattleActive || _onlineMode || bs._battleAborted) { cb && cb(); return; }
-  try { _hooks.applyPermanentEffects('ai'); } catch (_) {}
-  if (!(bs.ai.battleArea || []).some(c => _aiHasRaid(c) && !c.suspended && c._aiRaidTurn !== bs.turn)) { cb && cb(); return; }
+// 効果のアタックを実行する: cands（アタックできる候補）から、ふつうのアタックと同じ判断で1体と先を選んでアタックし、
+// バトル・アタック終了まで終わったら done。アタックする意味が無ければ（中・高の判断）アタックせずに done
+let _aiEffectAtkOnDeclare = null; // 効果のアタックを宣言したときに呼ぶ（他の【ターン終了時】を発揮しない等）
+if (typeof window !== 'undefined') window._aiEffectAttack = (cands, step, done, onDeclare) => {
+  if (!window._aiBattleActive || _onlineMode || bs._battleAborted || !Array.isArray(cands) || cands.length === 0) { done && done(); return; }
+  _aiEffectAtkSet = new Set(cands);
+  _aiEffectAtkOnDeclare = onDeclare || null;
   _aiRaidMode = true;
-  aiAttackPhase(() => { _aiRaidMode = false; cb && cb(); });
+  aiAttackPhase(() => { _aiRaidMode = false; _aiEffectAtkSet = null; done && done(); });
+};
+// 効果のアタックをするか（任意の効果の「発動しますか？」の CPU の判断。effect-engine.js _cpuStepWorthIt から）:
+// 候補のどれかで、ふつうのアタックと同じ判断のアタック先があれば「する」
+if (typeof window !== 'undefined') window._aiWantsEffectAttack = (cands) => {
+  if (!Array.isArray(cands) || cands.length === 0) return false;
+  if (!_aiIsMid()) return true;
+  const set = new Set(cands);
+  const prevRaid = _aiRaidMode; _aiRaidMode = true;
+  try {
+    if (_aiIsHigh()) return !!_aiHighPickAttack((c) => !!c && set.has(c) && !c.suspended);
+    return cands.some(c => !!_aiMidPickTarget(c));
+  } catch (_) { return true; } finally { _aiRaidMode = prevRaid; }
 };
 // 進化させると【急襲】を持つか（進化先のカード自身か、進化元になる base / その下のカードが【急襲】を与える）
 function _aiWillHaveRaid(base, evoCard) {
@@ -5832,7 +5849,7 @@ function _aiAttackPhaseBody(callback) {
     if (c.summonedThisTurn && !rush) return false;
     if (c.cantAttack || c.cantRest) return false;
     // 【急襲】のアタック: 【急襲】を持つデジモンが1回ずつ
-    if (_aiRaidMode) return _aiHasRaid(c) && c._aiRaidTurn !== bs.turn;
+    if (_aiEffectAtkSet) return _aiEffectAtkSet.has(c);
     // 中・高: このあと進化させて【急襲】でアタックする予定のデジモンは、今はアタックさせずに残す（先を見た行動）
     if (_aiHoldForRaid(c)) return false;
     return true;
@@ -5865,9 +5882,11 @@ function _aiAttackPhaseBody(callback) {
     }
   }
   if (atkIdx === -1) { callback(); return; }
-  if (_aiRaidMode && bs.ai.battleArea[atkIdx]) {
-    bs.ai.battleArea[atkIdx]._aiRaidTurn = bs.turn;
-    addLog('⚡ 【急襲】「' + bs.ai.battleArea[atkIdx].name + '」がターン終了時にアタック！');
+  // 効果のアタックは1回だけ（このアタックが終わって戻ってきたら、候補なしで done へ）
+  if (_aiEffectAtkSet) {
+    _aiEffectAtkSet = new Set();
+    const _od = _aiEffectAtkOnDeclare; _aiEffectAtkOnDeclare = null;
+    if (_od) { try { _od(); } catch (e) { console.error('[aiEffectAtkDeclare]', e); } }
   }
 
   // アタック中に進化（アーツ進化等）したら、進化後のカードを同じデジモンのアタッカーとして扱う（プレイヤーの _evolvedAttacker と同じ）

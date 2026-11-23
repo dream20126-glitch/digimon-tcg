@@ -4805,6 +4805,18 @@ function _cpuCanAttackNow(bs, card) {
   if (card) return can(card);
   return (me.battleArea || []).some(can);
 }
+// CPU の「効果でアタックする」の候補: 「自分のデジモン1体で」（own / own:N）なら条件に合うアクティブなデジモン、
+// それ以外（このデジモンで）はこのデジモン。レスト中・アタックできない・登場したターン（≪速攻≫等を除く）は外す
+function _cpuEffectAttackCands(step, ctx) {
+  const me = ctx && ctx.bs && ctx.bs.ai;
+  if (!me) return [];
+  const ok = (c) => !!(c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type) && (me.battleArea || []).includes(c)
+    && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c));
+  if (/^own(:\d+)?$/.test(String(step.target || ''))) {
+    return (me.battleArea || []).filter(c => ok(c) && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, 'ai', ctx.card)));
+  }
+  return ok(ctx.card) ? [ctx.card] : [];
+}
 // 守りのキーワード（自分のターン中だけ付いても役に立たない）
 const _CPU_DEF_KW = new Set(['blocker', 'barrier', 'evade', 'armor_break', 'jamming', 'reboot', 'indomitable', 'scapegoat', 'fragment', 'decoy']);
 // 1つの効果（手順）が、今使って得になるか
@@ -4823,6 +4835,11 @@ function _cpuStepWorthIt(st, bs, card) {
     return true; // 相手のターン（バトルで勝つための DP+ 等）・先まで続くもの
   }
   if (st.action === 'grant_keyword' && _CPU_DEF_KW.has(kw)) return !(thisTurnOnly && ownTurn); // 自分のターン中だけ守っても意味がない
+  // 効果でアタックする（≪急襲≫等）: ふつうのアタックと同じ判断でアタック先があるときだけ
+  if (st.action === 'attack') {
+    if (typeof window === 'undefined' || typeof window._aiWantsEffectAttack !== 'function') return true;
+    try { return window._aiWantsEffectAttack(_cpuEffectAttackCands(st, { bs, card })); } catch (_) { return true; }
+  }
   if (st.action === 'draw') {
     const n = parseInt(st.value, 10) || 1;
     return ((bs && bs.ai && bs.ai.deck) || []).length > n + 2; // デッキ切れで負けない
@@ -25637,6 +25654,28 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 通常と同じようにアタックする（以前は印を付けるだけでアタックせず、ダンテモン BT26-086 /
       // BT26-080 の「レストせずアタックできる」が発動しなかった）。印は startAttack で使い切る
       const _withoutRest = Array.isArray(step.options) && step.options.includes('without_rest');
+      // AI対戦の CPU: アタックできる候補を同じ条件で出し、アタック（先の選び方・バトル）は CPU のアタックの処理で行う
+      // （battle-combat.js window._aiEffectAttack。≪急襲≫・【ディレイ】の「〜でアタックできる」等）。終わってから callback
+      if (ctx.side === 'ai' && typeof window !== 'undefined' && typeof window._aiEffectAttack === 'function' && window._aiBattleActive) {
+        const _aiCands = _cpuEffectAttackCands(step, ctx);
+        if (_aiCands.length === 0) { ctx.addLog('💨 アタックできるデジモンがいません'); callback(); break; }
+        // 【自分のターン終了時】の効果（≪急襲≫等）でアタックした時点で「ターン終了時」は過ぎるので、まだ発揮していない
+        // 他の【ターン終了時】の効果は発揮しない（プレイヤーの効果のアタックと同じ）
+        const _aiTrig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+        const _onDeclare = () => {
+          if (!/turn_end$/.test(String(_aiTrig || ''))) return;
+          _effectQueue.forEach((e) => {
+            const tc = e && e.status === 'waiting' && e.block && e.block.trigger && e.block.trigger.code;
+            if (!tc || !/turn_end$/.test(String(tc))) return;
+            e.status = 'completed';
+            const _n = (e.block._recipeCard && e.block._recipeCard !== e.card) ? e.block._recipeCard.name : (e.card && e.card.name);
+            ctx.addLog && ctx.addLog('💨 アタックしたので「ターン終了時」のタイミングが過ぎ、「' + _n + '」の効果は発揮しない');
+          });
+          try { _hudSyncQueue(ctx); } catch (_) {}
+        };
+        window._aiEffectAttack(_aiCands, step, () => callback(), _onDeclare);
+        break;
+      }
       if (ctx.side !== 'player' || typeof window.startAttack !== 'function' || typeof window.resolveAttackTarget !== 'function') {
         callback();
         break;

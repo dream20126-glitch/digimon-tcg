@@ -5400,6 +5400,46 @@ function _aiOppSecOptionThreat() {
   return !(seen.length >= 4 && opts.length >= 2);
 }
 
+// ===== AI のバトルの見積もり（中・高）=====
+// DP だけでなく、カードの効果で変わるバトルの結果を見積もる:
+//  ・≪氷装≫（どちらかが持てば、セキュリティデジモン以外とのバトルは進化元の枚数で比べる。公式ルール 16-35）
+//  ・バトルで消滅しない（「バトルで消滅しない」「消滅しない」の付与）・≪防壁≫（セキュリティを1枚破棄して消滅しない）
+//  ・≪道連れ≫（相手のデジモンだけが消滅したとき、相手も消滅させる）
+// 戻り値: { atkWins, defWins, tie, atkDies, defDies, ice }
+function _aiBattleOutcome(atk, def, defSide) {
+  const ice = _hasIceArmor(atk) || _hasIceArmor(def);
+  const a = ice ? (atk.stack || []).length : _dpOf(atk);
+  const d = ice ? (def.stack || []).length : _dpOf(def);
+  const atkSide = defSide === 'player' ? 'ai' : 'player';
+  const survives = (c, side) => {
+    if (hasPassiveFlag(c, 'prevent_battle_destroy', '') || hasPassiveFlag(c, 'prevent_destroy', '')) return true;
+    if (hasBarrier(c) && ((bs[side] && bs[side].security) || []).length > 0) return true;
+    return false;
+  };
+  const atkWins = a > d, defWins = d > a, tie = a === d;
+  let defDies = (atkWins || tie) && !survives(def, defSide);
+  let atkDies = (defWins || tie) && !survives(atk, atkSide);
+  // ≪道連れ≫: 相手のデジモンだけがバトルで消滅したら、相手（アタックした側）も消滅
+  if (defDies && !atkDies && hasMichizure(def)) atkDies = true;
+  if (atkDies && !defDies && hasMichizure(atk)) defDies = true;
+  return { atkWins, defWins, tie, atkDies, defDies, ice };
+}
+if (typeof window !== 'undefined') window._aiBattleOutcome = (atk, def, defSide) => { try { return _aiBattleOutcome(atk, def, defSide || 'player'); } catch (_) { return null; } };
+// ≪突進≫（アタックの対象を、最もDPの高いアクティブ状態の相手のデジモン1体に変更できる）等の「アタック先の変更」を CPU が使うか:
+// 変更先の候補（フィルタ・最大/最小の絞り込み）のどれかを消滅させられて、自分は残る（または相手の方が価値が高い相打ち）なら使う
+if (typeof window !== 'undefined') window._aiWantsRedirect = (attacker, step) => {
+  try {
+    if (!attacker) return false;
+    const f = (step && step.filter) || {};
+    let cands = (bs.player.battleArea || []).filter(c => _aiIsDigi(c) && (f.suspended === undefined || !!c.suspended === !!f.suspended));
+    if (cands.length === 0) return false;
+    const pick = (val, hi) => { const vs = cands.map(val); const ex = hi ? Math.max(...vs) : Math.min(...vs); cands = cands.filter(c => val(c) === ex); };
+    if (f.dp_extreme) pick(c => _dpOf(c), f.dp_extreme !== 'lowest');
+    if (f.evo_extreme) pick(c => (c.stack || []).length, f.evo_extreme !== 'lowest');
+    return cands.some(t => { const o = _aiBattleOutcome(attacker, t, 'player'); return o.defDies && (!o.atkDies || _aiThreat(t) > _aiOwnValue(attacker)); });
+  } catch (_) { return false; }
+};
+
 // 中のアタック先: 相手のセキュリティが0ならとどめ（プレイヤーへ）→ 勝てるデジモン（強い順）→ セキュリティ。
 // 負けるアタックはしない（ブロックしてくるデジモンのDPがアタッカー以上なら、そのアタック自体をやめる）。null＝アタックしない
 function _aiMidPickTarget(c) {
@@ -5420,10 +5460,13 @@ function _aiMidPickTarget(c) {
     if (!d || (d.type !== 'デジモン' && d.type !== 'デュアル')) continue;
     const ok = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(c, d, bs, 'ai') : d.suspended;
     if (!ok) continue;
-    // 勝てる相手。DPが同じ（相打ち）は、相手の方がレベルが高いときだけ
-    if (_dpOf(d) < atkDp || (_dpOf(d) === atkDp && _lvOf(d) > _lvOf(c))) wins.push(i);
+    // 勝てる相手（消滅させられて、自分は残る）。相打ちは、相手の方がレベルが高いときだけ。
+    // ≪氷装≫（進化元の枚数で比べる）・バトルで消滅しない・≪防壁≫・≪道連れ≫も見る（_aiBattleOutcome）
+    const o = _aiBattleOutcome(c, d, 'player');
+    if (o.defDies && (!o.atkDies || _lvOf(d) > _lvOf(c))) wins.push(i);
   }
-  const strongBlock = (exceptIdx) => _aiPlayerBlockersFor(c, exceptIdx).some(b => _dpOf(b) >= atkDp);
+  // ブロックされて負ける（自分が消滅する、または相手を消滅させられない）ブロッカーがいるか
+  const strongBlock = (exceptIdx) => _aiPlayerBlockersFor(c, exceptIdx).some(b => { const o = _aiBattleOutcome(c, b, 'player'); return o.atkDies || !o.defDies; });
   if (wins.length > 0) {
     wins.sort((a, b) => (_lvOf(pa[b]) - _lvOf(pa[a])) || (_dpOf(pa[b]) - _dpOf(pa[a])));
     const i = wins.find(w => !strongBlock(w));
@@ -5441,15 +5484,21 @@ function _aiMidPickTarget(c) {
 // 中のブロック: 勝てる・相打ちならブロック。負けるブロックは、自分のセキュリティが2枚以下のプレイヤーへのアタック
 // （0枚なら必ず）のときだけ。選ぶのは「勝てる中で一番弱い」→「相打ち」→「一番弱い（負けてもよい1体）」
 function _aiMidChooseBlocker(atk, cands, targetIdx) {
-  const atkDp = _dpOf(atk);
   const area = bs.ai.battleArea;
   const byWeak = (a, b) => (_lvOf(area[a]) - _lvOf(area[b])) || (_dpOf(area[a]) - _dpOf(area[b]));
-  const win = cands.filter(i => _dpOf(area[i]) > atkDp).sort(byWeak);
+  // ブロックしたときのバトル（ブロッカーが守る側）。≪氷装≫・消滅しない・≪防壁≫・≪道連れ≫も見る
+  const oc = (i) => _aiBattleOutcome(atk, area[i], 'ai');
+  const win = cands.filter(i => { const o = oc(i); return !o.defDies && o.atkDies; }).sort(byWeak);
   if (win.length) return win[0];
-  const tie = cands.filter(i => _dpOf(area[i]) === atkDp).sort(byWeak);
+  // 負けない（どちらも残る）ブロックも、守れるので使う
+  const safe = cands.filter(i => !oc(i).defDies).sort(byWeak);
+  if (safe.length) return safe[0];
+  const tie = cands.filter(i => { const o = oc(i); return o.defDies && o.atkDies; }).sort(byWeak);
   if (tie.length) return tie[0];
   const secLeft = (bs.ai.security || []).length;
-  if (targetIdx < 0 && secLeft <= 2) return cands.slice().sort(byWeak)[0];
+  // 負けるブロックで守るのは、プレイヤーへのアタックでセキュリティ2枚以下のときだけ。≪貫通≫のアタッカーはブロッカーを
+  // 消滅させるとセキュリティチェックするので、負けるブロックでは守れない
+  if (targetIdx < 0 && secLeft <= 2 && !hasPenetrate(atk)) return cands.slice().sort(byWeak)[0];
   return -1;
 }
 
@@ -5591,10 +5640,12 @@ function _aiHighPickAttack(canAttack) {
     const _first = (_oppHasDigi && _aiOnAttackUseful(c) && [c, ...(c.stack || [])].some(x => { const t = _aiTagsOf(x); return t.removal || t.evoDiscard; })) ? 1500 : 0;
     // 相手の手札が多い（6枚以上）ときは、カウンター・ブラスト進化を警戒して、価値の高いデジモン（Lv.6 以上）の意味のないアタックを控えめに
     const _handRisk = (_oppHand >= 6 && _lvOf(c) >= 6 && !_meaning) ? 1500 : 0;
+    // ブロックされたら負ける（自分が消滅する／相手を消滅させられない）ブロッカー（≪氷装≫等の効果も見る）
+    const _badBlock = (exceptIdx) => _aiPlayerBlockersFor(c, exceptIdx).some(b => { const o = _aiBattleOutcome(c, b, 'player'); return o.atkDies || !o.defDies; });
     if (!_aiCantHitPlayer(c)) {
       const checks = _aiChecksOf(c);
       if (lethal) consider(1000000 + checks * 10 - atkDp / 1000, i, { mode: 'security' });
-      else if (!_aiPlayerBlockersFor(c, -1).some(b => _dpOf(b) >= atkDp) && _aiSecAttackSafe(c)) {
+      else if (!_badBlock(-1) && _aiSecAttackSafe(c)) {
         // 相手のセキュリティから弱らせるオプションが出てきそうなら、価値の低いデジモンから先にセキュリティを削る
         // （強いデジモンはあとに残す）
         //  【プログレス】等で相手の効果を受けないデジモンは、セキュリティのオプションを気にしなくてよい
@@ -5610,11 +5661,14 @@ function _aiHighPickAttack(canAttack) {
       if (!_aiIsDigi(d)) continue;
       const ok = window._canAttackDigimonTarget ? window._canAttackDigimonTarget(c, d, bs, 'ai') : d.suspended;
       if (!ok) continue;
-      const win = _dpOf(d) < atkDp, tie = _dpOf(d) === atkDp;
-      if (!win && !tie) continue;
-      if (_aiPlayerBlockersFor(c, j).some(b => _dpOf(b) >= atkDp)) continue;
+      // 消滅させられる相手だけ（≪氷装≫・バトルで消滅しない・≪防壁≫・≪道連れ≫も見る）。自分も消滅するなら自分の価値を引く
+      const _o = _aiBattleOutcome(c, d, 'player');
+      if (!_o.defDies) continue;
+      if (_badBlock(j)) continue;
       let v = _aiThreat(d) + (isBlocker(d) ? 2500 : 0);
-      if (tie) v -= _aiOwnValue(c);
+      if (_o.atkDies) v -= _aiOwnValue(c);
+      // ≪貫通≫: 消滅させて自分が残れば、さらにセキュリティチェック
+      if (!_o.atkDies && hasPenetrate(c)) v += _aiChecksOf(c) * (secLeft <= 2 ? 6000 : 2500);
       // セキュリティで2枚以上リードしているときは、相手のデジモンを倒して安全に進める
       if (_secDiff >= 2) v += 1000;
       consider(v - atkDp * 0.05 - _handRisk + _first, i, { mode: 'digimon', idx: j, def: d });
@@ -5627,15 +5681,20 @@ function _aiHighPickAttack(canAttack) {
 // 一番価値の低いデジモン（【消滅時】持ちは身代わりに向く）で。自分のデジモンが狙われたときは、そのデジモンの方がずっと価値が高いなら身代わりを出す
 function _aiHighChooseBlocker(atk, cands, targetIdx) {
   const area = bs.ai.battleArea;
-  const atkDp = _dpOf(atk);
   const val = (i) => _aiOwnValue(area[i]);
   const cheap = cands.slice().sort((a, b) => val(a) - val(b));
-  if (targetIdx >= 0 && area[targetIdx] && _dpOf(area[targetIdx]) > atkDp) return -1; // 狙われたデジモンが勝つ
-  const win = cheap.filter(i => _dpOf(area[i]) > atkDp);
+  // バトルの見積もり（≪氷装≫・消滅しない・≪防壁≫・≪道連れ≫も見る）
+  const oc = (d) => _aiBattleOutcome(atk, d, 'ai');
+  if (targetIdx >= 0 && area[targetIdx] && !oc(area[targetIdx]).defDies) return -1; // 狙われたデジモンが残る
+  const win = cheap.filter(i => { const o = oc(area[i]); return !o.defDies && o.atkDies; });
   if (win.length) return win[0];
-  const tie = cheap.filter(i => _dpOf(area[i]) === atkDp);
+  const safe = cheap.filter(i => !oc(area[i]).defDies);
+  if (safe.length) return safe[0];
+  const tie = cheap.filter(i => { const o = oc(area[i]); return o.defDies && o.atkDies; });
   if (tie.length && _aiThreat(atk) >= val(tie[0])) return tie[0];
   if (cheap.length === 0) return -1;
+  // ≪貫通≫のアタッカーは、ブロッカーを消滅させるとセキュリティチェックするので、負けるブロックで守れない
+  if (hasPenetrate(atk)) return -1;
   if (targetIdx < 0) {
     const sec = (bs.ai.security || []).length;
     const checks = _aiChecksOf(atk);

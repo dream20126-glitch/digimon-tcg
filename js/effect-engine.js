@@ -4835,6 +4835,12 @@ function _cpuStepWorthIt(st, bs, card) {
     return true; // 相手のターン（バトルで勝つための DP+ 等）・先まで続くもの
   }
   if (st.action === 'grant_keyword' && _CPU_DEF_KW.has(kw)) return !(thisTurnOnly && ownTurn); // 自分のターン中だけ守っても意味がない
+  // アタック先の変更（≪突進≫等）: 変更先に勝てるときだけ（負ける相手に変更しない）
+  if (st.action === 'redirect_attack') {
+    if (typeof window === 'undefined' || typeof window._aiWantsRedirect !== 'function') return true;
+    const atk = (bs && bs._attackingCard) || card;
+    return window._aiWantsRedirect(atk, st);
+  }
   // 効果でアタックする（≪急襲≫等）: ふつうのアタックと同じ判断でアタック先があるときだけ
   if (st.action === 'attack') {
     if (typeof window === 'undefined' || typeof window._aiWantsEffectAttack !== 'function') return true;

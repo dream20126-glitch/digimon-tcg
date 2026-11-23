@@ -5701,7 +5701,15 @@ function _aiAfterFx(fn) {
 // CPU の効果からのアタックはエンジン側で動かない（効果のアタックはプレイヤー専用）ため、CPU のターン終了時に
 // 【急襲】を持つデジモンのアタックをここで行う（battle-phase.js endAiTurn から呼ぶ）。選び方はふつうのアタックと同じ
 let _aiRaidMode = false;
-function _aiHasRaid(c) { return !!c && hasPassiveFlag(c, 'attack_at_end_phase', ''); }
+// 進化元の【自分のターン】「〜このデジモンは【急襲】を得る」（レプティリモン ST25-04/BT27-014 の進化元）で得た【急襲】は
+// _evoGrantedKeywords に入る（_permEffects には入らない）ので、そちらも見る。以前は見ておらず、進化元のレプティリモンで
+// 【急襲】を得たルビウスドラモンがターン終了時にアタックしなかった
+function _aiHasRaid(c) {
+  if (!c) return false;
+  if (hasPassiveFlag(c, 'attack_at_end_phase', '')) return true;
+  const ek = c._evoGrantedKeywords;
+  return !!(ek && typeof ek.has === 'function' && ek.has('attack_at_end_phase'));
+}
 if (typeof window !== 'undefined') window._aiRunRaidAttacks = (cb) => {
   if (!window._aiBattleActive || _onlineMode || bs._battleAborted) { cb && cb(); return; }
   try { _hooks.applyPermanentEffects('ai'); } catch (_) {}

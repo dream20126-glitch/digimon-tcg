@@ -556,6 +556,13 @@ function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ�
 // オンラインのブロックのバトル（battle-online.js）でも、レシピ・進化元・付与まで見て判定する
 if (typeof window !== 'undefined') window._hasMichizure = (c) => hasMichizure(c);
 
+// 進化しても付与された効果（バフ）は引き継がれる。バフ由来の「アタックできない」「ブロックできない」の印も立て直す
+// （進化先のカードの値＝false のままだと、「アタックできない」のバフがあるのにアタックできていた）
+function _carryRestrictionFlags(c) {
+  if (!c || !Array.isArray(c.buffs)) return;
+  if (c.buffs.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block'))) c.cantAttack = true;
+  if (c.buffs.some(b => b && (b.type === 'cant_block' || b.type === 'cant_attack_block'))) c.cantBlock = true;
+}
 // 消滅キャンセル試行ヘルパー
 // 戻り値: { canceled: true, reason: '...' } か null。
 // 公式キーワード（防壁・回避・アーマー解除）は1ターンに何度でも、ただしコスト1回ごとに消費。
@@ -2330,6 +2337,7 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost, opts) {
   // 上から1枚破棄する保留処理フラグ（processBurstEvolvePendingDiscardが消費する）
   if (opts && opts.isBurst) evolved._burstEvolvedPendingDiscard = true;
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   bs.player.battleArea[slotIdx] = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   // cond_evolved_this_turn 用カウンタを増加
@@ -2438,6 +2446,7 @@ function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai, onDone)
     stack: [base].concat(partners).concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   base.linkedCards = (base.linkedCards || []).filter(lc => !partners.includes(lc));
   bs.player.battleArea[slotIdx] = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
@@ -2537,6 +2546,7 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
     stack: [base].concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   p.battleArea[slotIdx] = evolved;
   const _hi = p.hand.indexOf(card);
   if (_hi !== -1) p.hand.splice(_hi, 1);
@@ -2870,6 +2880,7 @@ export function doEvolveIku(card, handIdx) {
     stack: [base].concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   bs.player.ikusei = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('⬆ 育成「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
@@ -3065,6 +3076,7 @@ function _placeArtsEvolve(card, target, side) {
     stack: [base].concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   if (area === 'battle') p.battleArea[idx] = evolved;
   else p.ikusei = evolved;
   bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
@@ -5921,7 +5933,7 @@ function _aiAttackPhaseBody(callback) {
   const _aiCanAttack = (c) => {
     if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || c.suspended) return false;
     // 効果のアタック（≪急襲≫等）: 候補はエンジンが効果の条件（登場したターンでも≪ヴォルテクス≫等なら可）で出している
-    if (_aiEffectAtkSet) return _aiEffectAtkSet.has(c);
+    if (_aiEffectAtkSet) return _aiEffectAtkSet.has(c) && !c.cantAttack && !c.cantRest;
     const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
     if (c.summonedThisTurn && !rush) return false;
     if (c.cantAttack || c.cantRest) return false;
@@ -6807,6 +6819,7 @@ function _aiEvolveIku(card, done) {
     stack: [base].concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   bs.ai.ikusei = evolved;
   const hi = bs.ai.hand.indexOf(card);
   if (hi !== -1) bs.ai.hand.splice(hi, 1);
@@ -7091,6 +7104,7 @@ function _aiDoAppGattai(card, slotIdx, ag, done) {
     stack: [base].concat(partners).concat(base.stack || []),
   });
   evolved.dp = evolved.baseDp + evolved.dpModifier;
+  _carryRestrictionFlags(evolved);
   base.linkedCards = (base.linkedCards || []).filter(lc => !partners.includes(lc));
   bs.ai.battleArea[slotIdx] = evolved;
   bs.ai.hand.splice(hi, 1);

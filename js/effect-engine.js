@@ -9586,6 +9586,11 @@ function _applyPermanentEffectsImpl(bs, side, context) {
     // 一旦クリアする（バフ由来のcant_attack/cant_blockが別にあれば維持）
     if (!card.buffs || !card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
     if (!card.buffs || !card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
+    // バフ由来の「アタックできない」「ブロックできない」は印も立て直す（進化すると印は進化先のカードの値＝false に戻るが、
+    // バフは引き継がれる。公式ルール: 進化しても付与された効果は残る。以前は進化したデジモンが「アタックできない」の
+    // バフを持ったままアタックできていた／≪急襲≫の発動が出ていた）
+    if (card.buffs && card.buffs.some(b => b && ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = true;
+    if (card.buffs && card.buffs.some(b => b && ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = true;
   });
   // 継続的（during_X）由来のセキュリティバフもクリア（再評価のため）
   // source='recipe_perm_security' / 'evo_recipe_perm_security' は applyPermanentEffects で毎回再構築される

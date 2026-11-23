@@ -1306,7 +1306,7 @@ function aiPhaseMain() {
             // AI対戦: アタックの後、残りのメモリー（相手側に渡る分も含めて）で使えるものを使ってからターン終了
             // 中（ベテランテイマー）も行う（相手に渡すメモリーは3まで。battle-combat.js aiAvailableMemory）
             if (window._aiBattleActive && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
-              if (window._aiWhy) window._aiWhy('アタックが終わったので、残りのメモリーの使い道を考えます ← あなたにメモリーを渡しすぎない範囲で、得になる行動があれば使います。');
+              if (window._aiWhy) window._aiWhy(((bs._currentTurnAttackCount || 0) > 0 ? 'アタックを終えた。' : 'このターンはアタックしない。') + 'ここからは残りのメモリーの使い道を考えます ← ターンの終わりに、あなたにメモリーを渡しすぎない範囲（何もしなくても渡る3くらいまで）で、得になる行動があれば使います。');
               window._aiSetOverflow(true);
               _hooks.aiMainPhase(() => { window._aiSetOverflow(false); endAiTurn(); });
               return;

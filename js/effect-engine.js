@@ -7905,29 +7905,46 @@ function _deckOpenPlaceEvo(card, sel, ctx, player) {
 //  ベテランテイマー（中）: 今の場（育成エリアを含む）のデジモンから進化できるカード > 手札にテイマーが無いならテイマー
 //  デジモンマスター（高）: 上に加えて、手札に無いレベルのデジモン（次に進化できるつなぎ）も優先する
 //  見習いテイマー（低）・オンライン・CPU でないとき: 今までどおり条件に合う一番上のカード
+// CPU（中・高）がデッキオープン等で、そのカードをどれだけ欲しいか（点数）と理由
+//  ・場（育成エリアも）のデジモンから進化できる ＋100
+//  ・手札にテイマーがいないときのテイマー ＋80
+//  ・高: 手札に無いレベルのデジモン ＋60（進化の流れの穴を埋める）
+function _cpuCardWant(c, owner) {
+  const lvl = typeof window !== 'undefined' ? window._aiLevel : null;
+  const why = [];
+  let s = 0;
+  if (!c || !owner) return { s, why };
+  const field = [...(owner.battleArea || []), owner.ikusei].filter(x => x && (x.type === 'デジモン' || x.type === 'デュアル' || x.type === 'デジタマ'));
+  if ((c.type === 'デジモン' || c.type === 'デュアル') && typeof window.canEvolveOnto === 'function') {
+    const base = field.find(b => { try { return window.canEvolveOnto(c, b); } catch (_) { return false; } });
+    if (base) { s += 100; why.push('場の「' + base.name + '」からすぐ進化できる'); }
+  }
+  const hand = owner.hand || [];
+  if (c.type === 'テイマー' && !hand.some(h => h && h.type === 'テイマー')) { s += 80; why.push('手札にテイマーがいないので、テイマーを確保したい'); }
+  if (lvl === 'high' && (c.type === 'デジモン' || c.type === 'デュアル') && c.level) {
+    const handLvs = new Set(hand.filter(h => h && (h.type === 'デジモン' || h.type === 'デュアル')).map(h => String(h.level)));
+    if (!handLvs.has(String(c.level))) { s += 60; why.push('手札に無いLv.' + c.level + 'なので、進化の流れの穴を埋められる'); }
+  }
+  return { s, why };
+}
 function _cpuDeckOpenPick(cands, owner, ctx) {
   if (!Array.isArray(cands) || cands.length === 0) return null;
   const lvl = typeof window !== 'undefined' ? window._aiLevel : null;
   const smart = ctx && ctx.side === 'ai' && typeof window !== 'undefined' && window._aiBattleActive
     && !(window._isOnlineMode && window._isOnlineMode()) && (lvl === 'mid' || lvl === 'high');
-  if (!smart || cands.length === 1 || !owner) return cands[0];
-  const field = [...(owner.battleArea || []), owner.ikusei].filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || c.type === 'デジタマ'));
-  const canEvo = (c) => {
-    if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || typeof window.canEvolveOnto !== 'function') return false;
-    return field.some(b => { try { return window.canEvolveOnto(c, b); } catch (_) { return false; } });
-  };
-  const hand = owner.hand || [];
-  const noTamerInHand = !hand.some(h => h && h.type === 'テイマー');
-  const handLvs = new Set(hand.filter(h => h && (h.type === 'デジモン' || h.type === 'デュアル')).map(h => String(h.level)));
-  const score = (c) => {
-    let s = 0;
-    if (canEvo(c)) s += 100;
-    if (noTamerInHand && c.type === 'テイマー') s += 80;
-    if (lvl === 'high' && (c.type === 'デジモン' || c.type === 'デュアル') && c.level && !handLvs.has(String(c.level))) s += 60;
-    return s;
-  };
-  let best = cands[0], bestS = score(cands[0]);
-  for (let i = 1; i < cands.length; i++) { const s = score(cands[i]); if (s > bestS) { best = cands[i]; bestS = s; } }
+  if (!smart || !owner) return cands[0];
+  let best = cands[0], bestW = _cpuCardWant(cands[0], owner);
+  for (let i = 1; i < cands.length; i++) { const w = _cpuCardWant(cands[i], owner); if (w.s > bestW.s) { best = cands[i]; bestW = w; } }
+  // AIの考え: どれを選んだか・なぜか（ほかの候補も）
+  try {
+    if (window._aiWhy) {
+      const others = cands.filter(c => c !== best).map(c => '「' + c.name + '」');
+      const r = cands.length === 1 ? '条件に合うのはこのカードだけだからです。'
+        : bestW.why.length ? bestW.why.join('し、') + 'からです。'
+        : '候補に大きな差が無いので、いちばん上のカードにしました。';
+      window._aiWhy('オープンしたカードから「' + best.name + '」を選びます ← ' + r + (others.length ? 'ほかの候補は' + others.join('・') + 'でした。' : ''));
+    }
+  } catch (_) {}
   return best;
 }
 function _deckOpenAuto(opened, step, ctx, callback) {
@@ -8654,9 +8671,27 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         _finishOrder();
         return;
       }
-      // CPU: 戻す順番は今の並びのまま（少し考えてから）
+      // CPU: デッキの下に戻すときは、当分引かないので並びはそのまま。デッキの上に積むとき（タップした順に上へ積む＝最後が一番上）は、
+      // 中・高は欲しいカード（_cpuCardWant）ほど後に積んで、次に引けるようにする
       if (_cpu) {
-        _cpuThink(() => { left.forEach(e => { _order.push(e.card); removeEntry(e); }); _finishOrder(); });
+        _cpuThink(() => {
+          const _lv = typeof window !== 'undefined' ? window._aiLevel : null;
+          const _toTop = returnTo === 'deck_top';
+          let seq = left.slice();
+          if (_toTop && (_lv === 'mid' || _lv === 'high')) {
+            const owner = ctx.bs && ctx.bs.ai;
+            seq = seq.map(e => ({ e, w: _cpuCardWant(e.card, owner).s })).sort((a, b) => a.w - b.w).map(x => x.e);
+          }
+          try {
+            if (window._aiWhy && (_lv === 'mid' || _lv === 'high')) {
+              const names = seq.map(e => '「' + e.card.name + '」');
+              if (_toTop) window._aiWhy('残りのカードをデッキの上に戻します（次に引くのは' + names[names.length - 1] + '） ← 次のドローで一番欲しいカードを引けるように、欲しいカードほど上に置きました。');
+              else window._aiWhy('残りのカード（' + names.join('・') + '）をデッキの下に戻します ← デッキの下のカードは当分引かないので、順番はほとんど影響しないからです。');
+            }
+          } catch (_) {}
+          seq.forEach(e => { _order.push(e.card); removeEntry(e); });
+          _finishOrder();
+        });
         return;
       }
       let labelText = '戻す順番を選んでください（タップした順）';

@@ -7265,7 +7265,10 @@ function _aiPlayAutoBody(callback) {
   // 中: レベルの高いデジモンから進化させる（1体を大きく育てる）。低は並び順のまま
   const _evoOrder = bs.ai.battleArea.map((_, i) => i);
   // 高: このターンにアタックできるデジモン（アクティブで、登場したターンでない）を先に進化させる
-  const _canSwing = (c) => (c && !c.suspended && !c.summonedThisTurn ? 1 : 0);
+  // このターンにアタックできるか: アクティブ・登場したターンでない（≪速攻≫なら可。育成エリアから移動したデジモンは登場ではないので可）・
+  // 「アタックできない」「レストできない」が付いていない（以前は付与を見ておらず、アタックできないデジモンを先に進化させていた）
+  const _canSwing = (c) => (c && !c.suspended && !c.cantAttack && !c.cantRest
+    && (!c.summonedThisTurn || !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')))) ? 1 : 0);
   if (_aiIsHigh()) _evoOrder.sort((a, b) => (_canSwing(bs.ai.battleArea[b]) - _canSwing(bs.ai.battleArea[a])) || (_lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a])));
   else if (_aiIsMid()) _evoOrder.sort((a, b) => _lvOf(bs.ai.battleArea[b]) - _lvOf(bs.ai.battleArea[a]));
   for (const i of _evoOrder) {

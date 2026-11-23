@@ -19833,6 +19833,20 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 「(1回目)」「(2回目)」を表示するための現在周回情報
       ctx._repeatIndex = _rN - remaining + 1;
       ctx._repeatTotal = _rN;
+      // 2回目以降: 前の回で対象を全て消滅させた等で、もう対象が1体もいなければ繰り返しを終える（「対象がいません」は出さない）。
+      // 「〜ごとに、以下の効果を発揮できる」は、できる分だけ発揮すればよい（ルビウスドラモン BT27-018 で、1回目で相手の
+      // デジモンを全て消滅させたあと、2回目で「対象がいません」が出ていた）
+      if (ctx._repeatIndex >= 2) {
+        const _rChoices = (_rStep.action === 'choose_effect' && Array.isArray(_rStep.choices)) ? _rStep.choices.filter(Boolean) : [_rStep];
+        let _rNone = false;
+        try { _rNone = _rChoices.length > 0 && _rChoices.every(ch => _stepCandidatesEmpty(Object.assign({}, ch, { optional: true }), ctx)); } catch (_) { _rNone = false; }
+        if (_rNone) {
+          console.log('[repeat] 対象がいないので繰り返しを終える', ctx._repeatIndex + '/' + _rN);
+          delete ctx._repeatIndex; delete ctx._repeatTotal;
+          done();
+          return;
+        }
+      }
       executeRecipeStep(_rStep, ctx, store, () => _rFire(remaining - 1, done));
     };
     _rFire(_rN, callback);

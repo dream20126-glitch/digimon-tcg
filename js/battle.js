@@ -648,7 +648,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
     try {
       window._aiProfile = buildDeckProfile(aiCards);
       addLog('🧠 ' + (window._aiName || 'AI') + 'のデッキの設計図: ' + describeProfile(window._aiProfile));
-      if (window._aiWhy) window._aiWhy('デッキの設計図: ' + describeProfile(window._aiProfile));
+      if (window._aiWhy) window._aiWhy('このデッキの戦い方を確認しました ← ' + describeProfile(window._aiProfile));
     } catch (e) { console.error('[aiProfile]', e); window._aiProfile = null; }
   }
 

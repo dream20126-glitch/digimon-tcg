@@ -287,7 +287,15 @@ function _renderWhy() {
     const key = e.turn + ':' + e.mine;
     const head = key !== lastKey ? '<div style="margin:10px 0 4px;color:#c9b6ff;font-size:11px;font-weight:bold;border-bottom:1px solid #3a2a66;padding-bottom:2px;">ターン' + esc(e.turn) + (e.mine ? '（AIのターン）' : '（あなたのターン）') + '</div>' : '';
     lastKey = key;
-    return head + '<div style="color:#eee;font-size:12px;line-height:1.5;margin:3px 0;padding-left:8px;border-left:2px solid #6a2cff;">' + esc(e.msg) + '</div>';
+    // 「行動 ← 理由」の形なら、行動を太字、理由をその下に文章で出す
+    const k = e.msg.indexOf(' ← ');
+    const act = k >= 0 ? e.msg.slice(0, k) : e.msg;
+    const why = k >= 0 ? e.msg.slice(k + 3) : '';
+    const icon = e.mine ? '🤖' : '👀';
+    return head + '<div style="margin:6px 0;padding:6px 8px;border-left:3px solid ' + (e.mine ? '#6a2cff' : '#ff9f43') + ';background:rgba(255,255,255,0.03);border-radius:0 6px 6px 0;">'
+      + '<div style="color:#fff;font-size:12.5px;font-weight:bold;line-height:1.5;">' + icon + ' ' + esc(act) + '</div>'
+      + (why ? '<div style="color:#c8c8d8;font-size:12px;line-height:1.6;margin-top:2px;">' + esc(why) + '</div>' : '')
+      + '</div>';
   }).join('') || '<div style="color:#777;font-size:12px;padding:12px;">まだありません</div>';
   list.scrollTop = list.scrollHeight;
 }

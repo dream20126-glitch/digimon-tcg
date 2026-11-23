@@ -4610,6 +4610,74 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     // 「バトル終了まで」（dur_until_battle_end）のバフはここで期限切れにする
     // （例:「アタック中のこのデジモンは相手の効果を受けない」＝immune_effects）
     _expireBuffs(bs, 'dur_until_battle_end');
+    // 相手のデジモン（def）だけがバトルで消滅した後（勝ったとき・相打ちで自分が消滅を回避したとき共通）:
+    // 「バトルで相手のデジモンを消滅させたとき」の効果・≪貫通≫（公式ルール 16-7-1。相打ちでも自分が残っていれば発揮する）・≪道連れ≫
+    const _afterAtkDestroyedDef = () => {
+            // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
+            // 「バトル勝利」から同時誘発するターンプレイヤー(atk)側の効果なので、
+            // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
+            // 効果同士（≪衝突≫/≪貫通≫→on_battle_win、の順で解決）を先に済ませる
+            // （公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから
+            // 非ターンプレイヤー側に進む）
+            const fireOnBattleWin = (afterDone) => {
+              bs._lastBattleWinner = atk;
+              // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
+              // 正しく参照できるようにする（メタルティラノモン等）
+              bs._lastBattleDefeatedCard = def;
+              const winCtx = _hooks.makeEffectContext(atk, 'player');
+              _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
+                bs._lastBattleWinner = null;
+                bs._lastBattleDefeatedCard = null;
+                afterDone();
+              });
+            };
+            // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、撃破した側(atk)も消滅させる。
+            // 【道連れ】は非ターンプレイヤー（def側）の誘発効果なので、ターンプレイヤー（atk側）の同時誘発
+            // （バトルに勝ったとき・「バトルで相手のデジモンだけを消滅させたとき」ディルビットモン P-090 等）を先に
+            // 全て解決してから発揮する（公式ルール 15-4-3-5）。def の【消滅時】の後に発揮する（非ターンプレイヤーが
+            // 選べる順番の1つ）。以前は【道連れ】を先に処理し、atk 側の効果が発揮できなかった
+            if (hasMichizure(def)) {
+              fireOnBattleWin(() => {
+                _fireDestroyChain(['ai'], () => {
+                  const _mzIdx = bs.player.battleArea.indexOf(atk);
+                  if (_mzIdx < 0) { checkPendingTurnEnd(); return; } // 先に別の効果で場を離れていた
+                  addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+                  bs.player.battleArea[_mzIdx] = null;
+                  bs.player.trash.push(atk);
+                  if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+                  _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
+                  renderAll();
+                  playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
+                    _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk }, { player: def });
+                  });
+                }, { ai: def }, { ai: atk });
+              });
+              return;
+            }
+            // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
+            if (hasPenetrate(atk)) {
+              // ≪貫通≫は「バトルで相手のデジモンを消滅させたとき」に誘発する効果なので、同時に誘発した
+              // 「バトルに勝ったとき」（on_battle_win。本体・進化元）と並べて、ターンプレイヤーが順番を選ぶ
+              // （公式ルール15-4-3。以前は貫通のセキュリティチェックを必ず先に行っていた）。
+              // 非ターンプレイヤー側（defの消滅時チェーン）は、ターンプレイヤー側を全て解決してから。
+              // 貫通のセキュリティ効果解決中に誘発した非ターンプレイヤー側トリガー（登場したテイマーの登場時等）は
+              // effect-engine.js側からこのフックに合流する
+              _setPendingBattleTriggers(
+                null,
+                (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }, { ai: atk }); }
+              );
+              window._nextTriggerExtras = [{
+                card: atk, side: 'turnPlayer', actualSide: 'player',
+                block: { raw: '', trigger: { code: 'on_battle_win' }, actions: [], conditions: [],
+                  _grantedSteps: [{ action: 'penetrate_check', no_announce: true, _kwFlag: 'penetrate' }] },
+              }];
+              fireOnBattleWin(() => { checkAttackEnd(atk, atkIdx); });
+            } else {
+              fireOnBattleWin(() => {
+                _fireDestroyChain(['ai'], () => { checkAttackEnd(atk, atkIdx); }, { ai: def }, { ai: atk });
+              });
+            }
+    };
     if (_atkDp === _defDp) {
       // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する。相手の確認を待っている間も、
       // 自分のデジモンの消滅時効果を発揮待ちとして表示しておく
@@ -4631,7 +4699,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           showBattleResult('撃破！', '#00ff88', '「' + def.name + '」を撃破（自分は消滅回避）', () => {
             showDestroyEffect(def, () => {
               addLog('💥 「' + def.name + '」を撃破！'); renderAll();
-              _fireDestroyChain(['ai'], () => checkPendingTurnEnd(), { ai: def }, { ai: atk });
+              _afterAtkDestroyedDef();
             });
           }, '回避！', '#00fbff');
         });
@@ -4665,70 +4733,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => {
           addLog('💥 「' + def.name + '」を撃破！'); renderAll();
-          // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
-          // 「バトル勝利」から同時誘発するターンプレイヤー(atk)側の効果なので、
-          // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
-          // 効果同士（≪衝突≫/≪貫通≫→on_battle_win、の順で解決）を先に済ませる
-          // （公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから
-          // 非ターンプレイヤー側に進む）
-          const fireOnBattleWin = (afterDone) => {
-            bs._lastBattleWinner = atk;
-            // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
-            // 正しく参照できるようにする（メタルティラノモン等）
-            bs._lastBattleDefeatedCard = def;
-            const winCtx = _hooks.makeEffectContext(atk, 'player');
-            _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
-              bs._lastBattleWinner = null;
-              bs._lastBattleDefeatedCard = null;
-              afterDone();
-            });
-          };
-          // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、撃破した側(atk)も消滅させる。
-          // 【道連れ】は非ターンプレイヤー（def側）の誘発効果なので、ターンプレイヤー（atk側）の同時誘発
-          // （バトルに勝ったとき・「バトルで相手のデジモンだけを消滅させたとき」ディルビットモン P-090 等）を先に
-          // 全て解決してから発揮する（公式ルール 15-4-3-5）。def の【消滅時】の後に発揮する（非ターンプレイヤーが
-          // 選べる順番の1つ）。以前は【道連れ】を先に処理し、atk 側の効果が発揮できなかった
-          if (hasMichizure(def)) {
-            fireOnBattleWin(() => {
-              _fireDestroyChain(['ai'], () => {
-                const _mzIdx = bs.player.battleArea.indexOf(atk);
-                if (_mzIdx < 0) { checkPendingTurnEnd(); return; } // 先に別の効果で場を離れていた
-                addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
-                bs.player.battleArea[_mzIdx] = null;
-                bs.player.trash.push(atk);
-                if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-                _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
-                renderAll();
-                playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
-                  _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk }, { player: def });
-                });
-              }, { ai: def }, { ai: atk });
-            });
-            return;
-          }
-          // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
-          if (hasPenetrate(atk)) {
-            // ≪貫通≫は「バトルで相手のデジモンを消滅させたとき」に誘発する効果なので、同時に誘発した
-            // 「バトルに勝ったとき」（on_battle_win。本体・進化元）と並べて、ターンプレイヤーが順番を選ぶ
-            // （公式ルール15-4-3。以前は貫通のセキュリティチェックを必ず先に行っていた）。
-            // 非ターンプレイヤー側（defの消滅時チェーン）は、ターンプレイヤー側を全て解決してから。
-            // 貫通のセキュリティ効果解決中に誘発した非ターンプレイヤー側トリガー（登場したテイマーの登場時等）は
-            // effect-engine.js側からこのフックに合流する
-            _setPendingBattleTriggers(
-              null,
-              (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }, { ai: atk }); }
-            );
-            window._nextTriggerExtras = [{
-              card: atk, side: 'turnPlayer', actualSide: 'player',
-              block: { raw: '', trigger: { code: 'on_battle_win' }, actions: [], conditions: [],
-                _grantedSteps: [{ action: 'penetrate_check', no_announce: true, _kwFlag: 'penetrate' }] },
-            }];
-            fireOnBattleWin(() => { checkAttackEnd(atk, atkIdx); });
-          } else {
-            fireOnBattleWin(() => {
-              _fireDestroyChain(['ai'], () => { checkAttackEnd(atk, atkIdx); }, { ai: def }, { ai: atk });
-            });
-          }
+          _afterAtkDestroyedDef();
         });
       }, 'Lose...', '#ff4444');
         },
@@ -4862,6 +4867,19 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           _dumpLinkedCardsUnlessDeferred(def, bs.player.trash);
           renderAll();
           showDestroyEffect(def, () => {
+            // ≪貫通≫: 相打ちでもアタックしたデジモンが消滅を回避して残っていれば、バトルで相手のデジモンを
+            // 消滅させたので発揮する（公式ルール 16-7-1・16-7-6）
+            if (hasPenetrate(atk) && bs.ai.battleArea.indexOf(atk) >= 0) {
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された（相手は消滅回避）', () => {
+                addLog('💥 「' + def.name + '」が撃破された'); renderAll();
+                addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+                showPenetrateAnnounce(() => {
+                  _setPendingBattleTriggers(null, (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }, { player: atk }); });
+                  doAiSecurityCheck(atk, atkIdx, () => { _consumePendingBattleTriggers(callback); });
+                });
+              }, '回避！', '#00fbff');
+              return;
+            }
             _fireDestroyChain(['player'], () => {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された（相手は消滅回避）', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, '回避！', '#00fbff');
             }, { player: def }, { player: atk });

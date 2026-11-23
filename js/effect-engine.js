@@ -27666,6 +27666,17 @@ export function mainEffectButtonState(card) {
   return res;
 }
 
+// CPU（AI対戦・中/高）: このカードの【メイン】効果を今使って得になるか（任意の効果を使うかの判断 _cpuMidWantsOptional と同じ。
+// 「ターン終了まで【貫通】を得る」等のこのターンだけの攻めの効果は、このターンにアタックできるデジモンがいるときだけ。
+// ヴァルナー・ドラグノフ BD02-08 の【メイン】を、アタックするデジモンがいないのに使っていた）
+export function cpuMainEffectWorthIt(card, bs) {
+  if (!card || !bs) return true;
+  try {
+    const steps = (getRecipeForTrigger(card, 'main') || []).filter(Boolean);
+    if (steps.length === 0) return true;
+    return _cpuMidWantsOptional(steps, bs, card);
+  } catch (_) { return true; }
+}
 // CPU（AI対戦）: このカードの【メイン】効果を今使って、何か実行できるか（対象・候補が無い／条件を満たさない／
 // ≪ディレイ≫の後ろの効果が何もできない、なら false）。使っても無駄な【メイン】を CPU が使わないための判定
 export function mainEffectWillDoAnything(card, bs, side) {

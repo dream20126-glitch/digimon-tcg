@@ -9497,6 +9497,7 @@ function _expireBuffsBody(bs, timing, ownerSide, endingSide) {
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;
       if (!card.buffs.some(b => b.type === 'cant_rest')) card.cantRest = false;
+      else card.cantRest = true; // 進化してもバフ由来の「レストできない」は残る
       if (!card.buffs.some(b => b.type === 'cant_redirect_attack')) card.cantRedirectAttack = false;
     });
   });
@@ -17705,7 +17706,11 @@ function _attackStepImpossible(step, card, bs, side) {
   if (step.target && step.target !== 'self_card' && step.target !== 'self') return false; // 対象を選ぶ形は判定しない
   const me = side === 'player' ? bs.player : bs.ai;
   if (!me || !(me.battleArea || []).includes(card)) return false;
-  if (card.suspended || card.cantAttack) return true;
+  // 「アタックできない」「レストできない」（アタックするとレストするのでアタックできない）が付いていれば不発なので、
+  // ≪急襲≫等の「アタックしますか？」も出さない。印（cantAttack/cantRest）に加えて、付与（バフ）も直接見る
+  const _bf = Array.isArray(card.buffs) ? card.buffs : [];
+  if (card.suspended || card.cantAttack || card.cantRest
+      || _bf.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block' || b.type === 'cant_rest'))) return true;
   // 登場したターンのデジモン（≪速攻≫無し）は、≪エグゼキュート≫等の効果でもアタックできない
   if (_summonSickForEffectAttack(step, card)) return true;
   if (Array.isArray(step.options) && step.options.includes('digimon_only') && !step._executeAttack) {

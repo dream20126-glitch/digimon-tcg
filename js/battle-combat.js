@@ -562,6 +562,7 @@ function _carryRestrictionFlags(c) {
   if (!c || !Array.isArray(c.buffs)) return;
   if (c.buffs.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block'))) c.cantAttack = true;
   if (c.buffs.some(b => b && (b.type === 'cant_block' || b.type === 'cant_attack_block'))) c.cantBlock = true;
+  if (c.buffs.some(b => b && b.type === 'cant_rest')) c.cantRest = true;
 }
 // 消滅キャンセル試行ヘルパー
 // 戻り値: { canceled: true, reason: '...' } か null。

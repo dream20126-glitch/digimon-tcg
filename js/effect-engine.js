@@ -8621,6 +8621,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     // 戻す順番（タップした順）。全部選び終えたら（「上か下だけに戻す」なら上下を選んでから）まとめてデッキに戻し、
     // 移動演出を出す（3枚以上は一覧でまとめて。コピペモン BT26-084 の要望）
     const _order = [];
+    let _cpuTopBottomPick = null; // CPU が決めた「上か下か」
     const _placeAll = (pos) => {
       if (_order.length === 0) { finishReturnPhase(); return; }
       // 置く順: deck_top（タップ順に上へ積む）は選んだ順に上へ＝最後に選んだカードが一番上。
@@ -8671,22 +8672,43 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         _finishOrder();
         return;
       }
-      // CPU: デッキの下に戻すときは、当分引かないので並びはそのまま。デッキの上に積むとき（タップした順に上へ積む＝最後が一番上）は、
-      // 中・高は欲しいカード（_cpuCardWant）ほど後に積んで、次に引けるようにする
+      // CPU（中・高）: 戻す順番は「次に（デッキが一周したら先に）引きたいカードほど早く引ける位置」にする（_cpuCardWant の点数）。
+      //  ・デッキの上に積む（タップした順に上へ＝最後が一番上）: 欲しいカードほど後に積む
+      //  ・デッキの下に入れる（タップした順に下へ＝先に入れた方が上）: 欲しいカードほど先に入れる（一周したとき先に引ける）
+      //  ・上か下か選べる: 順番は欲しい順。欲しいカード（すぐ進化できる・足りないテイマー）があれば上、無ければ下（しばらくいらない）
+      //  相手のデッキに戻すときは逆（相手が欲しいカードほど引きにくい位置へ）
       if (_cpu) {
         _cpuThink(() => {
           const _lv = typeof window !== 'undefined' ? window._aiLevel : null;
-          const _toTop = returnTo === 'deck_top';
+          const smart = _lv === 'mid' || _lv === 'high';
+          const _oppDeck = !!ownLbl;
+          const ranked = left.map(e => ({ e, w: _cpuCardWant(e.card, deckOwner) }));
+          // 欲しい順（相手のデッキなら、相手が欲しくない順）
+          const wantDesc = ranked.slice().sort((a, b) => _oppDeck ? (a.w.s - b.w.s) : (b.w.s - a.w.s));
           let seq = left.slice();
-          if (_toTop && (_lv === 'mid' || _lv === 'high')) {
-            const owner = ctx.bs && ctx.bs.ai;
-            seq = seq.map(e => ({ e, w: _cpuCardWant(e.card, owner).s })).sort((a, b) => a.w - b.w).map(x => x.e);
+          if (smart) {
+            if (returnTo === 'deck_top') seq = wantDesc.slice().reverse().map(x => x.e);
+            else seq = wantDesc.map(x => x.e);
+          }
+          if (smart && returnTo === 'deck_top_or_bottom') {
+            const maxW = Math.max(0, ...ranked.map(x => x.w.s));
+            _cpuTopBottomPick = _oppDeck ? (maxW >= 80 ? 'bottom' : 'top') : (maxW >= 80 ? 'top' : 'bottom');
           }
           try {
-            if (window._aiWhy && (_lv === 'mid' || _lv === 'high')) {
-              const names = seq.map(e => '「' + e.card.name + '」');
-              if (_toTop) window._aiWhy('残りのカードをデッキの上に戻します（次に引くのは' + names[names.length - 1] + '） ← 次のドローで一番欲しいカードを引けるように、欲しいカードほど上に置きました。');
-              else window._aiWhy('残りのカード（' + names.join('・') + '）をデッキの下に戻します ← デッキの下のカードは当分引かないので、順番はほとんど影響しないからです。');
+            if (window._aiWhy && smart) {
+              const names = (arr) => arr.map(x => '「' + x.e.card.name + '」').join('→');
+              const best = wantDesc[0];
+              const bestWhy = best && best.w.why.length ? best.w.why[0] : '';
+              if (returnTo === 'deck_top') {
+                window._aiWhy('残りのカードをデッキの上に戻します（次に引く順: ' + names(wantDesc) + '） ← 次のドローで欲しいカードから引けるように、欲しいカードほど上に置きました。' + (bestWhy ? '「' + best.e.card.name + '」は' + bestWhy + 'からです。' : ''));
+              } else if (returnTo === 'deck_top_or_bottom') {
+                const top = _cpuTopBottomPick === 'top';
+                window._aiWhy('残りのカードをデッキの' + (top ? '上' : '下') + 'に戻します（' + names(wantDesc) + 'の順） ← '
+                  + (_oppDeck ? (top ? '相手がすぐ欲しがるカードが無いので、上に戻しても問題ないからです。' : '相手が欲しがるカードがあるので、引きにくい下に送ります。')
+                    : (top ? '次に引きたいカードがあるからです。' + (bestWhy ? '「' + best.e.card.name + '」は' + bestWhy + 'からです。' : '') : 'すぐに欲しいカードが無いので、しばらく引かない下に送ります。')));
+              } else {
+                window._aiWhy('残りのカードをデッキの下に戻します（' + names(wantDesc) + 'の順） ← デッキの下でも、デッキが一周したときは上にあるカードから引くので、欲しいカードほど先（上側）に入れました。');
+              }
             }
           } catch (_) {}
           seq.forEach(e => { _order.push(e.card); removeEntry(e); });
@@ -8716,8 +8738,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   }
 
   function showTopBottomChoice(card, cb) {
-    // CPU: デッキの下へ（今までの CPU の処理と同じ）
-    if (_cpu) { cb('bottom'); return; }
+    // CPU: 戻す順番を決めたとき（refreshReturnUI）に上か下も決めている（次に引きたいカードがあれば上、無ければ下）。見習いは下
+    if (_cpu) { const _pos = _cpuTopBottomPick || 'bottom'; _cpuTopBottomPick = null; cb(_pos); return; }
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:65000;display:flex;align-items:center;justify-content:center;';
     const box = document.createElement('div');

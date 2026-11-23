@@ -3270,7 +3270,10 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
     && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))
     && !(noEvoOnly && (!c.stack || c.stack.length === 0));
   let blockerIdx = bs.ai.battleArea.findIndex(_canBlk);
-  if (blockerIdx < 0) return false;
+  if (blockerIdx < 0) {
+    if (_aiIsMid() && atk) _aiWhy('あなたの「' + atk.name + '」のアタックは、ブロックせずに受けます ← ' + ((bs.ai.battleArea || []).some(c => c && isBlocker(c)) ? 'ブロッカーはいますが、レスト中などで今はブロックできないからです。' : 'ブロックできるデジモン（ブロッカー）がいないからです。'));
+    return false;
+  }
   // 中: ブロックするかと、どのデジモンでブロックするかを判断する（【衝突】でブロックが強制なら必ずブロック）
   if (_aiIsMid()) {
     const cands = bs.ai.battleArea.map((c, i) => (_canBlk(c, i) ? i : -1)).filter(i => i >= 0);
@@ -5604,7 +5607,8 @@ function _aiDescribe(c) {
   return 'Lv.' + _lvOf(c) + '・DP' + _dpOf(c) + (kws.length ? '・' + kws.join('') : '') + ((c.stack || []).length ? '・進化元' + c.stack.length + '枚' : '');
 }
 function _aiObservePlayer(kind, card) {
-  if (!_aiIsHigh() || !card || bs.isPlayerTurn !== true) return;
+  // マスターは脅威の大きさと倒し方まで、ベテランは脅威の大きさと手持ちで倒せるかだけ
+  if (!_aiIsMid() || !card || bs.isPlayerTurn !== true) return;
   if (!(bs.player.battleArea || []).includes(card) || !_aiIsDigi(card)) return;
   try {
     const threat = _aiThreat(card);
@@ -5614,6 +5618,7 @@ function _aiObservePlayer(kind, card) {
     const removal = (bs.ai.hand || []).filter(h => { const t = _aiTagsOf(h); return h.type !== 'デジモン' && (t.removal || t.evoDiscard); });
     let plan;
     if (beaters.length) plan = 'こちらの「' + beaters[0].name + '」ならバトルで倒せるので、レスト状態になったら狙います。';
+    else if (!_aiIsHigh()) plan = '今の場には、これをバトルで倒せるデジモンがいません。';
     else if (removal.length) plan = '手札の「' + removal[0].name + '」で取り除くことを考えています。';
     else if (isBlocker(card)) plan = 'ブロッカーなので、こちらのアタックを止められないように、これを上回るデジモンを用意したいです。';
     else plan = '今はこれを倒す手段が無いので、守りを固めながら切り札の準備を急ぎます。';

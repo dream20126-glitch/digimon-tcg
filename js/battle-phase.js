@@ -1313,6 +1313,13 @@ function aiPhaseMain() {
 // ----- AI ターン終了 -----
 
 async function endAiTurn() {
+  // AI対戦（中・高）: メモリーを残してターンを終えるのは「これ以上、意味のある行動がない」と判断したとき（ターン終了ボタンと同じ。
+  // 相手のメモリーは3になる）
+  if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && bs.memory < 0) {
+    addLog('🤖 ターン終了（メモリー' + (-bs.memory) + 'を残して終了: これ以上、意味のある行動がない）');
+  }
+  // CPU の【自分のターン終了時】の候補（調査用）
+  try { console.log('[ai turn end]', (bs.ai.battleArea || []).filter(Boolean).map(c => c.name + (c.suspended ? '(レスト)' : '(アクティブ)') + ' DP' + c.dp + ' evoKw=' + (c._evoGrantedKeywords ? [...c._evoGrantedKeywords].join('/') : '') + ' perm=' + JSON.stringify(c._permEffects || {})).join(' | ')); } catch (_) {}
   // AI対戦: 画面の演出が終わってからターン終了の処理に進む
   if (window._aiBattleActive && typeof window._cpuFxIdle === 'function') {
     try { await new Promise((res) => window._cpuFxIdle(res)); } catch (_) {}

@@ -2896,8 +2896,9 @@ export function doEvolveIku(card, handIdx) {
         if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       };
-      // ＜育成＞ 限定の発火条件は廃止。on_evolve レシピがあれば発火する。
-      if (hasKeyword(evolved, '【進化時】')) {
+      // 育成エリアのカードの効果は、育成エリアを指定・参照していない限り誘発しない（公式ルール 3-4-7-4
+      // 「育成エリアのデジモンが【進化時】効果を持つカードに進化しても、そのデジモンの【進化時】効果は誘発しません」）
+      if (hasKeyword(evolved, '【進化時】') && _ikuEvolveEffectAllowed(evolved)) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
           renderAll(true);
           finishEvolveIku();
@@ -5734,14 +5735,18 @@ if (typeof window !== 'undefined') window._aiEffectAttack = (cands, step, done, 
 // 効果のアタックをするか（任意の効果の「発動しますか？」の CPU の判断。effect-engine.js _cpuStepWorthIt から）:
 // 候補のどれかで、ふつうのアタックと同じ判断のアタック先があれば「する」
 if (typeof window !== 'undefined') window._aiWantsEffectAttack = (cands) => {
-  if (!Array.isArray(cands) || cands.length === 0) return false;
+  if (!Array.isArray(cands) || cands.length === 0) { console.log('[aiWantsEffectAttack] 候補なし'); return false; }
   if (!_aiIsMid()) return true;
   const set = new Set(cands);
   const prevRaid = _aiRaidMode; _aiRaidMode = true;
+  let ok = true;
   try {
-    if (_aiIsHigh()) return !!_aiHighPickAttack((c) => !!c && set.has(c) && !c.suspended);
-    return cands.some(c => !!_aiMidPickTarget(c));
-  } catch (_) { return true; } finally { _aiRaidMode = prevRaid; }
+    if (_aiIsHigh()) ok = !!_aiHighPickAttack((c) => !!c && set.has(c) && !c.suspended);
+    else ok = cands.some(c => !!_aiMidPickTarget(c));
+  } catch (e) { console.error('[aiWantsEffectAttack]', e); ok = true; } finally { _aiRaidMode = prevRaid; }
+  console.log('[aiWantsEffectAttack]', cands.map(c => c.name + '(DP' + _dpOf(c) + ')').join(','), '→', ok, '見積もり', _aiEstSecDp());
+  if (!ok) addLog('🧠 効果のアタックはしない（' + cands.map(c => c.name).join('・') + ': 勝てるアタック先がない／意味がない）');
+  return ok;
 };
 // 進化させると【急襲】を持つか（進化先のカード自身か、進化元になる base / その下のカードが【急襲】を与える）
 function _aiWillHaveRaid(base, evoCard) {
@@ -6371,7 +6376,8 @@ function _aiOverflowAllowance(card, base) {
     // セキュリティを効果で破棄するカード: 相手のセキュリティから弱らせるオプションが出てきそうなら＋1
     if (_aiTagsOf(card).secTrash && _aiOppSecOptionThreat()) n += 1;
   }
-  return Math.max(1, Math.min(10, n));
+  // ターン終了（何もせずに終える）でも相手のメモリーは3になるので、3までなら渡しても損はない（意味のある行動なら使う）
+  return Math.max(3, Math.min(10, n));
 }
 // 中: このカードを使うために、相手に3より多くメモリーを渡してもよいか（損得）。カードの効果から得の大きさを見積もる。
 //   相手のデジモンを消滅・手札/デッキに戻す・DP-・レスト（相手にデジモンがいるとき）＋2、相手のセキュリティを減らす＋2、
@@ -6693,6 +6699,13 @@ function _aiEvolveInBattleArea(card, slotIdx, done) {
 }
 
 // CPU の育成エリアでの進化（プレイヤーの doEvolveIku と同じ処理。side だけ 'ai'）。done(turnEnded)
+// 育成エリアで進化したデジモンの【進化時】を発揮してよいか: その【進化時】の文が育成エリアを指定・参照しているときだけ
+// （公式ルール 3-4-7-4。それ以外の【進化時】は育成エリアでは誘発しない）
+function _ikuEvolveEffectAllowed(card) {
+  const t = String((card && card.effect) || '');
+  const m = /【進化時】[\s\S]*?(?=\r?\n\s*【(?!進化時|登場時|移動時|ターンに1回|ターン1回)|$)/.exec(t);
+  return !!(m && /育成エリア/.test(m[0]));
+}
 function _aiEvolveIku(card, done) {
   const base = bs.ai.ikusei;
   if (!base || !card) { done(false); return; }
@@ -6723,7 +6736,8 @@ function _aiEvolveIku(card, done) {
     const turnEnded = aiSpendMemory(cost);
     doDraw('ai', '進化ドロー', (dismissDraw) => {
       if (typeof dismissDraw === 'function') dismissDraw();
-      if (hasKeyword(evolved, '【進化時】')) {
+      // 育成エリアでは【進化時】は誘発しない（公式ルール 3-4-7-4。プレイヤーの doEvolveIku と同じ）
+      if (hasKeyword(evolved, '【進化時】') && _ikuEvolveEffectAllowed(evolved)) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { renderAll(true); done(turnEnded); }, 'ai');
       } else {
         done(turnEnded);

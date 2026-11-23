@@ -6412,6 +6412,12 @@ function _aiPlayCost(c) {
 }
 
 function aiPlayCard(c, handIdx, onDone) {
+  // アセンブリ／デジクロス（プレイヤーの offerAssemblyThenPlay と同じく、登場の前に素材を下に置いて登場コストを下げる）
+  if (c && c.type === 'デジモン') {
+    delete c._digicrossed;
+    const _mp = _aiMaterialPlan(c);
+    if (_mp) _aiApplyMaterials(c, _mp);
+  }
   // 「このカードを使用/登場するとき、〇〇することで、支払うコスト-N」（summon_cost のコスト付きエントリ。
   // 茨の女王 BT26-098 等）: CPU は払えるなら自動で使う（checkCostedSummonDiscount は side!=='player' なら確認なし）
   if (c && _aiPlayCost(c) > 0) {
@@ -6429,6 +6435,8 @@ function aiPlayCard(c, handIdx, onDone) {
 function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   // コストを払った軽減量を差し引いた支払うコスト
   const _aiBasePay = Math.max(0, _aiPlayCost(c) - (costedDisc || 0));
+  // アセンブリ等の一時的な軽減はこの支払いで使い切る（プレイヤーの doPlay と同じ）
+  delete c._assemblyDiscount;
   let empty = bs.ai.battleArea.findIndex(s => s === null);
   if (empty === -1) { empty = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
 
@@ -6639,14 +6647,25 @@ function _aiFindEvolveFrom(base) {
     let ok = false, alt = null;
     try { ok = _resolveEvolveMatch(c, base) !== null; } catch (_) { ok = false; }
     try { alt = _getAltEvolve(c, base, bs, 'ai'); } catch (_) { alt = null; }
-    if (!ok && !alt) continue;
-    let cost = alt ? alt.cost : getEvolveCostFor(c, base);
+    // バースト進化（テイマー1体を手札に戻して進化。プレイヤーと同じ getBurstEvolve）。中・高は勝ち筋につながるカードだけ
+    let burst = null;
+    if (base !== bs.ai.ikusei && bs.ai.battleArea.includes(base)) {
+      try {
+        const be = _getBurstEvolve(c, base, bs, 'ai');
+        if (be && _filterBurstEvolveTamerCandidates(bs, 'ai', be.tamerConditions, be.tamerConditionsOp, be.tamerConditionsChain).length > 0
+            && (!_aiIsMid() || _aiIsFinisher(c) || _aiOnLine(c))) burst = be;
+      } catch (_) { burst = null; }
+    }
+    if (!ok && !alt && !burst) continue;
+    let cost = (ok || alt) ? (alt ? alt.cost : getEvolveCostFor(c, base)) : null;
+    if (cost !== null && cost !== undefined) { try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {} }
+    let useBurst = null;
+    if (burst && (cost === null || cost === undefined || burst.cost < cost)) { cost = burst.cost; useBurst = burst; }
     if (cost === null || cost === undefined) continue;
-    try { const st = _getStaticEvoCostReduction(c, base, bs, 'ai'); if (st) cost = Math.max(0, cost - st); } catch (_) {}
     if (cost > aiAvailableMemory(c, base)) continue;
     if (!_high) {
-      if (!_best) _best = { card: c, cost, alt: !!alt };
-      if (!_fin && _aiIsFinisher(c)) _fin = { card: c, cost, alt: !!alt };
+      if (!_best) _best = { card: c, cost, alt: !!alt, burst: useBurst };
+      if (!_fin && _aiIsFinisher(c)) _fin = { card: c, cost, alt: !!alt, burst: useBurst };
       continue;
     }
     // 高: 強さ＋効果の得に、設計図（勝ち筋のカード・勝ち筋につながるカード）と作戦（守るなら守りのカード）を加える
@@ -6654,7 +6673,7 @@ function _aiFindEvolveFrom(base) {
       + (_aiIsFinisher(c) ? 4000 : 0) + (_aiOnLine(c) ? 1000 : 0)
       + (_plan === 'defend' && _aiIsDefensive(c) ? 3000 : 0)
       + (_aiTagsOf(c).secTrash && _aiOppSecOptionThreat() ? 2000 : 0);
-    if (!_best || score > _best.score) _best = { card: c, cost, alt: !!alt, score };
+    if (!_best || score > _best.score) _best = { card: c, cost, alt: !!alt, burst: useBurst, score };
   }
   return _fin || _best;
 }
@@ -6847,6 +6866,263 @@ function _aiDualOptionValuable(c) {
   return false;
 }
 
+// ===== CPU の特別な登場・進化（アセンブリ・デジクロス・バースト進化・アプ合体・リンク・トレーニング）=====
+// 判定・処理はプレイヤーと同じエンジンの関数（getAssemblyOptions / filterAssemblyCandidates / getBurstEvolve /
+// filterBurstEvolveTamerCandidates / getAppGattaiEvolve / fireLinkTriggers / doTrainingEffect 等）を side 'ai' で使い、
+// プレイヤーが画面で選ぶところだけを CPU が選ぶ
+
+// アセンブリ／デジクロスで下に置く素材の計画（盤面は変えない）。{ kind, picks:[{card, remove, group}], discount, opt } か null
+function _aiMaterialPlan(card) {
+  if (!card || card.type !== 'デジモン' || card.playCost === null) return null;
+  let options = [];
+  try { options = _getAssemblyOptions(card) || []; } catch (_) { options = []; }
+  const P = bs.ai;
+  let basePay = 0;
+  try { basePay = _getEffectivePlayCost(card, bs, 'ai'); } catch (_) { basePay = card.playCost || 0; }
+  const avail = aiAvailableMemory(card);
+  for (const opt of options) {
+    if (!opt || (opt.in_zone && opt.in_zone !== 'hand')) continue;
+    const costItems = (Array.isArray(opt.cost) ? opt.cost : []).filter(Boolean);
+    if (costItems.length === 0) continue;
+    const per = parseInt(opt.value, 10) || 0;
+    if (opt.per_cost_card || costItems.some(ci => ci && ci._designatedAny)) {
+      // 《デジクロス》: 払えないときだけ、足りない分を素材で補う（素材を使いすぎない）。
+      // 素材の優先: トラッシュ → バトルエリアの価値の低いデジモン（勝ち筋でない Lv.4 以下・ブロッカーでない）→ 手札（勝ち筋でない）
+      const need = basePay - avail;
+      if (need <= 0 || per <= 0) continue;
+      const want = Math.ceil(need / per);
+      const used = new Set();
+      const picks = [];
+      const srcList = (ci) => {
+        const zones = Array.isArray(ci.from) ? ci.from : (ci.from ? [ci.from] : ['hand', 'battle_area']);
+        const out = [];
+        if (zones.includes('trash')) P.trash.forEach(c => out.push({ card: c, rank: 0, remove: () => { const i = P.trash.indexOf(c); if (i !== -1) P.trash.splice(i, 1); } }));
+        if (zones.includes('battle_area')) P.battleArea.forEach(c => {
+          if (!c || _aiIsFinisher(c) || _lvOf(c) > 4 || isBlocker(c)) return;
+          out.push({ card: c, rank: 1, remove: () => {
+            const i = P.battleArea.indexOf(c); if (i === -1) return;
+            P.battleArea[i] = null;
+            (c.stack || []).forEach(s2 => P.trash.push(s2)); c.stack = [];
+            (c.linkedCards || []).forEach(s2 => P.trash.push(s2)); c.linkedCards = [];
+          } });
+        });
+        if (zones.includes('hand')) P.hand.forEach(c => { if (c && c !== card && !_aiIsFinisher(c)) out.push({ card: c, rank: 2, remove: () => { const i = P.hand.indexOf(c); if (i !== -1) P.hand.splice(i, 1); } }); });
+        return out.sort((a, b) => a.rank - b.rank);
+      };
+      costItems.forEach((ci, g) => {
+        const max = Math.max(1, parseInt(ci.count, 10) || 1);
+        const list = srcList(ci);
+        const okCards = new Set(_filterAssemblyCandidates(ci, list.map(x => x.card), bs, 'ai'));
+        let n = 0;
+        for (const x of list) {
+          if (picks.length >= want || n >= max) break;
+          if (used.has(x.card) || !okCards.has(x.card)) continue;
+          used.add(x.card); picks.push(Object.assign({ group: g }, x)); n++;
+        }
+      });
+      if (picks.length === 0 || per * picks.length < need) continue;
+      return { kind: 'digixros', picks, discount: per * picks.length, opt };
+    }
+    // アセンブリ: トラッシュのカードだけを使う（トラッシュは失っても痛くないので、使えるなら使う）
+    if (costItems.some(ci => { const z = Array.isArray(ci.from) ? ci.from : (ci.from ? [ci.from] : []); return !z.includes('trash'); })) continue;
+    const picks = [];
+    let ok = true;
+    costItems.forEach((ci, g) => {
+      if (!ok) return;
+      const want = parseInt(ci.count, 10) || 1;
+      const distinctBy = Array.isArray(ci.distinct_by) ? ci.distinct_by : [];
+      const cands = _filterAssemblyCandidates(ci, P.trash.filter(c => !picks.some(p => p.card === c)), bs, 'ai');
+      const inGroup = [];
+      for (const c of cands) {
+        if (inGroup.length >= want) break;
+        if (distinctBy.length && inGroup.some(p => distinctBy.some(attr => { const f = ASSEMBLY_DISTINCT_FIELD[attr]; return f && p[f] === c[f]; }))) continue;
+        inGroup.push(c);
+      }
+      if (inGroup.length < want) { ok = false; return; }
+      inGroup.forEach(c => picks.push({ card: c, group: g, remove: () => { const i = P.trash.indexOf(c); if (i !== -1) P.trash.splice(i, 1); } }));
+    });
+    if (!ok || picks.length === 0) continue;
+    return { kind: 'assembly', picks, discount: per, opt };
+  }
+  return null;
+}
+// 素材を実際に下に置き、登場コストの軽減（card._assemblyDiscount）を付ける（プレイヤーの offerAssemblyThenPlay / _offerDigixros と同じ結果）
+function _aiApplyMaterials(card, plan) {
+  if (!card || !plan) return;
+  const ordered = plan.picks.slice().sort((a, b) => a.group - b.group);
+  ordered.forEach(p => p.remove());
+  ordered.forEach(p => { delete p.card._faceDown; p.card.suspended = false; p.card.buffs = []; });
+  if (!card.stack) card.stack = [];
+  card.stack = [...ordered.map(p => p.card), ...card.stack];
+  card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + plan.discount;
+  if (plan.kind === 'digixros') {
+    card._digicrossed = ordered.length;
+    card._digixrossMats = ordered.map(p => ({ name: p.card.name, imgSrc: cardImg(p.card) || '' }));
+    addLog('✖ AIが「' + card.name + '」のデジクロス（' + ordered.map(p => '「' + p.card.name + '」').join('') + 'を下に置く・登場コスト-' + plan.discount + '）');
+  } else {
+    addLog('💠 AIが「' + card.name + '」のアセンブリを発動（トラッシュから' + ordered.length + '枚使用・登場コスト-' + plan.discount + '）');
+  }
+  renderAll();
+}
+// 素材による登場コストの軽減量（登場できるかの判定用）
+function _aiMaterialDiscount(card) {
+  try { const p = _aiMaterialPlan(card); return p ? p.discount : 0; } catch (_) { return 0; }
+}
+
+// バースト進化: テイマー1体を手札に戻してから進化する（プレイヤーの _doBurstEvolveWith と同じ）。進化したデジモンは
+// このターン終了時に重ねられているカードを1枚破棄する（_burstEvolvedPendingDiscard → endAiTurn の processBurstEvolvePendingDiscard）
+function _aiDoBurstEvolve(card, slotIdx, burst, done) {
+  const base = bs.ai.battleArea[slotIdx];
+  const cands = _filterBurstEvolveTamerCandidates(bs, 'ai', burst.tamerConditions, burst.tamerConditionsOp, burst.tamerConditionsChain);
+  if (!base || cands.length === 0) { done(); return; }
+  // 手札に戻すテイマー: 「メモリーが3に戻る」テイマー以外を優先（また出し直せる安いもの）
+  const p = _aiProfile();
+  const chosen = cands.slice().sort((a, b) => ((p && p.memResetNames.includes(a.name)) ? 1 : 0) - ((p && p.memResetNames.includes(b.name)) ? 1 : 0)
+    || ((a.playCost || 0) - (b.playCost || 0)))[0];
+  const ti = bs.ai.tamerArea.indexOf(chosen);
+  if (ti === -1) { done(); return; }
+  bs.ai.tamerArea.splice(ti, 1);
+  if (Array.isArray(chosen.stack) && chosen.stack.length > 0) { chosen.stack.forEach(c => { if (c) { delete c._faceDown; bs.ai.trash.push(c); } }); chosen.stack = []; }
+  chosen.buffs = []; chosen.dpModifier = 0; chosen.suspended = false;
+  bs.ai.hand.push(chosen);
+  addLog('🔥 AIのバースト進化: 「' + chosen.name + '」を手札に戻した');
+  renderAll();
+  const go = () => {
+    const hi = bs.ai.hand.indexOf(card);
+    const slot = bs.ai.battleArea.indexOf(base);
+    if (hi === -1 || slot === -1) { done(); return; }
+    addLog('🔥 AIが「' + base.name + '」→「' + card.name + '」にバースト進化！');
+    doEvolveFromEffect(card, hi, slot, burst.cost, 'ai', () => {
+      const ev = bs.ai.battleArea[slot];
+      if (ev) ev._burstEvolvedPendingDiscard = true;
+      done();
+    });
+  };
+  if (typeof window._fxMoveSync === 'function') { try { window._fxMoveSync(chosen, '相手のテイマーエリア', '相手の手札', go, { faceUp: true }); return; } catch (_) {} }
+  go();
+}
+
+// アプ合体（プレイヤーの _finishAppGattaiEvolve と同じ。本体の上にリンクカード、その上にアプ合体先を重ねる。公式 8-4）
+function _aiFindAppGattai(base) {
+  if (!base || !_aiIsDigi(base)) return null;
+  for (const c of (bs.ai.hand || [])) {
+    let ag = null;
+    try { ag = _getAppGattaiEvolve(c, base, bs, 'ai'); } catch (_) { ag = null; }
+    if (ag && (ag.linkedPartners || []).length > 0 && ag.cost <= aiAvailableMemory(c, base)) return { card: c, ag };
+  }
+  return null;
+}
+function _aiDoAppGattai(card, slotIdx, ag, done) {
+  const base = bs.ai.battleArea[slotIdx];
+  const hi = bs.ai.hand.indexOf(card);
+  if (!base || hi === -1) { done(false); return; }
+  const cost = ag.cost;
+  const partners = ag.linkedPartners || [];
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: base.suspended, summonedThisTurn: base.summonedThisTurn,
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes,
+    dpModifier: base.dpModifier || 0,
+    stack: [base].concat(partners).concat(base.stack || []),
+  });
+  evolved.dp = evolved.baseDp + evolved.dpModifier;
+  base.linkedCards = (base.linkedCards || []).filter(lc => !partners.includes(lc));
+  bs.ai.battleArea[slotIdx] = evolved;
+  bs.ai.hand.splice(hi, 1);
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
+  addLog('🔗 AIが「' + base.name + '」＋' + partners.map(p => '「' + (p.name || '?') + '」').join('＋') + ' →「' + evolved.name + '」アプ合体！（コスト ' + cost + '）');
+  renderAll();
+  showAppGattaiEffect(cost, base, partners, evolved, () => {
+    const turnEnded = aiSpendMemory(cost);
+    doDraw('ai', 'アプ合体ドロー', (dismissDraw) => {
+      if (typeof dismissDraw === 'function') dismissDraw();
+      if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { _hooks.applyPermanentEffects('ai'); renderAll(true); done(turnEnded); }, 'ai');
+      } else { _hooks.applyPermanentEffects('ai'); renderAll(true); done(turnEnded); }
+    }, { deferDismiss: false });
+  });
+}
+
+// リンク（プレイヤーの doLink と同じ。リンクコストを払い、デジモンの横にリンク → 【リンク時】）。
+// 使う: リンク条件を満たし空きのあるデジモンがいて、リンクコストを払えるとき。デジモンとして出す方が良い場合
+// （場のデジモンが1体以下で、登場コストの方が安い）はリンクしない。リンク先は勝ち筋 → アタックできる → DPの高い順
+function _aiTryLink(callback) {
+  if (!window._aiBattleActive) return false;
+  const area = bs.ai.battleArea || [];
+  const digiCount = area.filter(_aiIsDigi).length;
+  for (const c of (bs.ai.hand || []).slice()) {
+    if (!c || c.linkCost === null || c.linkCost === undefined || !c.isLink) continue;
+    if (c._aiLinkTriedTurn === bs.turn) continue;
+    if (c.linkCost > aiAvailableMemory(c)) continue;
+    if (c.playCost !== null && digiCount <= 1 && c.playCost <= c.linkCost) continue;
+    const bases = area.filter(b => _aiIsDigi(b) && meetsLinkCondition(c, b)
+      && ((b.linkedCards || []).length < ((b._linkCapacityBonus || 0) + (b._linkPlusPassive || 0) + 1)));
+    if (bases.length === 0) continue;
+    const rank = (b) => (_aiIsFinisher(b) ? 3 : 0) + (!b.suspended && !b.summonedThisTurn ? 2 : 0) + _dpOf(b) / 100000;
+    const base = bases.sort((a, b) => rank(b) - rank(a))[0];
+    c._aiLinkTriedTurn = bs.turn;
+    const hi = bs.ai.hand.indexOf(c);
+    if (hi === -1) continue;
+    const cost = c.linkCost;
+    bs.ai.hand.splice(hi, 1);
+    if (!base.linkedCards) base.linkedCards = [];
+    base.linkedCards.push(c);
+    c._lastLinkCost = cost;
+    addLog('🔗 AIが「' + base.name + '」に「' + c.name + '」をリンク！（コスト ' + cost + '）');
+    renderAll();
+    fxLinkEffect(base, c, () => {
+      const turnEnded = aiSpendMemory(cost);
+      _hooks.applyPermanentEffects('ai');
+      renderAll(true);
+      _fireLinkTriggers(c, 'ai', base, 'ai', _hooks.makeEffectContext(c, 'ai'), () => {
+        renderAll(true);
+        if (turnEnded || bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 500);
+      });
+    });
+    return true;
+  }
+  return false;
+}
+
+// ≪トレーニング≫（メインフェイズ中、このデジモンをレストさせて、デッキの上から1枚を進化元の下に裏向きで置く。育成エリアでも可）。
+// プレイヤーと同じ doTrainingEffect を使う。使う: 育成エリアのデジモン（アタックしない）／バトルエリアでこのターンもう
+// アタックしないデジモン（登場したターン・アタックの後）。守りに残すブロッカー（自分のセキュリティ3枚以下）と、
+// 【急襲】でアタックする予定のデジモンには使わない
+function _aiTryTraining(callback) {
+  if (!window._aiBattleActive) return false;
+  const P = bs.ai;
+  if (!P.deck || P.deck.length <= 3) return false;
+  const cands = [];
+  if (P.ikusei && _aiIsDigi(P.ikusei)) cands.push(P.ikusei);
+  (P.battleArea || []).forEach(c => {
+    if (!_aiIsDigi(c)) return;
+    const willNotAttack = _aiOverflowOK || c.summonedThisTurn;
+    if (!willNotAttack) return;
+    if (isBlocker(c) && (P.security || []).length <= 3) return;
+    if (bs._aiRaidPlanTurn === bs.turn && bs._aiRaidPlanCard === c) return;
+    if (_aiHasRaid(c)) return;
+    cands.push(c);
+  });
+  for (const c of cands) {
+    if (c.suspended || c.cantRest || c._aiTrainTurn === bs.turn) continue;
+    let has = false;
+    try { has = _hasTrainingKeyword(c); } catch (_) { has = false; }
+    if (!has) continue;
+    c._aiTrainTurn = bs.turn;
+    const prevPhase = bs.phase;
+    bs.phase = 'main';
+    let ok = false;
+    try { ok = doTrainingEffect(c, 'ai'); } catch (e) { console.error('[aiTraining]', e); } finally { bs.phase = prevPhase; }
+    if (!ok) continue;
+    setTimeout(() => aiPlayAuto(callback), 600);
+    return true;
+  }
+  return false;
+}
+
+
 // 高（デジモンマスター）は1つ行動するたびに「考え中」を出してから決める
 function aiPlayAuto(callback, _fxWaited) {
   // 前の演出（デッキオープン・手札に加えたカードの表示・カードの移動等）が終わってから次の行動を決める（行動のたびに）
@@ -6917,8 +7193,26 @@ function _aiPlayAutoBody(callback) {
   for (const i of _evoOrder) {
     const base = bs.ai.battleArea[i];
     if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
+    // アプ合体（本体にアプ合体の相手がリンクしていて、手札にアプ合体先がある）: 進化より先に行う
+    const _ag = _aiFindAppGattai(base);
+    if (_ag) {
+      _aiDoAppGattai(_ag.card, i, _ag.ag, () => {
+        _hooks.applyPermanentEffects('ai'); renderAll(true);
+        if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
+      });
+      return;
+    }
     const _ev = _aiFindEvolve(base);
     if (!_ev) continue;
+    if (_ev.burst) {
+      _aiDoBurstEvolve(_ev.card, i, _ev.burst, () => {
+        _hooks.applyPermanentEffects('ai'); renderAll(true);
+        if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
+      });
+      return;
+    }
     _aiEvolveInBattleArea(_ev.card, i, () => {
       _hooks.applyPermanentEffects('ai'); renderAll(true);
       if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
@@ -6931,7 +7225,7 @@ function _aiPlayAutoBody(callback) {
   for (const t of (bs.ai.tamerArea || []).slice()) {
     if (!t) continue;
     const _ev = _aiFindEvolve(t);
-    if (!_ev || _ev.alt) continue;
+    if (!_ev || _ev.alt || _ev.burst) continue;
     addLog('🤖 AIがテイマー「' + t.name + '」から「' + _ev.card.name + '」に進化！');
     // 「次の進化コスト-N」の予約もプレイヤー（doEvolveTamer）と同じく使う（常在の増減は _ev.cost に入っている）
     let _tCost = _ev.cost;
@@ -7016,14 +7310,16 @@ function _aiPlayAutoBody(callback) {
     }
   }
 
-  // ④ デジモン登場
-  if (!_aiTryPlayDigimon(callback)) callback();
+  // ④' リンク（手札のリンクカードを場のデジモンにリンク）
+  if (_aiTryLink(callback)) return;
+  // ④ デジモン登場 → 出せるものが無ければ ≪トレーニング≫（もうアタックしないデジモン・育成エリア）
+  if (!_aiTryPlayDigimon(callback) && !_aiTryTraining(callback)) callback();
 }
 
 // ④ デジモン登場（出したら true）。extra で候補をさらに絞れる
 function _aiTryPlayDigimon(callback, extra) {
   const playable = bs.ai.hand.filter(c =>
-    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c)
+    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && _aiPlayCost(c) - _aiMaterialDiscount(c) <= aiAvailableMemory(c)
     // 中・高: 【移動時】のカードは育成エリアで育てて移動する（手札から登場させない）
     && !_aiKeepForNursery(c)
     && (!extra || extra(c))

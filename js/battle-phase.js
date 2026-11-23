@@ -1336,7 +1336,8 @@ async function endAiTurn() {
     if (typeof window._cpuFxIdle === 'function') { try { await new Promise((res) => window._cpuFxIdle(res)); } catch (_) {} }
   }
   // CPU の「このターン終了時、〜する」（at_turn_end）の予約を実行する
-  try { await new Promise((res) => _runTurnEndDelayedEffects(bs, 'ai', res)); } catch (_) {}
+  // ＋ バースト進化したデジモンの、重ねられているカードを1枚破棄（プレイヤーのターン終了と同じ processBurstEvolvePendingDiscard）
+  try { await new Promise((res) => _processBurstEvolvePendingDiscard(bs, 'ai', res)); } catch (_) {}
   // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火
   // 「次の相手のターン終了まで」等の期間は、ターン終了時の効果を解決し終えてターンが終わるときに切れる
   // （公式ルール6-6-3）ので、期限切れ除去より先に発火する（ディルビットモンACE LM-013 で与えた

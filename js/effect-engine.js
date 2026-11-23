@@ -17145,7 +17145,9 @@ export function canAttackDigimonTarget(atk, def, bs, atkSide) {
   if (atk && atk._executeAttacking) return true;
   // 効果でのアタックの「この効果では、アクティブ状態の相手のデジモンにもアタックできる」（allow_active。雪片の絆 ED01-10）。
   // _confirmAndDeclareEffectAttack がそのアタック1回分だけ立て、アタック先を確定する判定（battle-combat.js resolveAttackTarget）で使い切る
-  if (atk && bs && bs._effectAttackAllowActive === atk) return true;
+  if (atk && bs && (bs._effectAttackAllowActive === atk
+    // CPU の効果のアタック（候補が複数のときは候補の Set。battle-combat.js window._aiEffectAttack）
+    || (bs._effectAttackAllowActive instanceof Set && bs._effectAttackAllowActive.has(atk)))) return true;
   const _allowsDef = (st) => st && st.action === 'attack'
     && /^opponent/.test(String(st.target || '')) && _evalStepConditionGate(st, atk, bs, atkSide)
     && (!st.filter || cardMatchesFilter(def, st.filter, bs, atkSide, atk));

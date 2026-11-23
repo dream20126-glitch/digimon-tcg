@@ -5715,12 +5715,21 @@ function _aiHasRaid(c) {
 // 効果のアタックを実行する: cands（アタックできる候補）から、ふつうのアタックと同じ判断で1体と先を選んでアタックし、
 // バトル・アタック終了まで終わったら done。アタックする意味が無ければ（中・高の判断）アタックせずに done
 let _aiEffectAtkOnDeclare = null; // 効果のアタックを宣言したときに呼ぶ（他の【ターン終了時】を発揮しない等）
+let _aiEffectAtkWithoutRest = false; // 「レストせずアタックできる」（options:without_rest）
 if (typeof window !== 'undefined') window._aiEffectAttack = (cands, step, done, onDeclare) => {
   if (!window._aiBattleActive || _onlineMode || bs._battleAborted || !Array.isArray(cands) || cands.length === 0) { done && done(); return; }
   _aiEffectAtkSet = new Set(cands);
   _aiEffectAtkOnDeclare = onDeclare || null;
+  const _opts = (step && Array.isArray(step.options)) ? step.options : [];
+  _aiEffectAtkWithoutRest = _opts.includes('without_rest');
+  // 「この効果では、アクティブ状態の相手のデジモンにもアタックできる」（allow_active。雪片の絆 ED01-10）: 候補のどれでも
+  if (_opts.includes('allow_active')) bs._effectAttackAllowActive = new Set(cands);
   _aiRaidMode = true;
-  aiAttackPhase(() => { _aiRaidMode = false; _aiEffectAtkSet = null; done && done(); });
+  aiAttackPhase(() => {
+    _aiRaidMode = false; _aiEffectAtkSet = null; _aiEffectAtkWithoutRest = false;
+    if (bs._effectAttackAllowActive instanceof Set) delete bs._effectAttackAllowActive;
+    done && done();
+  });
 };
 // 効果のアタックをするか（任意の効果の「発動しますか？」の CPU の判断。effect-engine.js _cpuStepWorthIt から）:
 // 候補のどれかで、ふつうのアタックと同じ判断のアタック先があれば「する」
@@ -5845,11 +5854,11 @@ function _aiAttackPhaseBody(callback) {
   // 「アタックできない」「レストできない」でない
   const _aiCanAttack = (c) => {
     if (!c || (c.type !== 'デジモン' && c.type !== 'デュアル') || c.suspended) return false;
+    // 効果のアタック（≪急襲≫等）: 候補はエンジンが効果の条件（登場したターンでも≪ヴォルテクス≫等なら可）で出している
+    if (_aiEffectAtkSet) return _aiEffectAtkSet.has(c);
     const rush = !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
     if (c.summonedThisTurn && !rush) return false;
     if (c.cantAttack || c.cantRest) return false;
-    // 【急襲】のアタック: 【急襲】を持つデジモンが1回ずつ
-    if (_aiEffectAtkSet) return _aiEffectAtkSet.has(c);
     // 中・高: このあと進化させて【急襲】でアタックする予定のデジモンは、今はアタックさせずに残す（先を見た行動）
     if (_aiHoldForRaid(c)) return false;
     return true;
@@ -5906,7 +5915,8 @@ function _aiAttackPhaseBody(callback) {
   // アタック中は保留中の DP0 の消滅・【衝突】のブロッカー等がアタック中として扱われる
   _attackInProgress = true;
   if (typeof window !== 'undefined') window._destroyFxBatch = null;
-  atk.suspended = true; _markRuleRest(atk);
+  // 効果の「レストせずアタックできる」（without_rest）ならレストしない
+  if (!(_aiEffectAtkSet && _aiEffectAtkWithoutRest)) { atk.suspended = true; _markRuleRest(atk); }
   atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._attackEndRequested = false;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
@@ -6445,7 +6455,8 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
       const _endBusy = (cb) => { if (window._effectBusyEnd) window._effectBusyEnd(cb); else cb(); };
       const _onDoneDual = onDone;
       onDone = (te) => _endBusy(() => _onDoneDual(te));
-      _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
+      _hooks.checkAndTriggerEffect(c, '【メイン】', () => { _afterOptionUsed('ai', () => {
+        // プレイヤーと同じく「オプションを使用したとき」の効果（on_option_used）を発揮してからアーツ進化へ
         const candidates = _findArtsEvolveCandidates(c, 'ai');
         // 高: アーツ進化先は、このターンにアタックできるバトルエリアのデジモン → レベルの高いもの を優先
         if (_aiIsHigh() && candidates.length > 1) {
@@ -6468,7 +6479,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
         if (!_isCardInAnyZone(c, bs.ai)) bs.ai.trash.push(c);
         renderAll(true);
         onDone(turnEnded);
-      }, 'ai');
+      }); }, 'ai');
     });
     return;
   }
@@ -6868,7 +6879,11 @@ function _aiPlayAutoBody(callback) {
       }
       if (!pair) continue;
       addLog('🤖 AIが「' + pair.left.name + '」と「' + pair.right.name + '」で「' + jc.name + '」にジョグレス進化！');
-      doJogressFromEffect(jc, pair.left, pair.right, parseInt(pair.cost, 10) || 0, 'ai', () => {
+      // 進化に影響を及ぼす効果はジョグレス進化にも及ぶ（公式ルール 8-2-2-5。プレイヤーの _doHandJogress と同じ）
+      let _jCost = parseInt(pair.cost, 10) || 0;
+      try { _jCost = Math.max(0, _jCost - _getStaticEvoCostReduction(jc, pair.left, bs, 'ai')); } catch (_) {}
+      { const _ed = _consumePendingEvoCostReduction(jc, pair.left); if (_ed > 0) _jCost = Math.max(0, _jCost - _ed); }
+      doJogressFromEffect(jc, pair.left, pair.right, _jCost, 'ai', () => {
         _hooks.applyPermanentEffects('ai'); renderAll(true);
         if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
         setTimeout(() => aiPlayAuto(callback), 600);
@@ -6904,7 +6919,10 @@ function _aiPlayAutoBody(callback) {
     const _ev = _aiFindEvolve(t);
     if (!_ev || _ev.alt) continue;
     addLog('🤖 AIがテイマー「' + t.name + '」から「' + _ev.card.name + '」に進化！');
-    doEvolveFromTamer(_ev.card, t, _ev.cost, 'ai', () => {
+    // 「次の進化コスト-N」の予約もプレイヤー（doEvolveTamer）と同じく使う（常在の増減は _ev.cost に入っている）
+    let _tCost = _ev.cost;
+    { const _ed = _consumePendingEvoCostReduction(_ev.card, t); if (_ed > 0) _tCost = Math.max(0, _tCost - _ed); }
+    doEvolveFromTamer(_ev.card, t, _tCost, 'ai', () => {
       _hooks.applyPermanentEffects('ai'); renderAll(true);
       if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
       setTimeout(() => aiPlayAuto(callback), 600);

@@ -796,6 +796,9 @@ export function onEndTurn() {
     if (window._tutorialRunner && window._tutorialRunner.active) {
       await window._tutorialRunner.checkInterrupt('before_end_turn');
     }
+    // バースト進化の保留処理（進化したターンの終了時、重ねられているカードを1枚破棄）と「このターン終了時、〜する」の予約:
+    // 自動のターン終了・CPU のターン終了と同じく、相手の「相手のターン終了時」・期限切れより先に行う
+    try { await new Promise((res) => _processBurstEvolvePendingDiscard(bs, 'player', res)); } catch (_) {}
     // CPU のカードの「相手のターン終了時」効果（場・表向きのセキュリティ/トラッシュのゾーン効果。
     // レイヴモン BT26-082 等）。endAiTurn のプレイヤー側と対になる処理（チュートリアル中は従来通り行わない）
     if (!(window._tutorialRunner && window._tutorialRunner.active)) {
@@ -813,8 +816,6 @@ export function onEndTurn() {
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
     _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
-    // バースト進化の保留処理（進化したターンの終了時、重ねられているカードを1枚破棄）
-    _processBurstEvolvePendingDiscard(bs, 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
       bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
@@ -1069,7 +1070,9 @@ function aiPhaseUnsuspend() {
   (bs.ai.tamerArea || []).forEach(t => { if (t) t.summonedThisTurn = false; });
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
-  const hasRested = bs.ai.battleArea.some(c => c && c.suspended) || !!(bs.ai.ikusei && bs.ai.ikusei.suspended);
+  // テイマーのレストも数える（以前は数えておらず、CPU のテイマーはレストしたまま戻らなかった）
+  const hasRested = bs.ai.battleArea.some(c => c && c.suspended) || !!(bs.ai.ikusei && bs.ai.ikusei.suspended)
+    || (bs.ai.tamerArea || []).some(c => c && c.suspended);
   // ≪再起動≫: 相手(AI)のアクティブフェイズで、自分(プレイヤー)側の再起動持ちカードもアクティブにする
   bs.player.battleArea.forEach(c => {
     if (c && c.suspended && _hasReboot(c)) {
@@ -1085,24 +1088,42 @@ function aiPhaseUnsuspend() {
   }
   if (hasRested) {
     showPhaseAnnounce('🔄 アクティブフェイズ', '#00fbff', () => {
+      // プレイヤーのアクティブフェイズ（execUnsuspend）と同じ処理: バトルエリア・テイマー・育成エリアをアクティブにし、
+      // 「このターン1回」の使用記録を消し、アクティブになったカードの【アクティブになったとき】（on_active）を発揮する
+      const _hasPU = (c) => Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'prevent_unsuspend');
+      const _onActiveCards = [];
       bs.ai.battleArea.forEach(c => {
         if (!c) return;
-        // prevent_unsuspend バフ持ち or スキップフラグ時はアクティブにしない → バフ失効
-        const _hasPU = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'prevent_unsuspend');
-        if (!c.cantBeActive && !_hasPU && !_aiSkipAllUnsuspend) c.suspended = false;
+        if (!c.cantBeActive && !_hasPU(c) && !_aiSkipAllUnsuspend) { if (c.suspended) _onActiveCards.push(c); c.suspended = false; }
         c.summonedThisTurn = false; c._usedEffects = [];
-        // 期間つき（相手のターン終了まで等）はこのターンの終了まで残す（自分のアクティブフェイズと同じ）
-        if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend' && !/^dur_(this_turn|next_opp_turn|next_own_turn)$/.test(String(b.duration || ''))));
       });
-      if (bs.ai.ikusei && !bs.ai.ikusei.cantBeActive && !_aiSkipAllUnsuspend) bs.ai.ikusei.suspended = false;
+      (bs.ai.tamerArea || []).forEach(c => {
+        if (!c) return;
+        if (!c.cantBeActive && !_hasPU(c) && !_aiSkipAllUnsuspend) c.suspended = false;
+        c._usedEffects = []; c.summonedThisTurn = false;
+      });
+      { const _ik = bs.ai.ikusei; if (_ik) { if (!_ik.cantBeActive && !_hasPU(_ik) && !_aiSkipAllUnsuspend) _ik.suspended = false; _ik._usedEffects = []; } }
+      // 期間を持たない「次のアクティブフェイズでアクティブにならない」だけをここで使い切る（期間つきはこのターンの終了まで残す）
+      [...bs.ai.battleArea, ...(bs.ai.tamerArea || [])].forEach(c => {
+        if (c && Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend' && !/^dur_(this_turn|next_opp_turn|next_own_turn)$/.test(String(b.duration || ''))));
+      });
       addLog('🤖 アクティブフェイズ完了');
       renderAll();
-      setTimeout(() => aiPhaseDraw(), 500);
+      const _fireOnActiveSeq = (cards, idx, done) => {
+        if (idx >= cards.length) { done(); return; }
+        const te = window._triggerEffectFn;
+        if (!te) { _fireOnActiveSeq(cards, idx + 1, done); return; }
+        bs._onActivePhase = 'unsuspend';
+        te('on_active', cards[idx], 'ai', null, () => { delete bs._onActivePhase; _fireOnActiveSeq(cards, idx + 1, done); });
+      };
+      _fireOnActiveSeq(_onActiveCards, 0, () => setTimeout(() => aiPhaseDraw(), 500));
     });
   } else {
     renderAll();
     showSkipAnnounce('🔄 アクティブフェイズ スキップ！', () => {
       bs.ai.battleArea.forEach(c => { if (c) { c.summonedThisTurn = false; c._usedEffects = []; } });
+      (bs.ai.tamerArea || []).forEach(c => { if (c) { c._usedEffects = []; c.summonedThisTurn = false; } });
+      if (bs.ai.ikusei) bs.ai.ikusei._usedEffects = [];
       setTimeout(() => aiPhaseDraw(), 300);
     });
   }
@@ -1210,6 +1231,8 @@ function aiPhaseBreed() {
       showPhaseAnnounce('🚀 バトルエリアへ移動！', '#ff9900', () => {
       // 【移動時】: 育成→バトルエリア移動は「登場」ではないため on_play ではなく on_move で誘発する
       // 育成フェイズでできるのは「孵化」「移動」のどちらか1つだけ（公式ルール）。移動したら孵化はしない
+      // プレイヤーの移動と同じく、移動後の継続効果を計算してから【移動時】へ
+      try { _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch (_) {}
       _hooks.checkAndTriggerEffect(moved, '【移動時】', () => {
         setTimeout(() => aiPhaseMain(), 500);
       }, 'ai');

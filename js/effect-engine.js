@@ -4878,6 +4878,9 @@ function _cpuStepWorthIt(st, bs, card) {
     return true; // 相手のターン（バトルで勝つための DP+ 等）・先まで続くもの
   }
   if (st.action === 'grant_keyword' && _CPU_DEF_KW.has(kw)) return !(thisTurnOnly && ownTurn); // 自分のターン中だけ守っても意味がない
+  // 「このターン、相手の効果を受けない」等（自分のターン中だけ）: このターンにアタックするデジモンを守るためのものなので、
+  // アタックできるデジモンがいないなら使わない（本堂カナタ ST25-06 で、登場したばかりのデジモンしかいないのに使っていた）
+  if (st.action === 'immune_effects' && thisTurnOnly && ownTurn) return _cpuCanAttackNow(bs, onSelf ? card : null);
   // アタック先の変更（≪突進≫等）: 変更先に勝てるときだけ（負ける相手に変更しない）
   if (st.action === 'redirect_attack') {
     if (typeof window === 'undefined' || typeof window._aiWantsRedirect !== 'function') return true;

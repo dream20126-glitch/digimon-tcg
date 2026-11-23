@@ -5829,6 +5829,8 @@ function _aiHoldForRaid(c) {
 }
 // c から進化できて【急襲】になる手札のカード（コスト maxCost 以下）で、ターン終了時のアタックに意味があるもの
 function _aiRaidEvolveFor(c, maxCost) {
+  // 登場したターンのデジモン（から進化したデジモン）は、≪速攻≫が無ければ【急襲】でもアタックできない（公式ルール 7-1-2-1）
+  if (!c || (c.summonedThisTurn && !((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush'))))) return null;
   let best = null;
   for (const e of (bs.ai.hand || [])) {
     if (!e || (e.type !== 'デジモン' && e.type !== 'デュアル')) continue;

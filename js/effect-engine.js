@@ -12384,6 +12384,11 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
       _cpuAnnounceOpen = true;
       setTimeout(() => {
         window._cpuLoopback({ type: 'fx_confirmClose', accepted: true });
+        // CPU が「発動する」と決めた時点で発動の表示を閉じる（オンラインで相手が「はい」を押したときと同じ間合い）。
+        // 以前は効果が終わるまで残り、何が消滅したか等の盤面が見えなかった。対象を選ぶ手順は「相手が対象を選択中...」、
+        // 結果は「消滅！」等の結果表示（fx_effectResult）で見せる
+        try { const _ov = document.getElementById('_remote-effect-announce'); if (_ov && _ov.parentNode) _ov.parentNode.removeChild(_ov); } catch (_) {}
+        _cpuAnnounceOpen = false;
         callback && callback();
       }, Math.min(4500, 1800 + displayText.length * 15));
     });

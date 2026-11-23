@@ -4753,7 +4753,50 @@ function _cpuIsBlocker(c) {
   if (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'keyword_blocker' || (b.type === 'grant_keyword' && /blocker/.test(String(b.value || '')))))) return true;
   return /【ブロッカー】|≪ブロッカー≫/.test(String(c.effect || ''));
 }
+// CPU（中・高）が相手のデジモンに効果を使うときの「効果を受けない」の扱い（公式ルール 15-15-5）:
+//  ・効果を受けないデジモンは、選んでも何も起きないので後回し（ほかに選べるデジモンがあればそちら）
+//  ・高（デジモンマスター）だけ: 相手のターンまで続く効果（相手のターン終了まで）で、効果を受けない状態がこのターンで
+//    切れるなら、相手のターンになった時点で効く（15-15-5-2）ので、ふつうの候補として選ぶ（脅威の大きい順）
+function _cpuImmuneEndsThisTurn(card) {
+  if (!card) return false;
+  try { if (_continuousImmune(card, 'ai', undefined, undefined)) return false; } catch (_) { return false; }
+  const ims = (card.buffs || []).filter(b => b && b.type === 'keyword_immune');
+  if (ims.length === 0) return false;
+  return ims.every(b => {
+    const d = String(b.duration || '');
+    if (/^dur_(this_turn|until_attack_end|until_battle_end)$/.test(d)) return true;
+    // 相手（プレイヤー）が自分のターンに付けた「相手のターン終了まで」＝ この CPU のターンの終わりまで
+    return d === 'dur_next_opp_turn' && b._appliedSide === 'player';
+  });
+}
+// CPU の判断用（battle-combat.js）: 相手のデジモン target が、srcCard の効果（期間 dur）を今は受けず、選んでも無駄か。
+// 高は「相手のターンまで続く効果で、効果を受けない状態がこのターンで切れる」なら無駄ではない（15-15-5-2）
+if (typeof window !== 'undefined') window._cpuTargetUseless = (target, srcCard, dur) => {
+  try {
+    const bsN = window._lastBattleState;
+    if (!bsN || !target) return false;
+    if (!_isImmuneToEffect(target, { bs: bsN, side: 'ai', card: srcCard })) return false;
+    const d = String(normalizeRecipeDuration(dur) || dur || '');
+    if (window._aiLevel === 'high' && bsN.isPlayerTurn === false && d === 'dur_next_opp_turn' && _cpuImmuneEndsThisTurn(target)) return false;
+    return true;
+  } catch (_) { return false; }
+};
 function _cpuOrder(idxs, area, mode, opt) {
+  const r = _cpuOrderBase(idxs, area, mode, opt);
+  if (!_cpuMidActive() || mode === 'buff' || !Array.isArray(r) || r.length < 2) return r;
+  const bsN = typeof window !== 'undefined' ? window._lastBattleState : null;
+  if (!bsN || !bsN.player || area !== bsN.player.battleArea) return r;
+  const ctx = _curEffectCtx;
+  if (!ctx) return r;
+  const imm = (i) => { try { return _isImmuneToEffect(area[i], ctx); } catch (_) { return false; } };
+  if (!r.some(imm)) return r;
+  const st = _curStepForLabel;
+  const effDur = String((st && (normalizeRecipeDuration(st.duration) || st.duration)) || '');
+  const lastsToOppTurn = bsN.isPlayerTurn === false && effDur === 'dur_next_opp_turn';
+  const keep = (i) => typeof window !== 'undefined' && window._aiLevel === 'high' && lastsToOppTurn && _cpuImmuneEndsThisTurn(area[i]);
+  return [...r.filter(i => !imm(i) || keep(i)), ...r.filter(i => imm(i) && !keep(i))];
+}
+function _cpuOrderBase(idxs, area, mode, opt) {
   if (!_cpuMidActive() || !Array.isArray(idxs) || idxs.length < 2 || !Array.isArray(area)) return idxs;
   const at = (i) => area[i];
   const str = (i) => _cpuStrength(at(i));

@@ -5355,7 +5355,7 @@ function _aiOnAttackUseful(c) {
   if (textOnly) return true;
   return steps.some(st => {
     const t = String(st.target || '');
-    if (/^opp/.test(t)) { const n = _aiMidStepTargetCount(st); return n === null ? true : n > 0; }
+    if (/^opp/.test(t)) { const n = _aiMidStepTargetCount(st, c); return n === null ? true : n > 0; }
     return true;
   });
 }
@@ -6829,12 +6829,15 @@ function _aiEvolveIku(card, done) {
 // ほかに単独で意味のある手順（ドロー・メモリー+・デッキオープン・登場・【ディレイ】等）も無ければ「使わない」。
 // 対象の絞り込み（DP以下・Lv以下・レスト中）も見る。レシピが読めないカードは効果テキストで判断する
 const _AI_DEPENDENT_ACTIONS = new Set(['destroy', 'bounce', 'dp_minus', 'rest', 'select_evo_source', 'dedigivolve', 'evo_discard_all', 'return_deck', 'grant_keyword', 'dp_plus']);
-function _aiMidStepTargetCount(st) {
+function _aiMidStepTargetCount(st, srcCard) {
   const t = String((st && st.target) || '');
   if (!t || /^(same_target|target_trigger_source|self)/.test(t)) return null;
   let area;
   const oppM = /^opp(?:onent)?(_suspended)?(?::|$)/.exec(t);
-  if (oppM) area = (bs.player.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!oppM[1] || c.suspended));
+  // 相手のデジモンのうち、この効果を受けない（選んでも何も起きない）ものは数えない（公式ルール 15-15-5。高は相手のターンまで
+  // 続く効果で、効果を受けない状態がこのターンで切れるなら数える）
+  const _useless = (c) => !!(srcCard && typeof window !== 'undefined' && typeof window._cpuTargetUseless === 'function' && window._cpuTargetUseless(c, srcCard, st && st.duration));
+  if (oppM) area = (bs.player.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!oppM[1] || c.suspended) && !_useless(c));
   else if (/^own(?::|$)/.test(t)) area = (bs.ai.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
   else if (/^own_tamer/.test(t)) area = (bs.ai.tamerArea || []).filter(Boolean);
   else return null; // セキュリティ・手札・トラッシュ等は盤面の対象ではない（使えるものとして扱う）
@@ -6869,7 +6872,7 @@ function _aiMidOptionIsWasted(c) {
       if (_plCanAttackNext()) return false;
       continue;
     }
-    const n = _aiMidStepTargetCount(st);
+    const n = _aiMidStepTargetCount(st, c);
     if (n === null) {
       // 対象を持たない手順: 前の手順で選んだ対象に効くもの以外（ドロー・メモリー+等）は単独で意味がある
       if (!(st.card || _AI_DEPENDENT_ACTIONS.has(st.action))) return false;
@@ -6916,7 +6919,7 @@ function _aiDualOptionValuable(c) {
     const a = String(st.action || ''), t = String(st.target || '');
     if (/^(draw|memory|memory_plus)$/.test(a)) return true;
     if (/^opp/.test(t)) {
-      const n = _aiMidStepTargetCount(st);
+      const n = _aiMidStepTargetCount(st, c);
       if (n === null ? true : n > 0) return true;
     }
     if (a === 'dp_plus' && /^own/.test(t) && canSwing && oppDigi) return true;

@@ -308,6 +308,32 @@ export async function loadCardAndKeywordData() {
   }
 }
 
+// キーワード辞書が空なら読み込む（静的 JSON の keywords。失敗したら GAS）。1回だけ
+let _keywordsLoading = null;
+async function _ensureKeywordsLoaded() {
+  if (Array.isArray(window.keywords) && window.keywords.length > 0) return;
+  if (_keywordsLoading) return _keywordsLoading;
+  _keywordsLoading = (async () => {
+    try {
+      const versionParam = await getVersionParam();
+      const res = await fetch(CARDS_JSON_PATH + versionParam);
+      if (res.ok) {
+        const j = await res.json();
+        if (j && Array.isArray(j.keywords) && j.keywords.length > 0) {
+          keywords = j.keywords; masterKeywords = keywords;
+          console.log('[cards] keywords loaded for battle:', keywords.length);
+          return;
+        }
+      }
+    } catch (e) { console.warn('[cards] keywords (static) failed:', e.message); }
+    try {
+      const d = await gasGet('getCards');
+      if (d && Array.isArray(d.keywords)) { keywords = d.keywords; masterKeywords = keywords; }
+    } catch (e) { console.warn('[cards] keywords (GAS) failed:', e.message); }
+  })();
+  try { await _keywordsLoading; } finally { _keywordsLoading = null; }
+}
+
 // カードNo指定で、指定分だけをピンポイントで読み込む（バトル開始時・効果テスト実行時用）。
 // カード数が将来大きく増えても、デッキ/シナリオに実際に使うカードだけを取得すれば
 // 全件読み込みを避けられる。データ層は data/cards/<カードNo>.json（1枚1ファイル）を使う。
@@ -321,6 +347,11 @@ export async function loadCardsByNo(cardNos) {
     // dev モードは GAS 直叩きの全件取得のみサポート（開発時は件数が少なく実害小さい）
     return await loadCardAndKeywordData();
   }
+
+  // キーワード辞書（≪急襲≫≪デジクロス≫等のキーワード効果のレシピのひな形）は、カードを1枚ずつ読む経路では読まれない。
+  // 空のままだとキーワード由来の効果が一切発動しない（AI対戦・オンラインで、それより前に全件読み込みをする画面を
+  // 開いていないと ≪急襲≫ のレプティリモンがアタックしなかった）ので、空なら静的 JSON から一度だけ読む
+  await _ensureKeywordsLoaded();
 
   const existingNos = new Set(allCards.map(c => c["カードNo"]));
   const missing = wanted.filter(no => !existingNos.has(no));

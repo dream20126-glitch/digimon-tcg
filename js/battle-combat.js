@@ -5400,7 +5400,8 @@ function _aiSecAttackSafe(c) {
 // （レスト中のデジモンはアタックされる。アクティブのままなら狙われない）
 function _aiExposedAfterAttack(c) {
   if (!c || _aiSurvivesSecBattle(c)) return false;
-  return (bs.player.battleArea || []).some(d => _aiIsDigi(d) && _dpOf(d) > _dpOf(c));
+  // 相手のデジモンがこのデジモンにアタックしたときのバトル（≪氷装≫・消滅しない・≪防壁≫も見る）で、このデジモンが消滅するか
+  return (bs.player.battleArea || []).some(d => _aiIsDigi(d) && _aiBattleOutcome(d, c, 'ai').defDies);
 }
 // 高: 相手のセキュリティから、アタックしたデジモンを弱らせる・取り除くオプションが出てきそうか（相手のデッキの型から）。
 // 相手のオプションが2種類以上見えていて、そういうカードが1枚も無ければ「入っていない」と読む。まだ読めないうちは「ありうる」
@@ -5816,7 +5817,19 @@ if (typeof window !== 'undefined') window._aiWantsEffectAttack = (cands) => {
     else ok = cands.some(c => !!_aiMidPickTarget(c));
   } catch (e) { console.error('[aiWantsEffectAttack]', e); ok = true; } finally { _aiRaidMode = prevRaid; }
   console.log('[aiWantsEffectAttack]', cands.map(c => c.name + '(DP' + _dpOf(c) + ')').join(','), '→', ok, '見積もり', _aiEstSecDp());
-  if (!ok) addLog('🧠 効果のアタックはしない（' + cands.map(c => c.name).join('・') + ': 勝てるアタック先がない／意味がない）');
+  if (!ok) {
+    // しない理由（調査用）: ブロックされたら負けるブロッカー（≪氷装≫等も見た結果）・セキュリティの見積もり
+    const why = cands.map(c => {
+      const bl = _aiPlayerBlockersFor(c, -1).filter(b => { const o = _aiBattleOutcome(c, b, 'player'); return o.atkDies || !o.defDies; });
+      const parts = [];
+      if (bl.length) parts.push('ブロックされたら負ける: ' + bl.map(b => '「' + b.name + '」' + (_hasIceArmor(b) || _hasIceArmor(c) ? '（氷装 進化元' + (c.stack || []).length + '対' + (b.stack || []).length + '）' : '（DP' + _dpOf(c) + '対' + _dpOf(b) + '）')).join('・'));
+      if (!_aiSecAttackSafe(c)) parts.push('セキュリティのデジモンに負ける見積もり（DP' + _dpOf(c) + '≦' + _aiEstSecDp() + '）');
+      if (_aiCantHitPlayer(c)) parts.push('プレイヤーにアタックできない');
+      if (_aiIsHigh() && _lvOf(c) >= 5 && (bs.player.security || []).length > 2 && !_aiAttackMeaningful(c) && _aiExposedAfterAttack(c)) parts.push('アタックしてレストすると次の相手のターンに倒される');
+      return c.name + (parts.length ? '（' + parts.join('／') + '）' : '（勝てるアタック先がない）');
+    }).join('・');
+    addLog('🧠 効果のアタックはしない: ' + why);
+  }
   return ok;
 };
 // 進化させると【急襲】を持つか（進化先のカード自身か、進化元になる base / その下のカードが【急襲】を与える）
@@ -7201,6 +7214,33 @@ function _aiTryTraining(callback) {
 }
 
 
+// オプションの【メイン】が「自分のデジモン1体を手札の〜に（進化コスト-N で）進化できる」（ブルー/レッド・スクランブル LM-027/028、
+// オフェンス・トレーニング等）のとき、オプションの使用コストを払ったあとに、その進化のコストも払えるか。
+// 払えないなら、オプションを使っても進化できずに終わる（以前は使ってから進化できずに終わっていた）
+function _aiOptionEvolveAffordable(opt) {
+  let r = opt && opt.recipe;
+  if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
+  const steps = (r && Array.isArray(r.main)) ? r.main.filter(Boolean) : [];
+  const ev = steps.find(st => st.action === 'evolve' && /^own(:|$)/.test(String(st.target || '')) && (!st.from || st.from === 'hand' || (Array.isArray(st.from) && st.from.includes('hand'))));
+  if (!ev) return true;
+  const disc = -(parseInt(ev.value, 10) || 0); // value:-3 → 3 下がる
+  const left = aiAvailableMemory(opt) - _aiPlayCost(opt);
+  const ff = ev.from_filter || ev.filter || {};
+  for (const base of (bs.ai.battleArea || [])) {
+    if (!_aiIsDigi(base) || base.cantEvolve) continue;
+    for (const h of (bs.ai.hand || [])) {
+      if (!h || h === opt || (h.type !== 'デジモン' && h.type !== 'デュアル')) continue;
+      if (ff.color && !String(h.color || '').includes(ff.color)) continue;
+      let ok = false;
+      try { ok = canEvolveOnto(h, base); } catch (_) { ok = false; }
+      if (!ok) continue;
+      const cost = getEvolveCostFor(h, base);
+      if (cost === null || cost === undefined) continue;
+      if (Math.max(0, cost - disc) <= left) return true;
+    }
+  }
+  return false;
+}
 // 高（デジモンマスター）は1つ行動するたびに「考え中」を出してから決める
 function aiPlayAuto(callback, _fxWaited) {
   // 前の演出（デッキオープン・手札に加えたカードの表示・カードの移動等）が終わってから次の行動を決める（行動のたびに）
@@ -7327,6 +7367,8 @@ function _aiPlayAutoBody(callback) {
     c.playCost !== null && _aiPlayCost(c) <= aiAvailableMemory(c) &&
     (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai')) &&
     !(_aiIsMid() && _aiMidOptionIsWasted(c)) &&
+    // 中・高: 使っても何も起きない（エンジンの判定: 手札に進化できるカードが無い等）／効果の進化コストが払えないなら使わない
+    !(_aiIsMid() && (c.type === 'オプション' || c.type === 'デュアル') && (!_mainEffectWillDoAnything(c, bs, 'ai') || !_aiOptionEvolveAffordable(c))) &&
     !(_aiIsHigh() && _aiHighHoldOption(c)) &&
     // 高: デュアルカードは「オプションとして使う」と決めたときだけ（直接進化は ② で）
     !(c.type === 'デュアル' && _aiIsHigh() && _aiDualMode(c) !== 'option')

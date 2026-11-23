@@ -1230,8 +1230,12 @@ function renderIkusei() {
       if (info) info.innerText = '';
 
       // 育成フェーズ中 + プレイヤー + デジタマあり → タップで孵化
-      if (isPlayer && bs.phase === 'breed' && bs.player.tamaDeck && bs.player.tamaDeck.length > 0) {
+      // 育成フェイズで既に移動した（孵化・移動はどちらか1回だけ）なら孵化できない。移動の演出・【移動時】の処理中も
+      // 育成フェイズのままなので、空いた育成エリアをタップして孵化できてしまっていた
+      if (isPlayer && bs.phase === 'breed' && !bs._breedActed && bs.player.tamaDeck && bs.player.tamaDeck.length > 0) {
         iku.onclick = () => {
+          if (bs._breedActed || bs.phase !== 'breed') return;
+          bs._breedActed = true;
           const nc = bs.player.tamaDeck.splice(0, 1)[0];
           bs.player.ikusei = nc;
           addLog('🥚 「' + nc.name + '」を孵化！');
@@ -1347,6 +1351,7 @@ function attachIkuDrag(iku) {
 export function doIkuMove() {
   if (!bs.player.ikusei) return;
   if (bs.phase !== 'breed') return;
+  if (bs._breedActed) return; // 育成フェイズの行動（孵化・移動）は1回だけ
   if (parseInt(bs.player.ikusei.level) < 3) {
     addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます');
     return;
@@ -1354,6 +1359,7 @@ export function doIkuMove() {
   let slot = bs.player.battleArea.findIndex(s => s === null);
   if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
   const moved = bs.player.ikusei;
+  bs._breedActed = true;
   bs.player.battleArea[slot] = moved;
   bs.player.ikusei = null;
   addLog('🐾 「' + moved.name + '」をバトルエリアへ移動！');

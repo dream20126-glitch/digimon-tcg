@@ -639,6 +639,8 @@ function execBreed() {
   }
 
   addLog('🥚 育成フェイズ');
+  // 育成フェイズでできるのは「孵化」「移動」のどちらか1つだけ（公式ルール）。行ったら印を立て、もう一方はできなくする
+  bs._breedActed = false;
   const actionBar = document.getElementById('breed-action-bar');
   if (actionBar) {
     actionBar.innerHTML = '<button id="breed-skip-btn" class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>';

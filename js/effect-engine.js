@@ -17434,7 +17434,16 @@ function _stepLacksHandCandidate(step, card, bs, side) {
     // 「このデジモン」を進化させる形は、進化条件（公式ルール8-1-2-2）を満たす候補があるかも見る
     const selfBase = (!step.target || step.target === 'self' || step.target === 'self_card') ? card : null;
     const ign = _effectEvoIgnoresCondition(step);
-    return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter) && (!selfBase || _effectEvoAllowed(c, selfBase, ign)));
+    // 「自分のデジモン1体を手札の〜に進化できる」（own / own:N）: 場のどれかのデジモンに進化できる手札のカードがあるか
+    // （オフェンス・トレーニング P-103 の【ディレイ】で、進化できるカードが無いのに発動して「進化先がありません」になっていた）
+    const ownBases = (!selfBase && /^own(:\d+)?$/.test(String(step.target || '')))
+      ? (p.battleArea || []).filter(b => b && (b.type === 'デジモン' || b.type === 'デュアル') && !b.cantEvolve
+          && !(Array.isArray(b.buffs) && b.buffs.some(x => x && x.type === 'cant_evolve'))
+          && (!step.filter || cardMatchesFilter(b, step.filter, bs, side, card)))
+      : null;
+    if (ownBases && ownBases.length === 0) return true;
+    return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter) && (!selfBase || _effectEvoAllowed(c, selfBase, ign))
+      && (!ownBases || ownBases.some(b => _effectEvoAllowed(c, b, ign))));
   }
   return false;
 }
@@ -17765,6 +17774,12 @@ function recipeWillExecuteAnything(recipe, ctx) {
     if (_costStepsInfeasible(step.cost, ctx.card, ctx.bs, ctx.side)) continue;
     // ≪ディレイ≫は、そのカードがバトルエリアに置かれたターンには発揮できない（公式ルール 16-17-3）。確認（「発動しますか？」）や
     // 発揮待ちにも出さない（紅玉の絆 ED01-09・雪片の絆 ED01-10 で、置いたターンにも確認が出て発動したように見えていた）
+    // ≪ディレイ≫の後ろの効果（ディレイで発揮する効果）が何も実行できないなら、ディレイ自体も使う意味がない（CPU の判断用。
+    // オフェンス・トレーニング P-103 で、進化できるカードが無いのにディレイしてカードを破棄していた）
+    if (step && step.action === 'delay' && ctx && ctx._checkDelayPayload) {
+      const _rest = recipe.slice(recipe.indexOf(step) + 1);
+      if (_rest.length > 0 && !(ctx.card && ctx.card._placedTurnKey)) return recipeWillExecuteAnything(_rest, ctx);
+    }
     if (step && step.action === 'delay' && ctx.card && ctx.card._placedTurnKey) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' placed this turn → delay skip');
       continue;
@@ -27574,6 +27589,16 @@ export function mainEffectButtonState(card) {
   return res;
 }
 
+// CPU（AI対戦）: このカードの【メイン】効果を今使って、何か実行できるか（対象・候補が無い／条件を満たさない／
+// ≪ディレイ≫の後ろの効果が何もできない、なら false）。使っても無駄な【メイン】を CPU が使わないための判定
+export function mainEffectWillDoAnything(card, bs, side) {
+  if (!card || !bs) return true;
+  try {
+    const steps = (getRecipeForTrigger(card, 'main') || []).filter(Boolean);
+    if (steps.length === 0) return true;
+    return recipeWillExecuteAnything(steps, { card, bs, side: side || 'ai', _sourceCard: card, _checkDelayPayload: true });
+  } catch (_) { return true; }
+}
 // バトルエリアに置かれたオプションの【メイン】（【メイン】【ディレイ】）が今使えるか。置かれたターンは使えない
 export function placedOptionMainUsable(card, bs) {
   if (!card || card.type !== 'オプション' || !card._placedInBattleArea || !bs) return false;

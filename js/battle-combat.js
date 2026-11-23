@@ -12,7 +12,7 @@ import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion, fxBattle
 import { cardAliasHasName } from './name-alias.js';
 import { classifyCard as _aiTagsOf, buildDeckProfile as _aiBuildProfile } from './ai-brain.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { fireOptionUsedTriggers as _fireOptionUsed, hasOwnMainEffect as _hasOwnMainEffect, mainEffectButtonState as _mainEffectButtonState } from './effect-engine.js';
+import { fireOptionUsedTriggers as _fireOptionUsed, hasOwnMainEffect as _hasOwnMainEffect, mainEffectButtonState as _mainEffectButtonState, mainEffectWillDoAnything as _mainEffectWillDoAnything } from './effect-engine.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, whenDestroyApplies as _whenDestroyApplies, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, fireBeforeEvolveEffects as _fireBeforeEvolveEffects, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
 
 // ===== 戦闘フック =====
@@ -7292,7 +7292,8 @@ function _aiPlayAutoBody(callback) {
       try {
         if (!_hasOwnMainEffect(c)) return false;
         const st = _mainEffectButtonState(c) || {};
-        return !st.usedUp && !st.unusable;
+        // 使っても何も起きない【メイン】（対象がいない・≪ディレイ≫の後ろの効果ができない等）は使わない
+        return !st.usedUp && !st.unusable && _mainEffectWillDoAnything(c, bs, 'ai');
       } catch (_) { return false; }
     });
     if (mainCard) {

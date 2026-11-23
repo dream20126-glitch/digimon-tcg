@@ -16548,7 +16548,10 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   let ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey, destroyedCard);
   // 離れるとき: 「他の自分の/相手のデジモンが離れるとき」専用のステップは、このカード自身が
   // 離れるときには使わない（他のカードが離れるときは _tryCancelLeaveByOtherCards が扱う）
-  if (triggerKey === 'when_leave_battle' && Array.isArray(ownSteps)) ownSteps = _selfEventSteps(ownSteps, triggerKey);
+  // 【消滅時】等も同じ: 「相手のデジモンが消滅したとき」（subject:opp）・「他の自分のデジモンが〜」（other_own）は、このカード自身が
+  // 消滅したときには発揮しない（ルビウスドラモン BT27-018「相手のデジモンが消滅したとき、相手のセキュリティを1枚破棄」が、
+  // 自分（ルビウスドラモン）が消滅したときに発動していた）
+  if (Array.isArray(ownSteps)) ownSteps = _selfEventSteps(ownSteps, triggerKey);
   if (Array.isArray(ownSteps) && ownSteps.length > 0) {
     // キーワード由来の効果（【不屈】等）は、カード自身の【消滅時】とは別の効果（同時誘発）なので分けて積む。
     // 2つ以上になれば発動順を選べる（以前は1つにまとめて【消滅時】から順に発揮していた）
@@ -16566,7 +16569,8 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     _destroyedGrants.forEach(g => {
       // キーワードとして得た効果（【天昇】等）は印を付け、確認の本文にキーワードの説明を出す
       const gSteps0 = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerKey);
-      const gSteps = (g && g.kwFlag && Array.isArray(gSteps0)) ? _tagKeywordSteps(g.kwFlag, gSteps0) : gSteps0;
+      const gSteps1 = (g && g.kwFlag && Array.isArray(gSteps0)) ? _tagKeywordSteps(g.kwFlag, gSteps0) : gSteps0;
+      const gSteps = Array.isArray(gSteps1) ? _selfEventSteps(gSteps1, triggerKey) : gSteps1;
       if (Array.isArray(gSteps) && gSteps.length > 0) {
         reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: gSteps });
       }
@@ -16577,7 +16581,8 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     destroyedCard.stack.forEach(evoCard => {
       if (!evoCard) return;
       const r = parseRecipe(evoCard.recipe);
-      const evoSteps = r && !(evoCard && evoCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerKey);
+      const evoSteps0 = r && !(evoCard && evoCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerKey);
+      const evoSteps = Array.isArray(evoSteps0) ? _selfEventSteps(evoSteps0, triggerKey) : evoSteps0;
       if (Array.isArray(evoSteps) && evoSteps.length > 0) {
         reactions.push({ card: destroyedCard, sourceCard: evoCard, recipe: evoSteps });
       }

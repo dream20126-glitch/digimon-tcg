@@ -4874,7 +4874,13 @@ function _cpuStepWorthIt(st, bs, card) {
   const offensive = st.action === 'dp_plus' || st.action === 'security_attack_plus' || (st.action === 'grant_keyword' && kw && !_CPU_DEF_KW.has(kw));
   if (offensive) {
     // 自分のターン中だけの DP+・攻めのキーワードは、このターンにアタックできるときだけ（「このデジモンは」ならそのデジモンが）
-    if (thisTurnOnly && ownTurn) return _cpuCanAttackNow(bs, onSelf ? card : null);
+    if (thisTurnOnly && ownTurn) {
+      if (!_cpuCanAttackNow(bs, onSelf ? card : null)) return false;
+      // キーワード（【貫通】等）は、実際にアタックする価値のあるアタックがあるときだけ（アタックできても、勝てるアタック先が無くて
+      // アタックしないなら無駄。ヴァルナー・ドラグノフ BD02-08 で【貫通】を付けたのにアタックしなかった）
+      if (st.action === 'grant_keyword' && typeof window !== 'undefined' && typeof window._aiHasWorthAttack === 'function') return window._aiHasWorthAttack(onSelf ? card : null);
+      return true;
+    }
     return true; // 相手のターン（バトルで勝つための DP+ 等）・先まで続くもの
   }
   if (st.action === 'grant_keyword' && _CPU_DEF_KW.has(kw)) return !(thisTurnOnly && ownTurn); // 自分のターン中だけ守っても意味がない

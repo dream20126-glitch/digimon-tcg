@@ -4021,6 +4021,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0, 1)[0];
+    // AIの考え（あなたのアタックでセキュリティを何枚チェックされたか）用の記録
+    if (bs.isPlayerTurn && sec) (bs._aiSecLost = bs._aiSecLost || []).push(sec);
     console.log('[SEC CHECK] めくったカード:', sec.name, 'type:', sec.type, 'dp:', sec.dp);
     // security_removeはテイマー以外で送信（テイマーはsecurity_tamer_playで処理）
     if (_onlineMode && _sendCommand && sec.type !== 'テイマー') {
@@ -4640,6 +4642,11 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     // 相手のデジモン（def）だけがバトルで消滅した後（勝ったとき・相打ちで自分が消滅を回避したとき共通）:
     // 「バトルで相手のデジモンを消滅させたとき」の効果・≪貫通≫（公式ルール 16-7-1。相打ちでも自分が残っていれば発揮する）・≪道連れ≫
     const _afterAtkDestroyedDef = (isTie) => {
+      // AIの考え: あなたのアタックで AI のデジモンがバトルで倒された
+      try {
+        if (_aiIsMid() && def) _aiWhy('「' + def.name + '」がバトルで倒されました ← ' + (_aiIsFinisher(def) ? '切り札がやられたのは痛い…立て直しを急ぐ。' : (_lvOf(def) >= 5 ? '育てていたデジモンだったので痛い。' : 'この程度ならまだ立て直せる。'))
+          + (atk ? 'キミの「' + atk.name + '」は要注意だ。' : ''));
+      } catch (_) {}
             // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
             // 「バトル勝利」から同時誘発するターンプレイヤー(atk)側の効果なので、
             // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
@@ -5595,6 +5602,18 @@ function _aiNoAttackReason(c) {
   } catch (_) {}
   return parts.length ? parts.join('、') : '勝てるアタック先が見つからない';
 }
+
+// このターンに、実際にアタックする価値のあるアタックがあるか（CPU の「ターン終了まで〜を得る」等の効果を使う判断用。
+// アタックできても、勝てるアタック先が無くてアタックしないなら、このターンだけの攻めの効果は無駄になる）
+if (typeof window !== 'undefined') window._aiHasWorthAttack = (only) => {
+  if (!_aiIsMid()) return true;
+  const rush = (c) => !!((c._permEffects && c._permEffects.rush) || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_rush')));
+  const can = (c) => !!c && _aiIsDigi(c) && !c.suspended && !c.cantAttack && !c.cantRest && (!c.summonedThisTurn || rush(c)) && (!only || c === only);
+  try {
+    if (_aiIsHigh()) return !!_aiHighPickAttack(can);
+    return (bs.ai.battleArea || []).some(c => can(c) && !!_aiMidPickTarget(c));
+  } catch (_) { return true; }
+};
 
 // ===== マスターの「あなたのターン中の考え」=====
 // あなたのデジモンが登場・進化したとき、どう見ているか（脅威の大きさ・倒し方）。あなたのターンが終わったら次のターンの方針
@@ -6652,7 +6671,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   // ----- デュアルカード（AIはオプションとして使用。アーツ進化できるなら常に受け入れる） -----
   if (c.type === 'デュアル') {
     bs.ai.hand.splice(handIdx, 1);
-    if (_aiIsHigh()) { addLog('👑 「' + c.name + '」はオプションとして使う（効果を使ってからアーツ進化）'); _aiWhy('デュアルカード「' + c.name + '」をオプションとして使います ← オプションの効果に狙える相手がいて、使う価値があるからです。使ったあとはアーツ進化もします。'); }
+    if (_aiIsHigh()) { addLog('👑 「' + c.name + '」はオプションとして使う（効果を使ってからアーツ進化）'); _aiWhy('デュアルカード「' + c.name + '」をオプションとして使います ← この効果は ' + _aiExplainSteps(c) + '。使う価値があると判断しました。使ったあとはアーツ進化もします。'); }
     addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + _aiBasePay + '）');
     renderAll();
     showOptionEffect(c, () => {
@@ -6964,6 +6983,54 @@ function _aiEvolveIku(card, done) {
 // ほかに単独で意味のある手順（ドロー・メモリー+・デッキオープン・登場・【ディレイ】等）も無ければ「使わない」。
 // 対象の絞り込み（DP以下・Lv以下・レスト中）も見る。レシピが読めないカードは効果テキストで判断する
 const _AI_DEPENDENT_ACTIONS = new Set(['destroy', 'bounce', 'dp_minus', 'rest', 'select_evo_source', 'dedigivolve', 'evo_discard_all', 'return_deck', 'grant_keyword', 'dp_plus']);
+// 相手のデジモンが、その手順で付ける状態をすでに持っているか（重ねても意味がない）
+function _aiAlreadyHas(c, st) {
+  const a = String((st && st.action) || '');
+  const bf = Array.isArray(c.buffs) ? c.buffs : [];
+  if (a === 'cant_rest') return !!c.cantRest || bf.some(b => b && b.type === 'cant_rest');
+  if (a === 'cant_attack') return !!c.cantAttack || bf.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block'));
+  if (a === 'cant_block') return !!c.cantBlock || bf.some(b => b && (b.type === 'cant_block' || b.type === 'cant_attack_block'));
+  if (a === 'cant_attack_block') return (!!c.cantAttack && !!c.cantBlock);
+  if (a === 'cant_evolve') return !!c.cantEvolve || bf.some(b => b && b.type === 'cant_evolve');
+  if (a === 'rest') return !!c.suspended;
+  return false;
+}
+// オプション等の【メイン】の手順を1つずつ説明する（AIの考え用）: 何をする効果で、今使うと効くか
+const _AI_ACT_JA = { destroy: '消滅させる', bounce: '手札に戻す', return_hand: '手札に戻す', return_deck: 'デッキに戻す', dp_minus: 'DPを下げる',
+  discard: '進化元を破棄する', evo_discard_all: '進化元を全て破棄する', cant_rest: 'レストできなくする', cant_attack: 'アタックできなくする',
+  cant_block: 'ブロックできなくする', cant_attack_block: 'アタックもブロックもできなくする', cant_evolve: '進化できなくする', rest: 'レストさせる',
+  evolve: '手札のデジモンに進化させる', draw: 'ドローする', deck_open: 'デッキの上を見て手札に加える', summon_appear: '手札から登場させる',
+  dp_plus: 'DPを上げる', memory_plus: 'メモリーを増やす', memory: 'メモリーを増やす', grant_keyword: 'キーワード効果を付ける', dedigivolve: '退化させる' };
+function _aiExplainSteps(card) {
+  let r = card && card.recipe;
+  if (typeof r === 'string') { try { r = r ? JSON.parse(r) : null; } catch (_) { r = null; } }
+  const steps = (r && Array.isArray(r.main)) ? r.main.filter(st => st && st.action && st.action !== 'delay') : [];
+  const nums = '①②③④⑤';
+  return steps.slice(0, 5).map((st, i) => {
+    const a = String(st.action);
+    const ja = _AI_ACT_JA[a] || a;
+    const t = String(st.target || '');
+    let note = '';
+    if (/^opp/.test(t)) {
+      const all = (bs.player.battleArea || []).filter(_aiIsDigi);
+      const n = _aiMidStepTargetCount(st, card);
+      if (n === 0) {
+        if (all.length && all.every(c => _aiAlreadyHas(c, st))) note = '（キミのデジモンはもう全部その状態なので意味なし）';
+        else if (st.filter && st.filter.target_evo_source) note = '（進化元を持つデジモンがいないので空振り）';
+        else note = '（狙える相手がいないので空振り）';
+      } else {
+        note = '（狙える相手: ' + n + '体）';
+        if (st.filter && st.filter.target_evo_source && (bs.player.battleArea || []).some(c => _aiIsDigi(c) && _hasIceArmor(c))) note += '。進化元を減らすと【氷装】の勝負で有利になる';
+        else if (st.filter && st.filter.target_evo_source && (bs.ai.battleArea || []).some(c => _aiIsDigi(c) && _hasIceArmor(c))) note += '。こちらの【氷装】の勝負で有利になる';
+      }
+    } else if (a === 'evolve') {
+      note = _aiOptionEvolveAffordable(card) ? '（進化できる組み合わせがあり、コストも払える）' : '（進化できる組み合わせが無い）';
+    } else if (/^(draw|deck_open)$/.test(a)) {
+      note = '（手札が増える）';
+    }
+    return nums[i] + ja + note;
+  }).join('、');
+}
 function _aiMidStepTargetCount(st, srcCard) {
   const t = String((st && st.target) || '');
   if (!t || /^(same_target|target_trigger_source|self)/.test(t)) return null;
@@ -6972,7 +7039,11 @@ function _aiMidStepTargetCount(st, srcCard) {
   // 相手のデジモンのうち、この効果を受けない（選んでも何も起きない）ものは数えない（公式ルール 15-15-5。高は相手のターンまで
   // 続く効果で、効果を受けない状態がこのターンで切れるなら数える）
   const _useless = (c) => !!(srcCard && typeof window !== 'undefined' && typeof window._cpuTargetUseless === 'function' && window._cpuTargetUseless(c, srcCard, st && st.duration));
-  if (oppM) area = (bs.player.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!oppM[1] || c.suspended) && !_useless(c));
+  if (oppM) area = (bs.player.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!oppM[1] || c.suspended) && !_useless(c)
+    // すでにその状態（レストできない・アタックできない等）のデジモンに付けても意味がない
+    && !_aiAlreadyHas(c, st)
+    // 「進化元を破棄」は進化元を持つデジモンだけが対象として意味がある
+    && !(st && st.filter && st.filter.target_evo_source && !(c.stack || []).length));
   else if (/^own(?::|$)/.test(t)) area = (bs.ai.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル'));
   else if (/^own_tamer/.test(t)) area = (bs.ai.tamerArea || []).filter(Boolean);
   else return null; // セキュリティ・手札・トラッシュ等は盤面の対象ではない（使えるものとして扱う）
@@ -7515,7 +7586,10 @@ function _aiPlayAutoBody(callback) {
         ? (/メモリー/.test(String(optionOrTamer.effect || '')) ? 'メモリーを増やせるテイマーなので、早めに出しておくと次のターン以降が楽になるからです。' : 'テイマーを場に出して、その効果を使えるようにしておきたいからです。')
         : (_t.removal ? 'あなたのデジモンを取り除ける効果で、狙える相手がいるからです。' : _t.evoDiscard ? 'あなたのデジモンの進化元を減らせる効果で、狙える相手がいるからです。' : _t.secTrash ? 'あなたのセキュリティを効果で減らせるからです。'
           : _t.search ? '手札を増やして、次の行動につなげたいからです。' : _t.cheat ? 'コストを抑えてデジモンを登場・進化させられるからです。' : '今使うと効果がきちんと働くからです。');
-      _aiWhy('「' + optionOrTamer.name + '」を使います（コスト' + _aiPlayCost(optionOrTamer) + '） ← ' + _r + (bs.memory > 0 || _aiOverflowOK ? 'アタックの後に残ったメモリーを有効に使います。' : ''));
+      const _ex = (optionOrTamer.type === 'オプション' || optionOrTamer.type === 'デュアル') ? _aiExplainSteps(optionOrTamer) : '';
+      _aiWhy('「' + optionOrTamer.name + '」を使います（コスト' + _aiPlayCost(optionOrTamer) + '） ← '
+        + (_ex ? 'この効果は ' + _ex + '。少なくとも1つは今使って効くので使います。' : _r)
+        + (bs.memory > 0 || _aiOverflowOK ? 'アタックの後に残ったメモリーを有効に使います。' : ''));
     }
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);
     aiPlayCard(optionOrTamer, handIdx, (turnEnded) => {
@@ -7667,7 +7741,23 @@ export async function checkPendingTurnEnd() {
 // アタックの終了（公式ルール 11-6）のルールの処理。プレイヤーのアタック（checkPendingTurnEnd）と CPU のアタック（_aiAttackEnd）で共通:
 // 後回しにした非ターンプレイヤー側の効果 → 「アタック終了まで」「バトル終了まで」の期限切れ → 保留していた DP0 の消滅 →
 // 保留した「〜したとき」の反応 → 【衝突】のブロッカーを外す → 保留していた【進化時】
+// あなたのアタックで AI のセキュリティがチェックされたときの反応（AIの考え）
+function _aiReactSecurityLoss() {
+  const lost = bs._aiSecLost;
+  bs._aiSecLost = null;
+  if (!lost || !lost.length || !_aiIsMid()) return;
+  const rem = (bs.ai.security || []).length;
+  const atk = bs._attackingCard;
+  const shown = lost.map(c => '「' + c.name + '」').join('');
+  const feel = rem === 0 ? '追い詰められた。次にアタックが通ったら負けてしまう。ブロッカーと除去で全力で守る。'
+    : rem === 1 ? 'あと1枚しかない…次のターンは守りを最優先にする。'
+    : rem === 2 ? 'このままだと危ない。次のターンは守りも意識して動く。'
+    : 'まだ余裕はある。次のターンで取り返す。';
+  _aiWhy((atk ? 'あなたの「' + atk.name + '」のアタックで、' : '') + 'セキュリティを' + lost.length + '枚チェックされました（残り' + rem + '枚） ← '
+    + (lost.length >= 3 ? '一度に' + lost.length + '枚も…！' : '') + 'めくれたのは' + shown + 'でした。' + feel);
+}
 async function _attackEndCommon() {
+  try { _aiReactSecurityLoss(); } catch (_) {}
   // 保険: 後回しにした非ターンプレイヤー側の効果が残っていれば、アタックを終える前に発揮する
   if (typeof window !== 'undefined' && window._hasNonTurnDeferred && window._hasNonTurnDeferred()) {
     await new Promise((resolve) => window._flushNonTurnDeferred(resolve));

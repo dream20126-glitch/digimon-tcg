@@ -1617,6 +1617,7 @@ function updateCounts() {
   set('ai-hand-count', bs.ai.hand.length);
   // テスト用: AI対戦（オフライン）の間だけ「AIの手札を見る」ボタンを出す（js/ai-battle.js の AI_HAND_PEEK で切り替え）
   { const pb = document.getElementById('ai-hand-peek-btn'); if (pb) pb.style.display = (window._aiBattleActive && window._aiHandPeekEnabled && !_onlineMode) ? 'inline-block' : 'none'; }
+  { const wb = document.getElementById('ai-why-btn'); if (wb) wb.style.display = (window._aiBattleActive && !_onlineMode) ? 'inline-block' : 'none'; }
   set('ai-tama-count', bs.ai.tamaDeck.length);
   set('ai-trash-count2', bs.ai.trash.length);
 }

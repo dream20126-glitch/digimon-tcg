@@ -14184,6 +14184,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
       // 中（ベテランテイマー）: 得にならない任意効果は使わない（【カウンター】・ブラスト進化は得するときだけ）
       if (_cpuMidActive() && !_cpuMidWantsOptional(recipe, bs, card)) {
         ctx.addLog && ctx.addLog('🤖 AIは「' + (isEvo ? sourceCard.name : card.name) + '」の効果を使わなかった');
+        if (typeof window !== 'undefined' && window._aiWhy) window._aiWhy('「' + (isEvo ? sourceCard.name : card.name) + '」の効果は使わない ← 今使っても得にならない（このターンにアタックできない等で効果が無駄になる／自分のカードを失うだけ）');
         finish();
         return;
       }

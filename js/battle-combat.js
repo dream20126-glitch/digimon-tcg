@@ -3272,9 +3272,13 @@ function _aiBattleTryBlock(atk, atkSlotIdx, targetIdx) {
   if (_aiIsMid()) {
     const cands = bs.ai.battleArea.map((c, i) => (_canBlk(c, i) ? i : -1)).filter(i => i >= 0);
     const pick = _aiIsHigh() ? _aiHighChooseBlocker(atk, cands, targetIdx) : _aiMidChooseBlocker(atk, cands, targetIdx);
-    if (pick >= 0) blockerIdx = pick;
-    else if (forced) blockerIdx = cands.slice().sort((a, b) => _dpOf(bs.ai.battleArea[a]) - _dpOf(bs.ai.battleArea[b]))[0];
-    else { addLog('🤖 AIはブロックしなかった'); return false; }
+    if (pick >= 0) {
+      blockerIdx = pick;
+      const _bo = _aiBattleOutcome(atk, bs.ai.battleArea[pick], 'ai');
+      _aiWhy('「' + bs.ai.battleArea[pick].name + '」でブロック ← ' + (!_bo.defDies && _bo.atkDies ? '勝てる（相手を消滅させて自分は残る）' : !_bo.defDies ? '負けない（どちらも残る）' : _bo.atkDies ? '相打ちにできる' : '負けるが、セキュリティが少ないので身代わりで守る'));
+    }
+    else if (forced) { blockerIdx = cands.slice().sort((a, b) => _dpOf(bs.ai.battleArea[a]) - _dpOf(bs.ai.battleArea[b]))[0]; _aiWhy('【衝突】でブロックが必要なので、一番弱い「' + bs.ai.battleArea[blockerIdx].name + '」でブロック'); }
+    else { addLog('🤖 AIはブロックしなかった'); _aiWhy('ブロックしない ← どのブロッカーでも負ける（' + (hasPenetrate(atk) ? '【貫通】なので負けるブロックでは守れない' : 'セキュリティにまだ余裕がある') + '）'); return false; }
   }
   const blocker = bs.ai.battleArea[blockerIdx];
   blocker.suspended = true; _markRuleRest(blocker);
@@ -5558,6 +5562,29 @@ function _aiHighDefense() {
   return sec <= (opp && opp.style === 'aggro' ? 3 : 2) || incoming >= sec;
 }
 
+// ===== AIの考え（行動の理由だけを集めたログ。js/ai-battle.js の「🧠 AIの考え」パネルに出す）=====
+function _aiWhy(msg) {
+  if (typeof window === 'undefined' || !window._aiBattleActive || _onlineMode) return;
+  try { if (typeof window._aiWhyPush === 'function') window._aiWhyPush(msg); } catch (_) {}
+}
+if (typeof window !== 'undefined') window._aiWhy = (m) => _aiWhy(m);
+// このデジモンがアタックしない／できない理由（AIの考え・効果のアタックをしない理由に使う）
+function _aiNoAttackReason(c) {
+  const parts = [];
+  try {
+    if (c.cantAttack) parts.push('「アタックできない」が付いている');
+    if (c.cantRest) parts.push('「レストできない」が付いている');
+    if (c.summonedThisTurn) parts.push('登場したターン');
+    const bl = _aiPlayerBlockersFor(c, -1).filter(b => { const o = _aiBattleOutcome(c, b, 'player'); return o.atkDies || !o.defDies; });
+    if (bl.length) parts.push('ブロックされたら負ける: ' + bl.map(b => '「' + b.name + '」' + (_hasIceArmor(b) || _hasIceArmor(c) ? '（氷装 進化元' + (c.stack || []).length + '対' + (b.stack || []).length + '）' : '（DP' + _dpOf(c) + '対' + _dpOf(b) + '）')).join('・'));
+    if (!_aiSecAttackSafe(c)) parts.push('セキュリティのデジモンに負ける見積もり（DP' + _dpOf(c) + '≦' + _aiEstSecDp() + '）');
+    if (_aiCantHitPlayer(c)) parts.push('プレイヤーにアタックできない（チェック0）');
+    if (_aiIsHigh() && _lvOf(c) >= 5 && (bs.player.security || []).length > 2 && !_aiAttackMeaningful(c) && _aiExposedAfterAttack(c)) parts.push('アタックしてレストすると次の相手のターンに倒される');
+    if (_aiIsHigh() && _aiHighDefense() && isBlocker(c)) parts.push('守りのためにブロッカーとして残す');
+  } catch (_) {}
+  return parts.length ? parts.join('／') : '勝てるアタック先がない';
+}
+
 // ===== AIの作戦（デッキの設計図・相手のデッキの読み・勝ち筋の逆算）=====
 // 設計図は対戦開始時に作る（battle.js startBattleGame → ai-brain.js buildDeckProfile）。中・高とも使う
 function _aiProfile() { return (typeof window !== 'undefined' && window._aiProfile) || null; }
@@ -5593,6 +5620,7 @@ function _aiOppRead() {
     if (bs._aiOppRead && bs._aiOppRead.label !== bs._aiOppLabel) {
       bs._aiOppLabel = bs._aiOppRead.label;
       addLog('👑 ' + (window._aiName || 'デジモンマスター') + 'の読み: 相手は「' + bs._aiOppRead.label + '」');
+      _aiWhy('相手のデッキの読み: 「' + bs._aiOppRead.label + '」（見えたカード' + seen.size + '種類から）');
     }
   }
   return bs._aiOppRead || null;
@@ -5623,6 +5651,8 @@ function _aiLogPlan() {
   bs._aiPlanLog = key;
   const p = _aiProfile();
   addLog('👑 作戦: ' + _AI_PLAN_JA[plan] + (plan === 'develop' && p && p.finisherNames.length ? '（' + p.finisherNames[0] + '）' : ''));
+  _aiWhy('作戦: ' + _AI_PLAN_JA[plan] + (plan === 'develop' && p && p.finisherNames.length ? '（' + p.finisherNames[0] + '）' : '')
+    + (plan === 'defend' ? ' ← 自分のセキュリティが少ない／次の相手のアタックで負けうる' : plan === 'push' ? ' ← 今の場のデジモンで次のターンに勝ち切れる見込み' : ''));
 }
 // アタッカーとアタック先の組み合わせを全部見積もって、一番良いものを選ぶ。{ atkIdx, tgt } か null（アタックしない）
 //  ・勝ち切れるターン: 全員でプレイヤーへ（ブロックされても続ける）
@@ -5819,7 +5849,8 @@ if (typeof window !== 'undefined') window._aiWantsEffectAttack = (cands) => {
   console.log('[aiWantsEffectAttack]', cands.map(c => c.name + '(DP' + _dpOf(c) + ')').join(','), '→', ok, '見積もり', _aiEstSecDp());
   if (!ok) {
     // しない理由（調査用）: ブロックされたら負けるブロッカー（≪氷装≫等も見た結果）・セキュリティの見積もり
-    const why = cands.map(c => {
+    const why = cands.map(c => c.name + '（' + _aiNoAttackReason(c) + '）').join('・');
+    const _unusedWhy = cands.map(c => {
       const bl = _aiPlayerBlockersFor(c, -1).filter(b => { const o = _aiBattleOutcome(c, b, 'player'); return o.atkDies || !o.defDies; });
       const parts = [];
       if (bl.length) parts.push('ブロックされたら負ける: ' + bl.map(b => '「' + b.name + '」' + (_hasIceArmor(b) || _hasIceArmor(c) ? '（氷装 進化元' + (c.stack || []).length + '対' + (b.stack || []).length + '）' : '（DP' + _dpOf(c) + '対' + _dpOf(b) + '）')).join('・'));
@@ -5829,6 +5860,7 @@ if (typeof window !== 'undefined') window._aiWantsEffectAttack = (cands) => {
       return c.name + (parts.length ? '（' + parts.join('／') + '）' : '（勝てるアタック先がない）');
     }).join('・');
     addLog('🧠 効果のアタックはしない: ' + why);
+    _aiWhy('効果のアタックはしない: ' + why);
   }
   return ok;
 };
@@ -5850,6 +5882,7 @@ function _aiHoldForRaid(c) {
   if (!best) return false;
   bs._aiRaidPlanTurn = bs.turn; bs._aiRaidPlanCard = c;
   addLog('🧠 「' + c.name + '」は今はアタックせず、あとで「' + best.card.name + '」に進化して【急襲】でアタックする');
+  _aiWhy('「' + c.name + '」はアタックせず残す ← アタックの後にメモリーを渡して「' + best.card.name + '」に進化し、ターン終了時に【急襲】でアタックするため');
   return true;
 }
 // c から進化できて【急襲】になる手札のカード（コスト maxCost 以下）で、ターン終了時のアタックに意味があるもの
@@ -5981,7 +6014,25 @@ function _aiAttackPhaseBody(callback) {
       if (t) { atkIdx = i; _tgt = t; break; }
     }
   }
-  if (atkIdx === -1) { callback(); return; }
+  if (atkIdx === -1) {
+    // アタックしない理由（アクティブなデジモンごと）
+    if (!_aiEffectAtkSet && !bs._aiScriptInProgress) {
+      const _idle = (bs.ai.battleArea || []).filter(x => _aiIsDigi(x) && !x.suspended);
+      if (_idle.length) _aiWhy('アタックを終える: ' + _idle.map(x => '「' + x.name + '」（' + _aiNoAttackReason(x) + '）').join('・'));
+    }
+    callback(); return;
+  }
+  {
+    const _a = bs.ai.battleArea[atkIdx];
+    if (_tgt && _tgt.mode === 'digimon' && _tgt.def) {
+      const _o = _aiBattleOutcome(_a, _tgt.def, 'player');
+      _aiWhy('「' + _a.name + '」で「' + _tgt.def.name + '」にアタック ← ' + (_o.ice ? '【氷装】で進化元' + (_a.stack || []).length + '対' + (_tgt.def.stack || []).length + '。' : 'DP' + _dpOf(_a) + '対' + _dpOf(_tgt.def) + '。')
+        + (_o.atkDies ? '相打ちだが、相手の方が価値が高い' : '倒せて自分は残る') + (isBlocker(_tgt.def) ? '（ブロッカーを先に消す）' : ''));
+    } else {
+      const _l = _aiIsHigh() && (() => { try { return _aiHighLethal((bs.ai.battleArea || []).filter(x => _aiIsDigi(x) && !x.suspended)); } catch (_) { return false; } })();
+      _aiWhy('「' + _a.name + '」でセキュリティにアタック ← ' + ((bs.player.security || []).length === 0 ? 'とどめ' : _l ? 'このターンで勝ち切れる' : '止められるブロッカーがいない・セキュリティのデジモンに負けない見積もり（DP' + _dpOf(_a) + '）'));
+    }
+  }
   // 効果のアタックは1回だけ（このアタックが終わって戻ってきたら、候補なしで done へ）
   if (_aiEffectAtkSet) {
     _aiEffectAtkSet = new Set();
@@ -6545,7 +6596,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
   // ----- デュアルカード（AIはオプションとして使用。アーツ進化できるなら常に受け入れる） -----
   if (c.type === 'デュアル') {
     bs.ai.hand.splice(handIdx, 1);
-    if (_aiIsHigh()) addLog('👑 「' + c.name + '」はオプションとして使う（効果を使ってからアーツ進化）');
+    if (_aiIsHigh()) { addLog('👑 「' + c.name + '」はオプションとして使う（効果を使ってからアーツ進化）'); _aiWhy('デュアル「' + c.name + '」をオプションとして使う ← オプション効果に価値がある（対象がいる等）'); }
     addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + _aiBasePay + '）');
     renderAll();
     showOptionEffect(c, () => {
@@ -7161,6 +7212,7 @@ function _aiTryLink(callback) {
     base.linkedCards.push(c);
     c._lastLinkCost = cost;
     addLog('🔗 AIが「' + base.name + '」に「' + c.name + '」をリンク！（コスト ' + cost + '）');
+    _aiWhy('「' + c.name + '」を「' + base.name + '」にリンク ← ' + (_aiIsFinisher(base) ? '勝ち筋のデジモンを強くする' : 'アタックできるデジモンを強くする') + '（デジモンとして出すより得）');
     renderAll();
     fxLinkEffect(base, c, () => {
       const turnEnded = aiSpendMemory(cost);
@@ -7207,6 +7259,7 @@ function _aiTryTraining(callback) {
     let ok = false;
     try { ok = doTrainingEffect(c, 'ai'); } catch (e) { console.error('[aiTraining]', e); } finally { bs.phase = prevPhase; }
     if (!ok) continue;
+    _aiWhy('「' + c.name + '」で【トレーニング】 ← このターンもうアタックしないので、レストして進化元を増やす');
     setTimeout(() => aiPlayAuto(callback), 600);
     return true;
   }
@@ -7266,6 +7319,10 @@ function _aiPlayAutoBody(callback) {
   if (bs.ai.ikusei && (bs.ai.ikusei.type === 'デジモン' || bs.ai.ikusei.type === 'デジタマ')) {
     const _ev = _aiFindEvolve(bs.ai.ikusei);
     if (_ev) {
+      _aiWhy('育成エリアの「' + bs.ai.ikusei.name + '」を「' + _ev.card.name + '」に進化 ← '
+        + (_aiHasOnMove(_ev.card) ? '【移動時】を持つので、育成エリアで育ててから移動して効果を使う'
+          : !_aiHasOnPlay(_ev.card) ? '【登場時】を持たないので、育成エリアで進化させても失う効果がない（コストが安く、進化ドローもある）'
+          : 'コストが安く進化ドローもある（同じカードが手札に残る／場にデジモンがいる）'));
       _aiEvolveIku(_ev.card, (turnEnded) => {
         _hooks.applyPermanentEffects('ai'); renderAll();
         if (turnEnded) { setTimeout(() => callback(), 500); return; }
@@ -7317,6 +7374,7 @@ function _aiPlayAutoBody(callback) {
     // アプ合体（本体にアプ合体の相手がリンクしていて、手札にアプ合体先がある）: 進化より先に行う
     const _ag = _aiFindAppGattai(base);
     if (_ag) {
+      _aiWhy('「' + base.name + '」を「' + _ag.card.name + '」にアプ合体 ← アプ合体の相手がリンクしていて、コストを払える');
       _aiDoAppGattai(_ag.card, i, _ag.ag, () => {
         _hooks.applyPermanentEffects('ai'); renderAll(true);
         if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
@@ -7327,12 +7385,23 @@ function _aiPlayAutoBody(callback) {
     const _ev = _aiFindEvolve(base);
     if (!_ev) continue;
     if (_ev.burst) {
+      _aiWhy('「' + base.name + '」を「' + _ev.card.name + '」にバースト進化 ← 勝ち筋につながるカードで、ふつうの進化より安い（テイマーは手札に戻して出し直せる）');
       _aiDoBurstEvolve(_ev.card, i, _ev.burst, () => {
         _hooks.applyPermanentEffects('ai'); renderAll(true);
         if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
         setTimeout(() => aiPlayAuto(callback), 600);
       });
       return;
+    }
+    {
+      const _rs = [];
+      if (bs._aiRaidPlanTurn === bs.turn && bs._aiRaidPlanCard === base) _rs.push('予定どおり、進化して【急襲】でターン終了時にアタックする');
+      if (_aiIsFinisher(_ev.card)) _rs.push('勝ち筋のカード');
+      if (_aiIsHigh() && _aiPlan() === 'defend' && _aiIsDefensive(_ev.card)) _rs.push('守りを固める作戦で、守りのカード');
+      if (_canSwing(base)) _rs.push('このターンにアタックできるデジモンを強くする');
+      else if (base.cantAttack) _rs.push('（このデジモンは「アタックできない」が付いているが、ほかに進化先が無いので育てておく）');
+      if (_ev.alt) _rs.push('代替進化でコストを下げられる');
+      _aiWhy('「' + base.name + '」を「' + _ev.card.name + '」に進化（コスト' + _ev.cost + '） ← ' + (_rs.length ? _rs.join('／') : 'レベルを上げて育てる'));
     }
     _aiEvolveInBattleArea(_ev.card, i, () => {
       _hooks.applyPermanentEffects('ai'); renderAll(true);
@@ -7384,6 +7453,14 @@ function _aiPlayAutoBody(callback) {
   }
   const optionOrTamer = _otCands[0];
   if (optionOrTamer) {
+    {
+      const _t = _aiTagsOf(optionOrTamer);
+      const _r = optionOrTamer.type === 'テイマー'
+        ? (/メモリー/.test(String(optionOrTamer.effect || '')) ? 'メモリーを増やせるテイマーを早く出す' : 'テイマーを出して効果を使えるようにする')
+        : (_t.removal ? '相手のデジモンを取り除ける（対象がいる）' : _t.evoDiscard ? '相手の進化元を破棄できる（対象がいる）' : _t.secTrash ? '相手のセキュリティを減らせる'
+          : _t.search ? '手札を増やせる' : _t.cheat ? 'コストを抑えて登場・進化できる' : '使って何か起きる効果がある');
+      _aiWhy('「' + optionOrTamer.name + '」を使う（コスト' + _aiPlayCost(optionOrTamer) + '） ← ' + _r + (bs.memory > 0 || _aiOverflowOK ? '（アタック後のメモリーの使い道）' : ''));
+    }
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);
     aiPlayCard(optionOrTamer, handIdx, (turnEnded) => {
       if (turnEnded) { setTimeout(() => callback(), 500); return; }
@@ -7424,6 +7501,7 @@ function _aiPlayAutoBody(callback) {
       if (!mainCard._usedEffects) mainCard._usedEffects = [];
       mainCard._usedEffects.push('self');
       addLog('🤖 AIが「' + mainCard.name + '」の【メイン】効果を使用！');
+      _aiWhy('「' + mainCard.name + '」の【メイン】を使う ← このターンまだ使っておらず、使って何か起きる');
       window._triggerMainEffect(mainCard, () => {
         _hooks.applyPermanentEffects('ai');
         renderAll(true);
@@ -7461,6 +7539,16 @@ function _aiTryPlayDigimon(callback, extra) {
   } else if (_aiIsMid()) playable.sort((a, b) => (_aiPlayCost(b) - _aiPlayCost(a)) || (_lvOf(b) - _lvOf(a)));
   else playable.sort((a, b) => _aiPlayCost(a) - _aiPlayCost(b));
   const c = playable[0];
+  {
+    const _mp = _aiMaterialPlan(c);
+    const _r = [];
+    if (_mp) _r.push(_mp.kind === 'digixros' ? 'デジクロスで登場コストを下げられる' : 'アセンブリでトラッシュのカードを使って登場コストを下げられる');
+    if (_aiIsHigh() && _aiPlan() === 'defend' && _aiIsDefensive(c)) _r.push('守りを固める作戦で、守りのデジモン');
+    else if (_aiOnLine(c)) _r.push('勝ち筋につながるデジモン');
+    if (_aiTagsOf(c).search) _r.push('【登場時】で手札を増やせる');
+    if (extra) _r.push('相手がコントロール型なので、1体に重ねる前に2体以上並べる');
+    _aiWhy('「' + c.name + '」を登場（コスト' + Math.max(0, _aiPlayCost(c) - (_mp ? _mp.discount : 0)) + '） ← ' + (_r.length ? _r.join('／') : '出せる中で一番強い'));
+  }
   const handIdx = bs.ai.hand.indexOf(c);
   aiPlayCard(c, handIdx, (turnEnded) => {
     if (turnEnded) { setTimeout(() => callback(), 500); return; }

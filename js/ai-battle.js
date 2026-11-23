@@ -262,6 +262,50 @@ async function beginBattle(playerFirst) {
   }
 }
 
+// ===== AIの考え（AIが何を考えてその行動をしたか、だけを集めたログ）=====
+// battle-combat.js / battle-phase.js / effect-engine.js の判断の箇所が window._aiWhy(文) を呼ぶ。
+// 「🧠 AIの考え」ボタンで右側のパネルを開閉する（開いている間は新しい考えが下に足されていく）
+const _aiWhyList = [];
+window._aiWhyReset = () => { _aiWhyList.length = 0; _renderWhy(); };
+window._aiWhyPush = (msg) => {
+  const b = window._lastBattleState;
+  const turn = b ? b.turn : 0;
+  const mine = b ? b.isPlayerTurn === false : true;
+  _aiWhyList.push({ turn, mine, msg: String(msg || '') });
+  if (_aiWhyList.length > 400) _aiWhyList.splice(0, _aiWhyList.length - 400);
+  _renderWhy();
+};
+function _renderWhy() {
+  const panel = document.getElementById('ai-why-panel');
+  const btn = document.getElementById('ai-why-btn');
+  if (btn) btn.innerText = '🧠 AIの考え' + (_aiWhyList.length ? '（' + _aiWhyList.length + '）' : '');
+  if (!panel) return;
+  const list = panel.querySelector('._why-list');
+  if (!list) return;
+  let lastKey = '';
+  list.innerHTML = _aiWhyList.map((e) => {
+    const key = e.turn + ':' + e.mine;
+    const head = key !== lastKey ? '<div style="margin:10px 0 4px;color:#c9b6ff;font-size:11px;font-weight:bold;border-bottom:1px solid #3a2a66;padding-bottom:2px;">ターン' + esc(e.turn) + (e.mine ? '（AIのターン）' : '（あなたのターン）') + '</div>' : '';
+    lastKey = key;
+    return head + '<div style="color:#eee;font-size:12px;line-height:1.5;margin:3px 0;padding-left:8px;border-left:2px solid #6a2cff;">' + esc(e.msg) + '</div>';
+  }).join('') || '<div style="color:#777;font-size:12px;padding:12px;">まだありません</div>';
+  list.scrollTop = list.scrollHeight;
+}
+window.aiToggleWhy = function() {
+  let panel = document.getElementById('ai-why-panel');
+  if (panel) { panel.remove(); return; }
+  panel = document.createElement('div');
+  panel.id = 'ai-why-panel';
+  panel.style.cssText = 'position:fixed;right:8px;top:60px;bottom:80px;width:min(360px,calc(100vw - 16px));z-index:69000;background:rgba(12,8,24,0.96);'
+    + 'border:1px solid #6a2cff;border-radius:12px;box-shadow:0 0 18px rgba(106,44,255,0.5);display:flex;flex-direction:column;';
+  panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #3a2a66;">'
+    + '<div style="color:#c9b6ff;font-weight:bold;font-size:14px;">🧠 ' + esc(window._aiName || 'AI') + 'の考え</div>'
+    + '<button onclick="aiToggleWhy()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button></div>'
+    + '<div class="_why-list" style="flex:1;overflow-y:auto;padding:4px 12px 12px;"></div>';
+  document.body.appendChild(panel);
+  _renderWhy();
+};
+
 // ===== テスト用: AIの手札を見る =====
 // テスト中だけ有効。公開するときは false にする（ボタンが出なくなる）
 const AI_HAND_PEEK = true;

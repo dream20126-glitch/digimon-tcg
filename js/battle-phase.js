@@ -1218,6 +1218,10 @@ function aiPhaseBreed() {
   // 中（ベテランテイマー）は状況を見て決める（_aiMidHoldInNursery）。低は Lv3 以上ならすぐ出す
   const _ikuLv = bs.ai.ikusei ? (parseInt(bs.ai.ikusei.level) || 0) : 0;
   const _midHold = !!(window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && _ikuLv >= 3 && _aiMidHoldInNursery(bs.ai.ikusei));
+  if (window._aiWhy && bs.ai.ikusei && _ikuLv >= 3 && (window._aiLevel === 'mid' || window._aiLevel === 'high')) {
+    window._aiWhy(_midHold ? '育成エリアの「' + bs.ai.ikusei.name + '」は残す ← 育成エリアで安全に進化させて進化ドローも得る（今のメモリーで進化できる／出してもすぐ倒されそう）'
+      : '育成エリアの「' + bs.ai.ikusei.name + '」をバトルエリアへ移動 ← ' + ((window._aiHasOnMove && window._aiHasOnMove(bs.ai.ikusei)) ? '【移動時】を使う' : '場にデジモンが少ない／Lv.5以上で戦える／育成エリアではもう進化できない'));
+  }
   if (bs.ai.ikusei && _ikuLv >= 3 && !_midHold) {
     let slot = bs.ai.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
@@ -1298,6 +1302,7 @@ function aiPhaseMain() {
             // AI対戦: アタックの後、残りのメモリー（相手側に渡る分も含めて）で使えるものを使ってからターン終了
             // 中（ベテランテイマー）も行う（相手に渡すメモリーは3まで。battle-combat.js aiAvailableMemory）
             if (window._aiBattleActive && !bs._battleAborted && bs.memory <= 0 && window._aiSetOverflow) {
+              if (window._aiWhy) window._aiWhy('アタックの後: 残りのメモリーと、相手に渡してよい分で、意味のある行動があれば使う');
               window._aiSetOverflow(true);
               _hooks.aiMainPhase(() => { window._aiSetOverflow(false); endAiTurn(); });
               return;
@@ -1317,6 +1322,7 @@ async function endAiTurn() {
   // 相手のメモリーは3になる）
   if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && bs.memory < 0) {
     addLog('🤖 ターン終了（メモリー' + (-bs.memory) + 'を残して終了: これ以上、意味のある行動がない）');
+    if (window._aiWhy) window._aiWhy('ターン終了（メモリー' + (-bs.memory) + 'を残す） ← これ以上、意味のある行動がない（何もしなくても相手のメモリーは3）');
   }
   // CPU の【自分のターン終了時】の候補（調査用）
   try { console.log('[ai turn end]', (bs.ai.battleArea || []).filter(Boolean).map(c => c.name + (c.suspended ? '(レスト)' : '(アクティブ)') + ' DP' + c.dp + ' evoKw=' + (c._evoGrantedKeywords ? [...c._evoGrantedKeywords].join('/') : '') + ' perm=' + JSON.stringify(c._permEffects || {})).join(' | ')); } catch (_) {}

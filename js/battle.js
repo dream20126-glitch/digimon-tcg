@@ -643,10 +643,12 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 相手のデッキの読み・作戦の記録は対戦ごとに消す
   bs._aiSeenOpp = null; bs._aiOppRead = null; bs._aiOppLabel = null; bs._aiOppReadN = 0; bs._aiPlanLog = null;
   window._aiProfile = null;
+  if (typeof window._aiWhyReset === 'function') window._aiWhyReset();
   if (window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high')) {
     try {
       window._aiProfile = buildDeckProfile(aiCards);
       addLog('🧠 ' + (window._aiName || 'AI') + 'のデッキの設計図: ' + describeProfile(window._aiProfile));
+      if (window._aiWhy) window._aiWhy('デッキの設計図: ' + describeProfile(window._aiProfile));
     } catch (e) { console.error('[aiProfile]', e); window._aiProfile = null; }
   }
 

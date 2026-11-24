@@ -2158,9 +2158,13 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   }
   const W = window.innerWidth, H = window.innerHeight, R = Math.max(W, H);
   const ra = atkEl.getBoundingClientRect(), rd = defEl.getBoundingClientRect();
-  const gap = Math.max(0, rd.left - ra.right);
+  // VS画面は自分のカードを左に置く（相手のターンはアタック側が右）。S: アタック側が左なら 1、右なら -1。
+  // アタック側が左の前提で書いた動き（AT）は S で左右を入れ替える
+  const S = (ra.left + ra.width / 2) <= (rd.left + rd.width / 2) ? 1 : -1;
+  const [rL, rR] = S > 0 ? [ra, rd] : [rd, ra];
+  const gap = Math.max(0, rR.left - rL.right);
   const push = gap / 2 + Math.min(ra.width, rd.width) * 0.16;
-  const ix = (ra.right + rd.left) / 2, iy = (ra.top + ra.bottom) / 2 - 20;
+  const ix = (rL.right + rR.left) / 2, iy = (ra.top + ra.bottom) / 2 - 20;
   if (vsEl) { vsEl.style.transition = 'opacity 0.15s, transform 0.15s'; vsEl.style.opacity = '0'; vsEl.style.transform = 'scale(2.5)'; }
   const fx = document.createElement('div');
   fx.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;';
@@ -2219,7 +2223,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
   const shake = (name, ms) => { stageEl.style.animation = name + ' ' + ms + 'ms linear'; setTimeout(() => { stageEl.style.animation = ''; }, ms + 20); };
   [atkEl, defEl].forEach((e) => { e.style.willChange = 'transform'; });
   const setT = (e, tr, t) => { e.style.transition = 'transform ' + t; e.style.transform = tr; };
-  const AT = (x, rot, sc) => 'translateX(' + x + 'px) rotate(' + rot + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
+  const AT = (x, rot, sc) => 'translateX(' + (x * S) + 'px) rotate(' + (rot * S) + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
+  const ATraw = (x, rot, sc) => 'translateX(' + x + 'px) rotate(' + rot + 'deg)' + (sc ? ' scale(' + sc + ')' : '');
   const label = (x, y, text, color) => el('position:absolute;left:' + x + 'px;top:' + y + 'px;white-space:nowrap;font-size:' + Math.min(30, W * 0.07) + 'px;font-weight:900;color:#fff;text-shadow:0 0 10px ' + color + ',0 0 22px ' + color + ',0 0 3px #000;animation:fcLabel 0.5s ease-out forwards;z-index:3;', text);
 
   const clashOnce = (at, power) => {
@@ -2625,7 +2630,8 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
       flashAt(ix, iy, 1); sparks(90, 1.6); ringsAt(ix, iy, ['#ffffff', '#ffd84a', '#ff6a00', '#ff3b3b'], 80); shake('fcShake', 450);
       const o = outcomes || {};
       let dur = 0;
-      [['atk', atkEl, -1], ['def', defEl, 1]].forEach(([side, area, dir]) => {
+      // dir: そのカードが画面の左（-1）か右（1）か（トラッシュの渦の位置・飛ぶ向き）
+      [['atk', atkEl, -S], ['def', defEl, S]].forEach(([side, area, dir]) => {
         const kind = o[side] || 'stay';
         if (kind === 'win' || kind === 'stay' || kind === 'recoil') {
           // 勝った側（または負けていない側）は光って前へ
@@ -2636,7 +2642,7 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
           return;
         }
         // 負けた側: 一旦もとの位置へはね返されてから、それぞれの演出
-        setT(area, AT(dir * 18, dir * 6), '0.18s ease-out');
+        setT(area, ATraw(dir * 18, dir * 6), '0.18s ease-out');
         dur = Math.max(dur, playOne(side, kind, area, dir));
       });
       // この画面の持ち主のバトルの勝ち負け
@@ -4560,7 +4566,8 @@ export function fxVsMichizure(loser, victim, victimRole, callback) {
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
   const imgOf = (c) => (c && (c.imgSrc || (() => { try { return cardImg(c); } catch (_) { return ''; } })())) || '';
   // VS画面と同じ並び: アタックした側が左。負けた側の隅にトラッシュ（VS画面で負けたカードが飛んでいった渦）
-  const victimLeft = victimRole === 'atk';
+  // 巻き込まれるカードが画面の左か（VS画面の上なら実際の位置。出し直すときは自分のカードを左に置く並び＝window._vsFlip）
+  const victimLeft = _onVs ? (_vsR.left + _vsR.width / 2) < W / 2 : ((victimRole === 'atk') !== !!window._vsFlip);
   const cw = _onVs ? _vsR.width : Math.min(W * 0.32, 180), ch = _onVs ? _vsR.height : cw * 1.4;
   const vx = _onVs ? _vsR.left + _vsR.width / 2 : (victimLeft ? W * 0.3 : W * 0.7), vy = _onVs ? _vsR.top + _vsR.height / 2 : H * 0.42;
   // VS画面の上なら、VS画面の勝ったカードを写しに差し替える（写しが包まれて引きずり込まれる）

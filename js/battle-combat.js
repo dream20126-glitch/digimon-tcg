@@ -8614,6 +8614,21 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   typeEl.innerText = isDigimon ? 'DP: ' + formatDpDisplay(secCard) : isOption ? 'セキュリティ効果' : isTamer ? 'テイマー登場' : '';
 
   label.innerText = customLabel || 'SECURITY CHECK!';
+  // 自分のカードをいつも左に置く（アタックしたかブロック/アタックされたかに関わらず。相手のターンはアタック側が右）
+  try {
+    const _vsRow = document.getElementById('sec-vs-cards');
+    window._vsFlip = !bs.isPlayerTurn;
+    if (_vsRow) _vsRow.style.flexDirection = window._vsFlip ? 'row-reverse' : 'row';
+    // 枠の色も持ち主で: 自分（左）＝水色、相手（右）＝赤
+    const _col = (imgId, nameId, mine) => {
+      const c = mine ? '#00fbff' : '#ff4444', sh = mine ? 'rgba(0,251,255,0.5)' : 'rgba(255,68,68,0.5)';
+      const ie = document.getElementById(imgId), ne = document.getElementById(nameId);
+      if (ie) { ie.style.borderColor = c; ie.style.boxShadow = '0 0 25px ' + sh; }
+      if (ne) ne.style.color = c;
+    };
+    _col('sec-atk-card-img', 'sec-atk-name', !window._vsFlip);
+    _col('sec-check-card-img', 'sec-check-card-name', !!window._vsFlip);
+  } catch (_) {}
   overlay.style.display = 'flex';
   if (onOpen) onOpen();
 

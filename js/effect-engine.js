@@ -16780,7 +16780,9 @@ export function battleMichizureRivalTriggers(side, mainCard, bs, role) {
       try { if (mainCard && typeof window !== 'undefined' && typeof window._hasPenetrateFn === 'function' && window._hasPenetrateFn(mainCard)) return true; } catch (_) {}
     }
     const subjOk = role === 'loser' ? _isOwnSubjectDestroyStep : _isOppSubjectDestroyStep;
-    const carriers = [...(P.battleArea || []), ...(P.tamerArea || [])].filter(c => c && c !== mainCard);
+    // 勝った側は勝ったデジモン自身も「相手のデジモンが消滅したとき」で反応する（ディルビットモン P-090）。
+    // 道連れの側の消滅したカードは場にいないので、同じ側の他のカードだけ
+    const carriers = [...(P.battleArea || []), ...(P.tamerArea || [])].filter(c => c && (role === 'winner' || c !== mainCard));
     return carriers.some((c) => {
       const r = _parseCardRecipe(c);
       const own = r && Array.isArray(r.on_destroy) ? r.on_destroy : [];

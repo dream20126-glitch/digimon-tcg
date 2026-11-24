@@ -678,7 +678,9 @@ function _memChangeFx(ctx, delta) {
     try { if (typeof window._fxMemoryChange === 'function') window._fxMemoryChange(delta, !!(ctx && ctx.side === 'ai')); } catch (_) {}
   }, 30);
   if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    try { window._onlineSendCommand({ type: 'fx_memoryChange', delta }); } catch (_) {}
+    // 変わった後のメモリーも送る（相手の画面で、ゲージを動かしてから演出を出す。以前は値の同期が演出より後に届き、
+    // ゲージが動いていない場所で「+1」だけ出ていた）
+    try { window._onlineSendCommand({ type: 'fx_memoryChange', delta, memory: ctx.bs ? ctx.bs.memory : undefined }); } catch (_) {}
   }
 }
 function _carryDedigiState(oldTop, nc) {

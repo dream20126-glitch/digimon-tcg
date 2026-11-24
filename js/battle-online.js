@@ -655,7 +655,13 @@ function onRemoteCommand(cmd) {
     // --- メモリー ---
     // 相手の効果でメモリーが増減した演出（ゲージの移動先が光り「相手のメモリー±N」）。直前の memory_update でゲージは更新済み
     case 'fx_memoryChange': {
-      setTimeout(() => { try { if (typeof window._fxMemoryChange === 'function') window._fxMemoryChange(cmd.delta, true); } catch (_) {} }, 30);
+      // 変わった後のメモリーがあれば先にゲージへ反映する。相手の効果のポップアップ（暗い背景）がゲージを隠すので、演出の間は隠す
+      if (cmd.memory !== undefined && cmd.memory !== null) { bs.memory = -cmd.memory; try { updateMemGauge(); } catch (_) {} }
+      {
+        const _restoreAnn = _hideRemoteAnnounceWhile();
+        setTimeout(() => { try { if (typeof window._fxMemoryChange === 'function') window._fxMemoryChange(cmd.delta, true); } catch (_) {} }, 30);
+        setTimeout(_restoreAnn, 1900);
+      }
       break;
     }
     case 'memory_update': {

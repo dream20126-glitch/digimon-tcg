@@ -1219,8 +1219,8 @@ function _michiRecv(kind, cmd) {
   if (kind === 'q') {
     if (cmd && cmd.board) { _michiBoardAsk(cmd); return; }
     if (_michiQWait) { const f = _michiQWait; _michiQWait = null; f(cmd); return; }
-    // こちらのVS画面がもう閉じている（決着を待たずに閉じた等）: 選ぶ場面が無いので【消滅時】等から（盤面で道連れ）。相手を待たせない
-    if (!_clashPending) { _michiAnswerLater(cmd); return; }
+    // こちらのVS画面はまだ始まっていないことがある（相手の端末の方が先に決着する）ので、決着まで取っておく。
+    // VS画面が決着を待たずに閉じたときも、_michiVsHookRemote（skip）が取っておいた問い合わせに返す
     _michiQBuf = { cmd, at: Date.now() };
   }
   else { if (_michiAWait) { const f = _michiAWait; _michiAWait = null; f(cmd); } else _michiABuf = { cmd, at: Date.now() }; }
@@ -1251,7 +1251,7 @@ function _michiAnswerLater(q) {
 function _michiWait(kind, cb) {
   const buf = kind === 'q' ? _michiQBuf : _michiABuf;
   if (kind === 'q') _michiQBuf = null; else _michiABuf = null;
-  if (buf && Date.now() - buf.at < 30000) { cb(buf.cmd); return; }
+  if (buf && Date.now() - buf.at < 120000) { cb(buf.cmd); return; }
   if (kind === 'q') _michiQWait = cb; else _michiAWait = cb;
 }
 if (typeof window !== 'undefined') {
@@ -8616,7 +8616,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     // 相手から届いたVS画面のカードは名前と画像だけなので、こちらの盤面の同じカード（効果の情報を持つ）を探す
     // 同じカードがあればそれ（同名のデジモンが2体いると、名前で先に見つかった別の1体を使っていた。ピエモン BT2-080 台帳 c6）
     const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { if ((bs[sd].battleArea || []).includes(c)) return c; } for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)); if (x) return x; } return c; };
-    _michiQBuf = null; _michiABuf = null; // 前のバトルの【道連れ】の問い合わせが残っていれば捨てる
+    _michiABuf = null; // 前のバトルの【道連れ】の返事が残っていれば捨てる（問い合わせはVS画面より先に届くことがあるので捨てない）
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       atkReal: _realOf(atkCard), defReal: _realOf(secCard),
       // 相手の端末から届いたVS画面か（この端末はバトルを解決していない。【道連れ】の順番はここでは決めない。_michiVsHook）

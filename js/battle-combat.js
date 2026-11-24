@@ -3788,8 +3788,13 @@ function _holdAfterAttackEffects(atk, cont, ready) {
     if (typeof ready === 'function') ready();
   }
 }
+// アタックの【アタック時】・キーワードの効果の後: その間に誘発して後回しにした効果を、アタックを先に進める前に発揮する
+function _flushAtAttackStep(cb) {
+  if (typeof window !== 'undefined' && typeof window._flushNonTurnDeferredAtAttackStep === 'function') { window._flushNonTurnDeferredAtAttackStep(cb); return; }
+  cb();
+}
 function _afterAtkEffectBody(atk, atkSlotIdx, callback) {
-  _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
+  _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => _flushAtAttackStep(() => {
     // アタックしたデジモンのキーワード（【衝突】等）はターンプレイヤー側の効果なので、相手の「アタックしたとき」より先に処理する
     // （以前は後だったため、アンフィモン P-089 の「そのアタックを終了させる」が先に処理され、その後で【衝突】のブロッカーが付いていた）
     const ctxBase = { bs, addLog, renderAll, updateMemGauge };
@@ -3806,9 +3811,10 @@ function _afterAtkEffectBody(atk, atkSlotIdx, callback) {
         });
       });
     };
-    try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, _afterKw); }
-    catch (_) { _afterKw(); }
-  });
+    const _afterKwF = () => _flushAtAttackStep(_afterKw);
+    try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, _afterKwF); }
+    catch (_) { _afterKwF(); }
+  }));
 }
 
 // ブロックされた時効果
@@ -6193,11 +6199,13 @@ function _aiAttackPhaseBody(callback) {
       // 相手の「アタックしたとき」より先に処理する（プレイヤーのアタックの _afterAtkEffectBody と同じ。CPU は任意効果を自動で使う）
       const _afterAtkTime = () => {
         const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-        try { _fireKeywordAttackEffects(_evolvedAiAttacker(), 'ai', bs, ctxBase, _afterKw); }
-        catch (e) { console.error('[aiAttack keyword]', e); _afterKw(); }
+        const _afterKwF = () => _flushAtAttackStep(_afterKw);
+        try { _fireKeywordAttackEffects(_evolvedAiAttacker(), 'ai', bs, ctxBase, _afterKwF); }
+        catch (e) { console.error('[aiAttack keyword]', e); _afterKwF(); }
       };
-      // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
-      _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
+      // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）。【アタック時】で誘発して後回しにした効果は、
+      // キーワードの効果へ進む前に発揮する
+      _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => _flushAtAttackStep(_afterAtkTime), 'ai');
     };
 
     // ブロックされなかったときの続き: デジモンへのアタックならそのデジモンとバトル、プレイヤーならセキュリティチェック

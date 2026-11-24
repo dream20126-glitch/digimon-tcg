@@ -34,8 +34,10 @@ function clearQueue() { _effectQueue = []; try { _hudSetSource('queue', []); } c
 const _queueStack = [];      // triggerEffect の入れ子で退避中の外側のキュー
 const _ntpDeferred = [];     // 後回しにした非ターンプレイヤー側の効果（fn(done)）
 const _ntpDeferredHud = [];  // 同じ並びの発揮待ち表示（null なら表示しない）
+let _ntpForceFlush = false; // アタックの段階の区切りで、外側の効果の処理中でも後回しの効果を発揮する間 true
 function _tpResolutionActive(bs) {
   if (!bs) return false;
+  if (_ntpForceFlush) return false;
   // オンラインの非ターンプレイヤー側: 相手（ターンプレイヤー）の端末に、発揮待ちの効果がまだ残っているという知らせを受けている間
   // （fx_ruleDestroyRequest の tpBusy → fx_tpIdle で解除）。相手の効果の DP- でこちらのデジモンがルールチェックで消滅したとき、
   // 相手の【登場時】等がまだ発揮待ちなのに、こちらの久遠寺マコト BT26-095「デジモンが消滅したとき」が先に発揮されていた
@@ -165,6 +167,16 @@ function _runDestroyChainsInChosenOrder(cards, runOne, done) {
 if (typeof window !== 'undefined') {
   window._flushNonTurnDeferred = (cb) => _flushNonTurnDeferred(window._lastBattleState, cb);
   window._hasNonTurnDeferred = () => _ntpDeferred.length > 0;
+  // アタックの【アタック時】の効果（キーワードの【アタック時】も）を解決し終えたところで、その間に誘発して後回しにした効果
+  // （消滅したデジモンの【消滅時】と、それに続く「相手のデジモンが消滅したとき」等）を、アタックを先に進める前に発揮する
+  // （公式ルール 15-4: 誘発した効果は、その効果の解決後に処理してから進行する）。【急襲】等の効果でのアタック中は外側の
+  // 【ターン終了時】の効果が処理中のため、以前はアタックが終わるまで後回しになっていた（ルビウスドラモン BT27-018 の
+  // 【アタック時】で消滅させたあとの「相手のデジモンが消滅したとき、セキュリティを1枚破棄」がアタックの後になっていた）
+  window._flushNonTurnDeferredAtAttackStep = (cb) => {
+    if (_ntpDeferred.length === 0) { cb && cb(); return; }
+    _ntpForceFlush = true;
+    _flushNonTurnDeferred(window._lastBattleState, () => { _ntpForceFlush = false; cb && cb(); });
+  };
   window._runDestroyChainsInChosenOrder = (cards, runOne, done) => _runDestroyChainsInChosenOrder(cards, runOne, done);
   // battle-online.js: 相手に消滅させられた自分のデジモンの消滅時効果が、相手の合図（fx_ownDestroyReady）待ちの間の表示
   window._hudSetDestroyWait = (cards) => {

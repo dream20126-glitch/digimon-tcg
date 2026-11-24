@@ -144,6 +144,24 @@ function _hasIceArmor(c) {
     || (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'ice_armor' || b.type === 'keyword_ice_armor')));
 }
 if (typeof window !== 'undefined') window._hasIceArmor = (c) => _hasIceArmor(c);
+// バトルの≪氷装≫の判定・進化元の枚数は、場にいる実物のカードで行う（演出やアタック先の変更の経路では、カードの写し
+// （名前・DP等だけ）が渡ってくることがあり、写しにはレシピが無いので≪氷装≫を見落としていた。ユキナモン BT27-033）
+function _realBattleCard(c, side, idx) {
+  if (!c) return c;
+  const area = (bs[side] && bs[side].battleArea) || [];
+  if (area.includes(c)) return c;
+  const same = (x) => !!(x && (x.name || '') === (c.name || '') && (!c.cardNo || x.cardNo === c.cardNo));
+  if (idx != null && idx >= 0 && same(area[idx])) return area[idx];
+  for (const sd of ['player', 'ai']) { const x = ((bs[sd] && bs[sd].battleArea) || []).find(same); if (x) return x; }
+  return c;
+}
+function _iceBattleCounts(atk, atkSide, atkIdx, def, defSide, defIdx) {
+  const ra = _realBattleCard(atk, atkSide, atkIdx), rd = _realBattleCard(def, defSide, defIdx);
+  const active = _hasIceArmor(ra) || _hasIceArmor(rd) || _hasIceArmor(atk) || _hasIceArmor(def);
+  const cnt = (c, r) => (c && typeof c._stackCount === 'number') ? c._stackCount : ((r && r.stack) || (c && c.stack) || []).length;
+  console.log('[ice-check]', atk && atk.name, '氷装=' + _hasIceArmor(ra), '進化元=' + cnt(atk, ra), '/', def && def.name, '氷装=' + _hasIceArmor(rd), '進化元=' + cnt(def, rd), '→', active);
+  return { active, a: cnt(atk, ra), d: cnt(def, rd) };
+}
 // ≪氷装≫のバトル（VS画面）: 進化元の枚数で比べることを見せ、負けた方のカード全体を氷で包んで、ひびが入り、ばらばらに砕く
 function _iceArmorVsFx(overlay, atkArea, defArea, a, d, winner, atkSide) {
   const defSide = atkSide === 'player' ? 'ai' : atkSide === 'ai' ? 'player' : null;
@@ -4635,10 +4653,11 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
     // ≪氷装≫: セキュリティデジモン以外とのバトルでは DP ではなく進化元枚数を比べる
     let _atkDp = atk.dp, _defDp = def.dp;
-    const iceArmorActive = _hasIceArmor(atk) || _hasIceArmor(def);
+    const _ice = _iceBattleCounts(atk, defSide === 'ai' ? 'player' : 'ai', atkIdx, def, defSide || 'ai', defIdx);
+    const iceArmorActive = _ice.active;
     if (iceArmorActive) {
-      _atkDp = atk.stack ? atk.stack.length : 0;
-      _defDp = def.stack ? def.stack.length : 0;
+      _atkDp = _ice.a;
+      _defDp = _ice.d;
       addLog('🧊 ≪氷装≫: 進化元枚数比較 「' + atk.name + '」' + _atkDp + '枚 / 「' + def.name + '」' + _defDp + '枚');
     }
     removeBattleBuffs(battleBuffs);
@@ -4875,10 +4894,11 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
     // ≪氷装≫: 進化元枚数比較
     let _atkDp = atk.dp, _defDp = def.dp;
-    const iceArmorActive2 = _hasIceArmor(atk) || _hasIceArmor(def);
+    const _ice2 = _iceBattleCounts(atk, 'ai', atkIdx, def, 'player', defIdx);
+    const iceArmorActive2 = _ice2.active;
     if (iceArmorActive2) {
-      _atkDp = atk.stack ? atk.stack.length : 0;
-      _defDp = def.stack ? def.stack.length : 0;
+      _atkDp = _ice2.a;
+      _defDp = _ice2.d;
       addLog('🧊 ≪氷装≫: 進化元枚数比較 「' + atk.name + '」' + _atkDp + '枚 / 「' + def.name + '」' + _defDp + '枚');
     }
     removeBattleBuffs(battleBuffs);

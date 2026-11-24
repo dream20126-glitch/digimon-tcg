@@ -1353,14 +1353,61 @@ function _cpuPickTriggerOrder(entries, context) {
     if (ss.some(s => /^(draw|memory|memory_plus)$/.test(String(s.action || '')))) v += 10;
     return v;
   };
-  let best = entries[0], bestV = score(entries[0]);
-  for (let i = 1; i < entries.length; i++) { const v = score(entries[i]); if (v > bestV) { best = entries[i]; bestV = v; } }
+  // 効果どうしのつながり（全カード共通）: ある効果が「作るもの」を、別の効果が「使うもの」にしているなら、作る方を先に使う。
+  //  trash … 手札・デッキの上・自分のデジモン等をトラッシュに送る ／ トラッシュから登場・進化・手札に加える
+  //  hand  … ドロー・デッキオープン・手札に加える ／ 手札から登場・進化・置く・破棄する
+  //  memory… メモリー+ ／ コストを払う登場・進化
+  //  security … リカバリー等でセキュリティを増やす ／ セキュリティの枚数を数える・セキュリティから使う
+  //  例: 「手札を1枚破棄する」と「トラッシュから進化できる」が同時に誘発 → 破棄を先に使えば、破棄したカードも進化に使える
+  const zonesOf = (s) => (Array.isArray(s.from) ? s.from : (s.from ? [s.from] : []));
+  const produces = (ss) => {
+    const p = new Set();
+    ss.forEach(s => {
+      const a = String(s.action || ''), t = String(s.target || ''), z = zonesOf(s);
+      if (/^(discard|hand_discard|deck_trash_top|mill|trash)/.test(a) && !/^opp/.test(t) && (z.includes('hand') || /hand/.test(t) || /deck/.test(a) || !t)) p.add('trash');
+      if (/^(draw|deck_open|add_to_hand|search)/.test(a)) p.add('hand');
+      if (/^(memory|memory_plus)$/.test(a)) p.add('memory');
+      if (/^(recover|place_on_security)/.test(a) && !/^opp/.test(t)) p.add('security');
+    });
+    return p;
+  };
+  const consumes = (ss) => {
+    const c = new Set();
+    ss.forEach(s => {
+      const a = String(s.action || ''), z = zonesOf(s);
+      if (z.includes('trash')) c.add('trash');
+      if (z.includes('hand') || /^(evolve|summon|summon_appear|summon_use|place_under)/.test(a) && !z.length) c.add('hand');
+      if (/^(evolve|summon|summon_appear)/.test(a) && !s.cost_free) c.add('memory');
+      if (/security/.test(String(s.ref || '')) || /^security_/.test(a)) c.add('security');
+    });
+    return c;
+  };
+  const info = entries.map(e => { const ss = flat(_cpuEntrySteps(e)); return { e, p: produces(ss), c: consumes(ss) }; });
+  const link = (x) => {
+    let v = 0;
+    info.forEach(y => {
+      if (y === x) return;
+      x.p.forEach(k => { if (y.c.has(k) && !y.p.has(k)) v += 30; });
+      x.c.forEach(k => { if (y.p.has(k) && !x.p.has(k)) v -= 30; });
+    });
+    return v;
+  };
+  const total = (e) => score(e) + link(info.find(x => x.e === e));
+  let best = entries[0], bestV = total(entries[0]);
+  for (let i = 1; i < entries.length; i++) { const v = total(entries[i]); if (v > bestV) { best = entries[i]; bestV = v; } }
+  const _bestLink = link(info.find(x => x.e === best));
   try {
     if (best !== entries[0] && typeof window !== 'undefined' && window._aiWhy) {
       const nm = (e) => ((e.block && e.block._recipeCard) || e.card || {}).name || '?';
       const others = entries.filter(e => e !== best).map(e => '「' + nm(e) + '」');
       window._aiWhy('「' + nm(best) + '」の効果を先に使います（同時に誘発: ' + others.join('・') + '） ← '
-        + (bestV >= 50 ? 'あなたのデジモンの進化元を減らしたり取り除いたりしておくと、ほかの効果の条件を満たしやすくなるからです。' : '')
+        + (score(best) >= 50 ? 'あなたのデジモンの進化元を減らしたり取り除いたりしておくと、ほかの効果の条件を満たしやすくなるからです。' : '')
+        + (_bestLink > 0 ? (() => {
+            const bi = info.find(x => x.e === best);
+            const lbl = { trash: 'トラッシュに送ったカード', hand: '手札に加えたカード', memory: '増やしたメモリー', security: '増やしたセキュリティ' };
+            const ks = [...bi.p].filter(k => info.some(y => y !== bi && y.c.has(k)));
+            return 'この効果で' + ks.map(k => lbl[k] || k).join('・') + 'を、ほかの効果で使えるようにするためです。';
+          })() : '')
         + (entries.some(e => e !== best && score(e) <= -100) ? 'アタックする効果を先に使うと、そこでタイミングが過ぎて残りの効果が使えなくなるので、最後に回します。' : ''));
     }
   } catch (_) {}

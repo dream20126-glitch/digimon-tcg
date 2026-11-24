@@ -573,6 +573,7 @@ function _getNoEvoBlockImmunityInfo(atk) {
 function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー】'); }
 // 貫通判定（ヘラクルカブテリモン等）: アタックで撃破時に追加セキュリティチェック
 function hasPenetrate(c) { return hasPassiveFlag(c, 'penetrate', '【貫通】'); }
+if (typeof window !== 'undefined') window._hasPenetrateFn = (c) => hasPenetrate(c);
 // 道連れ判定（ヴェノムヴァンデモン等）: バトルで自分だけ消滅したとき相手も消滅
 function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ】'); }
 // オンラインのブロックのバトル（battle-online.js）でも、レシピ・進化元・付与まで見て判定する
@@ -1107,6 +1108,13 @@ function showCombatBackdrop() {
 function playMichizureFx(victim, slot, loserSide, cb, loser, victimRole) {
   // バトル（VS画面）の黒い背景が残っていると盤面の演出が見えず、画面が真っ暗のままになる（ピエモン BT2-080）
   try { hideCombatBackdrop(); } catch (_) {}
+  // VS画面の決着で道連れの演出を出し済み（_michiVsHook）なら重ねない
+  const _pl = window._michiVsPlan;
+  if (_pl && _pl.shown && victim && _pl.victimName === victim.name && Date.now() - _pl.at < 120000) {
+    window._michiVsPlan = null;
+    cb && cb();
+    return;
+  }
   if (_onlineMode && _sendCommand) {
     try { _sendCommand({ type: 'fx_michizure', board: { victimSide: slot.side === 'player' ? 'opp' : 'self', idx: slot.idx, cardNo: (victim && victim.cardNo) || '', name: (victim && victim.name) || '', img: (victim && cardImg(victim)) || '' },
       vs: loser ? { name: loser.name || '', cardNo: loser.cardNo || '', img: cardImg(loser) || '', victimRole: victimRole || 'def' } : null }); } catch (_) {}
@@ -1144,10 +1152,11 @@ if (typeof window !== 'undefined') window._showMichizureAnnounce = showMichizure
 // 【消滅時】と【道連れ】の両方を持つデジモンがバトルで消滅したとき、どちらから発揮するかを持ち主が選ぶ
 // （同時に誘発した自分の効果は、発揮する順を自分で選ぶ。公式ルール 15-4-3-4）。
 // 【消滅時】（本体・進化元）を持たないなら聞かずに 'michizure'。cb('destroy' | 'michizure')
-function askMichizureOrder(card, cb) {
+// force: 【消滅時】が無くても聞く（同じ側の「自分のデジモンが消滅したとき」等、他に同時に誘発した効果があるとき。_michiVsHook）
+function askMichizureOrder(card, cb, force) {
   let hasOnDestroy = false;
   try { hasOnDestroy = !!card && (_hasRecipeTrigger(card, 'on_destroy') || _hasEvoStackTrigger(card, 'on_destroy')); } catch (_) {}
-  if (!hasOnDestroy) { cb('michizure'); return; }
+  if (!hasOnDestroy && !force) { cb('michizure'); return; }
   const overlay = document.createElement('div');
   overlay.id = '_michizure-order';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:65000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);padding:16px;';
@@ -1158,7 +1167,7 @@ function askMichizureOrder(card, cb) {
   title.innerText = '「' + (card.name || '') + '」の効果を発揮する順番';
   const sub = document.createElement('div');
   sub.style.cssText = 'font-size:12px;color:#ccc;line-height:1.6;margin-bottom:14px;';
-  sub.innerText = '【消滅時】と【道連れ】が同時に誘発しました。どちらから発揮しますか？';
+  sub.innerText = (hasOnDestroy ? '【消滅時】' : 'ほかの効果') + 'と【道連れ】が同時に誘発しました。どちらから発揮しますか？';
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
   const mk = (label, val, color) => {
@@ -1166,16 +1175,74 @@ function askMichizureOrder(card, cb) {
     b.type = 'button';
     b.style.cssText = 'flex:1 1 140px;padding:10px 14px;border-radius:8px;border:2px solid ' + color + ';background:#111;color:' + color + ';font-size:14px;font-weight:bold;cursor:pointer;';
     b.innerText = label;
-    b.onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); addLog('↕ 「' + (card.name || '') + '」は' + (val === 'destroy' ? '【消滅時】' : '【道連れ】') + 'から発揮'); cb(val); };
+    b.onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); addLog('↕ 「' + (card.name || '') + '」は' + (val === 'destroy' ? (hasOnDestroy ? '【消滅時】' : 'ほかの効果') : '【道連れ】') + 'から発揮'); cb(val); };
     return b;
   };
-  row.appendChild(mk('【消滅時】から', 'destroy', '#00fbff'));
+  row.appendChild(mk(hasOnDestroy ? '【消滅時】から' : 'ほかの効果から', 'destroy', '#00fbff'));
   row.appendChild(mk('【道連れ】から', 'michizure', '#ff5577'));
   box.appendChild(title); box.appendChild(sub); box.appendChild(row);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 }
-if (typeof window !== 'undefined') window._askMichizureOrder = askMichizureOrder;
+// VS画面の決着で【道連れ】の順番をもう決めていれば（_michiVsHook）、それを使う。決めていなければ今までどおり聞く
+function _michiPlanFor(card) {
+  const pl = typeof window !== 'undefined' ? window._michiVsPlan : null;
+  if (!pl || !card || pl.loserName !== card.name || Date.now() - pl.at > 120000) return null;
+  return pl;
+}
+function michizureOrder(card, cb) {
+  const pl = _michiPlanFor(card);
+  if (pl && (pl.order === 'michizure' || pl.order === 'destroy')) {
+    if (pl.order === 'destroy') window._michiVsPlan = null;
+    cb(pl.order);
+    return;
+  }
+  if (pl) window._michiVsPlan = null;
+  askMichizureOrder(card, cb);
+}
+if (typeof window !== 'undefined') window._askMichizureOrder = michizureOrder;
+
+// バトルの決着（LOSE が出た後）、VS画面を閉じる前: 【道連れ】になるなら、同時に誘発した効果と合わせて順番を決める
+// （ピエモン BT2-080。ユーザー決定事項 2026-11-24）。
+//  ・道連れの側が非ターンプレイヤーで、ターンプレイヤー（勝った側）にも誘発した効果がある → ターンプレイヤーの効果が先
+//    （公式ルール 15-4-3-5）。ここでは決めず、今までどおり後で選ぶ・盤面で演出
+//  ・道連れの側に他の効果（【消滅時】・「自分のデジモンが消滅したとき」等）もある → VS画面の上で順番を選ぶ（CPU は道連れから）
+//  ・他に無い → 道連れから
+//  道連れからなら、そのままVS画面で演出（負けたカードが入ったトラッシュから黒いもや → 相手を引きずり込む）。実際の消滅は
+//  それぞれの経路で行い、演出は出し済みなので重ねない（playMichizureFx）
+function _michiVsHook(p, out, remoteInfo, go) {
+  try {
+    if (remoteInfo || p.remote) { go(); return; } // 相手の端末で決まった決着: 決めるのはバトルを解決している端末（fx_michiVs で演出が届く）
+    const w = _clashRecoilSide(p);
+    if (!w) { go(); return; }
+    const ls = w === 'atk' ? 'def' : 'atk';
+    if (!['trash', 'indomitable'].includes(out && out[ls])) { go(); return; } // 負けた側が消滅しなかった
+    const loser = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
+    const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
+    if (!loser || !winner || typeof window._fxVsMichizure !== 'function') { go(); return; }
+    const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+    const loserSide = ls === 'atk' ? turnSide : (turnSide === 'player' ? 'ai' : 'player');
+    const winSide = loserSide === 'player' ? 'ai' : 'player';
+    const rival = window._battleMichizureRivalTriggers || (() => true);
+    const plan = { loserName: loser.name, victimName: winner.name, at: Date.now(), order: 'later' };
+    window._michiVsPlan = plan;
+    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { go(); return; }
+    const playVs = () => {
+      plan.order = 'michizure'; plan.shown = true;
+      if (_onlineMode && _sendCommand) {
+        try { _sendCommand({ type: 'fx_michiVs', victimRole: w, loser: { name: loser.name || '', cardNo: loser.cardNo || '', img: cardImg(loser) || '' }, victim: { name: winner.name || '', cardNo: winner.cardNo || '', img: cardImg(winner) || '' } }); } catch (_) {}
+      }
+      window._fxVsMichizure(loser, winner, w, go);
+    };
+    if (!rival(loserSide, loser, bs, 'loser')) { playVs(); return; }
+    if (loserSide === 'player') {
+      askMichizureOrder(loser, (o) => { if (o === 'michizure') playVs(); else { plan.order = 'destroy'; go(); } }, true);
+      return;
+    }
+    if (_onlineMode) { go(); return; } // 相手の道連れで他の効果もある: 相手が後で選ぶ（盤面で演出）
+    playVs(); // CPU は道連れから
+  } catch (e) { console.error('[michiVsHook]', e); go(); }
+}
 
 // 貫通アナウンス: combat-backdrop(46999) の上に出すため独立z-indexで実装
 function showPenetrateAnnounce(callback) {
@@ -1217,7 +1284,7 @@ function _fireSecurityBattleWin(atk, side, sec, next) {
 function hideCombatBackdrop() {
   _combatAnimating = false;
   // アタックが終わったのに決着していないVS画面が残っていれば閉じる
-  if (_clashPending) _clashFinish('', () => {});
+  if (_clashPending) _clashFinish('', () => {}, { cleanup: true });
   const bd = document.getElementById('_combat-backdrop');
   if (bd) bd.style.display = 'none';
 }
@@ -4717,6 +4784,26 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             // 全て解決してから発揮する（公式ルール 15-4-3-5）。def の【消滅時】の後に発揮する（非ターンプレイヤーが
             // 選べる順番の1つ）。以前は【道連れ】を先に処理し、atk 側の効果が発揮できなかった
             if (hasMichizure(def)) {
+              // VS画面の決着で「道連れから」に決まっていれば（ターンプレイヤー側に先に解決する効果が無いとき。_michiVsHook）、
+              // CPU の【消滅時】より先に道連れで atk を消滅させる（演出は出し済み）
+              const _p1Plan = _michiPlanFor(def);
+              if (_p1Plan && _p1Plan.order === 'michizure') {
+                fireOnBattleWin(() => {
+                  const _mzIdx = bs.player.battleArea.indexOf(atk);
+                  if (_mzIdx < 0) { window._michiVsPlan = null; _fireDestroyChain(['ai'], () => checkPendingTurnEnd(), { ai: def }, { ai: atk }); return; }
+                  addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+                  bs.player.battleArea[_mzIdx] = null;
+                  bs.player.trash.push(atk);
+                  if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+                  _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
+                  renderAll();
+                  playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
+                    _fireDestroyChain(['player', 'ai'], function() { checkPendingTurnEnd(); }, { player: atk, ai: def }, { player: def, ai: atk });
+                  }, def, 'atk');
+                });
+                return;
+              }
+              if (_p1Plan) window._michiVsPlan = null;
               fireOnBattleWin(() => {
                 _fireDestroyChain(['ai'], () => {
                   const _mzIdx = bs.player.battleArea.indexOf(atk);
@@ -4852,7 +4939,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                   playMichizureFx(def, { side: 'ai', idx: defIdx2 }, 'player', () => next(true), atk, 'def');
                 };
                 // 【消滅時】と【道連れ】の両方があれば、どちらから発揮するかを選ぶ（公式ルール 15-4-3-4）
-                askMichizureOrder(atk, (order) => {
+                michizureOrder(atk, (order) => {
                   if (order === 'michizure') {
                     doMichi((r) => {
                       if (r) _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def }, { player: def, ai: atk });
@@ -5043,7 +5130,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                   else { renderAll(); callback(); }
                 };
                 // 【消滅時】と【道連れ】の両方があれば、どちらから発揮するかを持ち主（プレイヤー）が選ぶ（公式ルール 15-4-3-4）
-                askMichizureOrder(def, (order) => {
+                michizureOrder(def, (order) => {
                   if (order === 'michizure') {
                     let _removed = false;
                     _fireDestroyChain(['player'], () => finish(_removed), { player: def }, { player: atk },
@@ -8324,6 +8411,9 @@ export function showOptionEffect(card, onDone) {
 // ----- セキュリティチェック演出 -----
 
 export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
+  // 相手の端末から届いたVS画面か（battle-online.js fx_securityCheck が立てる。1回分）
+  const _vsRemote = typeof window !== 'undefined' && !!window._vsRemoteOpen;
+  if (typeof window !== 'undefined') window._vsRemoteOpen = false;
   if (_onlineMode && _sendCommand && !window._suppressFxSend) {
     // バフ付きカードを受信側でも「元値+バフ」表示できるよう、baseDpを送る
     const secBase = parseInt(secCard._origDp != null ? secCard._origDp : (secCard.baseDp != null ? secCard.baseDp : secCard.dp)) || 0;
@@ -8424,6 +8514,8 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && (y === c || (y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)))); if (x) return x; } return c; };
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       atkReal: _realOf(atkCard), defReal: _realOf(secCard),
+      // 相手の端末から届いたVS画面か（この端末はバトルを解決していない。【道連れ】の順番はここでは決めない。_michiVsHook）
+      remote: _vsRemote,
       close: () => { overlay.style.display = 'none'; _removeCountLabel(); if (_held) { _held = false; window._fxMoveHold = Math.max(0, (window._fxMoveHold || 1) - 1); } } };
     // VS画面より先に決まっていた「はがれる」「下へ潜り込む」（守備側の端末で、VS画面が出る前に離れるときの効果を処理したとき）を反映
     if (Array.isArray(_clashEarlyNotes) && _clashEarlyNotes.length) {
@@ -8594,7 +8686,9 @@ function _clashFinish(textHint, cb, remoteInfo) {
   if (p.swap) out._swap = p.swap;
   if (p.swapInfo) out._swapInfo = p.swapInfo;
   if (p.subUnder) out._subUnder = p.subUnder;
-  const end = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
+  const end0 = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
+  // 決着（LOSE が出た後）、VS画面を閉じる前に【道連れ】の順番を決める（_michiVsHook）
+  const end = () => _michiVsHook(p, out, remoteInfo, end0);
   if (!p.ctrl) { end(); return; }
   try { p.ctrl.finish(out, end); } catch (e) { console.error('[clashFinish]', e); end(); }
 }

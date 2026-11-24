@@ -16761,6 +16761,41 @@ const _isOppSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'o
 const _isOwnSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'own' || subj === 'own_any' || subj === 'own_card' || subj === 'other_own' || subj === 'other_own_digimon' || subj === 'other_own_card' || subj === 'target_other_own'; };
 const _isBothSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'both' || subj === 'both_digimon' || subj === 'both_card' || subj === 'both_other' || subj === 'both_other_digimon'; };
 
+// 【道連れ】の順番を決めるための下調べ: バトルで片方だけ消滅したとき、【道連れ】と同時に誘発しそうな効果があるか。
+// role 'loser'（【道連れ】の側）: 消滅したカード自身の【消滅時】（本体・進化元）、同じ側の「自分のデジモンが消滅したとき」
+// role 'winner'（勝った側）: 勝ったカードの「バトルに勝ったとき」「バトルで消滅させたとき」（本体・進化元）・≪貫通≫、
+//   同じ側の「相手のデジモンが消滅したとき」
+// 条件（〜なら）までは見ないので、多めに「ある」と判断する（その場合は今までどおり後で選ぶ・盤面の演出になる）
+export function battleMichizureRivalTriggers(side, mainCard, bs, role) {
+  if (!bs || !bs[side]) return false;
+  try {
+    const P = bs[side];
+    const steps = (card, key, evo) => { try { const s = getRecipeForTrigger(card, key, !!evo); return Array.isArray(s) ? s.filter(Boolean) : []; } catch (_) { return []; } };
+    const hasAny = (card, keys) => !!card && keys.some(k => steps(card, k).length > 0
+      || (card.stack || []).some(src => src && !src._faceDown && steps(src, k, true).length > 0));
+    if (role === 'loser') {
+      if (hasAny(mainCard, ['on_destroy', 'on_battle_destroy'])) return true;
+    } else {
+      if (hasAny(mainCard, ['on_battle_win', 'on_win_battle', 'on_win_battle_any'])) return true;
+      try { if (mainCard && typeof window !== 'undefined' && typeof window._hasPenetrateFn === 'function' && window._hasPenetrateFn(mainCard)) return true; } catch (_) {}
+    }
+    const subjOk = role === 'loser' ? _isOwnSubjectDestroyStep : _isOppSubjectDestroyStep;
+    const carriers = [...(P.battleArea || []), ...(P.tamerArea || [])].filter(c => c && c !== mainCard);
+    return carriers.some((c) => {
+      const r = _parseCardRecipe(c);
+      const own = r && Array.isArray(r.on_destroy) ? r.on_destroy : [];
+      if (own.some(st => st && (subjOk(st) || _isBothSubjectDestroyStep(st)))) return true;
+      if (role === 'loser' && hasAny(c, ['when_own_destroyed'])) return true;
+      return (c.stack || []).some((src) => {
+        const sr = src && !src._faceDown && _parseCardRecipe(src);
+        const evo = sr && sr.evo_source && Array.isArray(sr.evo_source.on_destroy) ? sr.evo_source.on_destroy : [];
+        return evo.some(st => st && (subjOk(st) || _isBothSubjectDestroyStep(st)));
+      });
+    });
+  } catch (e) { console.error('[battleMichizureRivalTriggers]', e); return true; }
+}
+if (typeof window !== 'undefined') window._battleMichizureRivalTriggers = battleMichizureRivalTriggers;
+
 // ===== on_destroy の「原因」(cause/cause_subject) 判定 =====
 // step.cause が無ければ原因を問わず常にtrue。ある場合は bs._lastDestroyCause（直近の消滅の
 // 原因。resolveBattle/doDestroy等が消滅チェーン開始直前にセットする）と照合する。

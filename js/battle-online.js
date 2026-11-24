@@ -2055,6 +2055,15 @@ function onRemoteCommand(cmd) {
       if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
       break;
     }
+    case 'fx_michiVs': {
+      // 相手の端末で、バトルの決着のあと【道連れ】から発揮すると決まった: こちらもVS画面で道連れの演出（_michiVsHook）
+      if (typeof window._fxVsMichizure === 'function') {
+        const lc = cmd.loser || {}, vc = cmd.victim || {};
+        const vr = cmd.victimRole === 'atk' ? 'atk' : 'def';
+        window._fxVsMichizure({ name: lc.name || '', cardNo: lc.cardNo || '', imgSrc: lc.img || '' }, { name: vc.name || '', cardNo: vc.cardNo || '', imgSrc: vc.img || '' }, vr, () => {});
+      }
+      break;
+    }
     case 'fx_michizure': {
       // VS画面の決着で【道連れ】を見せたなら重ねない（1回分）
       if (window._clashRecoilPending > 0 && window._clashRecoilAt && Date.now() - window._clashRecoilAt < 60000) { window._clashRecoilPending = 0; break; }
@@ -2441,7 +2450,7 @@ function onRemoteCommand(cmd) {
       // 進化元の枚数（≪氷装≫のVS画面用。同じカードが2枚あっても、送ってきた側の正しい枚数を出す）
       if (typeof cmd.secStack === 'number') secCard._stackCount = cmd.secStack;
       if (typeof cmd.atkStack === 'number') atkCard._stackCount = cmd.atkStack;
-      if (m.showSecurityCheck) enqueueFx((done) => m.showSecurityCheck(secCard, atkCard, () => { renderAll(); done(); }, cmd.customLabel || null));
+      if (m.showSecurityCheck) enqueueFx((done) => { window._vsRemoteOpen = true; m.showSecurityCheck(secCard, atkCard, () => { renderAll(); done(); }, cmd.customLabel || null); });
       break;
     }
     case 'fx_directAttack': {

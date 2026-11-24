@@ -4547,21 +4547,30 @@ export function fxVsMichizure(loser, victim, victimRole, callback) {
   }
   const W = window.innerWidth, H = window.innerHeight;
   const layer = document.createElement('div');
-  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;background:#000;opacity:0;transition:opacity 0.25s;';
+  // バトルのVS画面がまだ開いていれば（決着のすぐ後。_michiVsHook）、その上にそのまま重ねる（背景で覆わない）。
+  // 閉じていれば（他の効果の後に道連れ）、VS画面と同じ並びを黒い背景で出し直す
+  const _vsOv = document.getElementById('security-check-overlay');
+  const _vsOpen = !!(_vsOv && _vsOv.style.display !== 'none' && getComputedStyle(_vsOv).display !== 'none');
+  const _vsImgEl = _vsOpen ? document.getElementById(victimRole === 'atk' ? 'sec-atk-card-img' : 'sec-check-card-img') : null;
+  const _vsR = _vsImgEl ? _vsImgEl.getBoundingClientRect() : null;
+  const _onVs = !!(_vsR && _vsR.width > 0);
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;background:' + (_onVs ? 'transparent' : '#000') + ';opacity:0;transition:opacity 0.25s;';
   document.body.appendChild(layer);
   requestAnimationFrame(() => { layer.style.opacity = '1'; });
   const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
   const imgOf = (c) => (c && (c.imgSrc || (() => { try { return cardImg(c); } catch (_) { return ''; } })())) || '';
   // VS画面と同じ並び: アタックした側が左。負けた側の隅にトラッシュ（VS画面で負けたカードが飛んでいった渦）
   const victimLeft = victimRole === 'atk';
-  const cw = Math.min(W * 0.32, 180), ch = cw * 1.4;
-  const vx = victimLeft ? W * 0.3 : W * 0.7, vy = H * 0.42;
+  const cw = _onVs ? _vsR.width : Math.min(W * 0.32, 180), ch = _onVs ? _vsR.height : cw * 1.4;
+  const vx = _onVs ? _vsR.left + _vsR.width / 2 : (victimLeft ? W * 0.3 : W * 0.7), vy = _onVs ? _vsR.top + _vsR.height / 2 : H * 0.42;
+  // VS画面の上なら、VS画面の勝ったカードを写しに差し替える（写しが包まれて引きずり込まれる）
+  if (_onVs) { _vsImgEl.style.visibility = 'hidden'; }
   const bx = victimLeft ? Math.min(W - 56, W * 0.87) : Math.max(56, W * 0.13), by = H - Math.max(80, H * 0.14);
   const vSrc = imgOf(victim);
   const V = add('position:absolute;left:' + (vx - cw / 2) + 'px;top:' + (vy - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:10px;overflow:hidden;background:#111;box-shadow:0 0 22px #ffd84a88;transition:filter 0.6s,box-shadow 0.6s;',
     vSrc ? '<img src="' + vSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:13px;padding:8px;">' + (victim.name || '') + '</div>');
-  add('position:absolute;left:' + vx + 'px;top:' + (vy + ch / 2 + 8) + 'px;transform:translateX(-50%);color:#fff;font-size:13px;font-weight:bold;white-space:nowrap;text-shadow:0 0 4px #000;', victim.name || '');
-  // 負けた【道連れ】のカードが入ったトラッシュ（渦と🗑）
+  if (!_onVs) add('position:absolute;left:' + vx + 'px;top:' + (vy + ch / 2 + 8) + 'px;transform:translateX(-50%);color:#fff;font-size:13px;font-weight:bold;white-space:nowrap;text-shadow:0 0 4px #000;', victim.name || '');
+  // 負けた【道連れ】のカードが入ったトラッシュ（渦と🗑。VS画面で負けたカードが飛んでいった場所と同じ）
   const vortex = add('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:130px;height:130px;border-radius:50%;border:5px dashed #9b3dff;box-sizing:border-box;animation:vmBin 0.3s ease-out, vmSpin 0.9s linear 0.3s infinite;opacity:0.9;');
   const bin = add('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle,#5a009977 0%,#0a0010 72%);border:3px solid #9b3dff;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:30px;animation:vmBin 0.3s ease-out forwards, vmPulse 0.8s ease-in-out 0.3s infinite;z-index:2;',
     '🗑<div style="font-size:10px;font-weight:bold;margin-top:-2px;">トラッシュ</div>');
@@ -4615,8 +4624,9 @@ export function fxVsMichizure(loser, victim, victimRole, callback) {
   }, 3450);
   const total = 4300;
   setTimeout(() => { layer.style.transition = 'opacity 0.3s'; layer.style.opacity = '0'; }, total);
-  setTimeout(() => { layer.remove(); done(); }, total + 320);
-  setTimeout(done, total + 4000);
+  const _restore = () => { if (_onVs) { try { _vsImgEl.style.visibility = ''; } catch (_) {} } };
+  setTimeout(() => { layer.remove(); done(); setTimeout(_restore, 600); }, total + 320);
+  setTimeout(() => { _restore(); done(); }, total + 4000);
   return true;
 }
 

@@ -2077,13 +2077,8 @@ function onRemoteCommand(cmd) {
     case 'fx_michizure': {
       // VS画面の決着で【道連れ】を見せたなら重ねない（1回分）
       if (window._clashRecoilPending > 0 && window._clashRecoilAt && Date.now() - window._clashRecoilAt < 60000) { window._clashRecoilPending = 0; break; }
-      // 【道連れ】のカードが分かれば、送り手と同じVS画面の演出（トラッシュから黒いもやが出て相手を引きずり込む）
-      if (cmd.vs && cmd.board && typeof window._fxVsMichizure === 'function') {
-        const lCard = { name: cmd.vs.name || '', cardNo: cmd.vs.cardNo || '', imgSrc: cmd.vs.img || '' };
-        const vCard = { name: cmd.board.name || '', cardNo: cmd.board.cardNo || '', imgSrc: cmd.board.img || '' };
-        window._fxVsMichizure(lCard, vCard, cmd.vs.victimRole || 'def', () => {});
-        break;
-      }
+      // 他の効果の後に発揮した【道連れ】は、送り手と同じく盤面で演出する（VS画面で見せる道連れは fx_michiVs で届く）。
+      // 以前はここでVS画面を出し直していて、道連れを持つ側だけVS画面が開き直していた（ピエモン BT2-080 台帳）
       // 盤面の場所が分かれば、盤面で巻き込まれるカードを引きずり込む演出（送り手から見た側を、こちらから見た側に読み替え済み）
       if (cmd.board && typeof window._fxBoardMichizure === 'function') {
         const vSide = cmd.board.victimSide === 'self' ? 'player' : 'ai';

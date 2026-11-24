@@ -5857,7 +5857,7 @@ function _aiThink(cb) {
       + 'padding:6px 16px;border-radius:20px;box-shadow:0 0 12px rgba(255,0,251,0.5);white-space:nowrap;';
     document.body.appendChild(el);
   }
-  el.innerText = (window._aiIcon || '👑') + ' ' + (window._aiName || 'デジモンマスター') + 'が考え中...';
+  el.innerHTML = (typeof window._aiIconHtml === 'function' ? window._aiIconHtml(22) : (window._aiIcon || '👑')) + ' ' + String(window._aiName || 'デジモンマスター').replace(/[&<>]/g, '') + 'が考え中...';
   el.style.display = 'block';
   setTimeout(() => {
     el.style.display = 'none';

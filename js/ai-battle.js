@@ -19,6 +19,16 @@ let starting = false;
 // 難易度ごとの AI の名前（対戦画面の相手の名前・ターン開始の表示に出す）
 const AI_NAMES = { low: '見習いテイマー', mid: 'ベテランテイマー', high: 'デジモンマスター' };
 const AI_ICONS = { low: '🐣', mid: '⚔️', high: '👑' };
+// キャラクターの顔アイコン（images/ai/）。無いレベルは絵文字（AI_ICONS）
+const AI_ICON_IMGS = { mid: 'images/ai/veteran.png', high: 'images/ai/master.png' };
+// アイコンの HTML（顔アイコンがあれば丸い画像、無ければ絵文字）。size は px
+window._aiIconHtml = (size, lv) => {
+  const l = lv || window._aiLevel;
+  const src = AI_ICON_IMGS[l];
+  const sz = size || 20;
+  if (src) return '<img src="' + src + '" alt="" style="width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;object-fit:cover;vertical-align:middle;flex-shrink:0;">';
+  return '<span style="font-size:' + Math.round(sz * 0.8) + 'px;vertical-align:middle;">' + (AI_ICONS[l] || '🤖') + '</span>';
+};
 const LS_KEY = 'aibLastDecks';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -196,7 +206,7 @@ function resetDice() {
   setRollBtn(true);
 }
 function openDice() {
-  document.getElementById('aib-dwho-ai').innerText = (AI_ICONS[level] || '🤖') + ' ' + (AI_NAMES[level] || 'AI');
+  document.getElementById('aib-dwho-ai').innerHTML = window._aiIconHtml(22, level) + ' ' + esc(AI_NAMES[level] || 'AI');
   resetDice();
   starting = false;
   document.getElementById('aib-dice').classList.add('show');
@@ -253,7 +263,7 @@ async function beginBattle(playerFirst) {
     };
     await window.startBattleGame({ list: my.list }, { list: ai.list }, playerFirst);
     const oppLabel = document.getElementById('opponent-name-label');
-    if (oppLabel) oppLabel.innerText = window._aiIcon + ' ' + window._aiName;
+    if (oppLabel) oppLabel.innerHTML = window._aiIconHtml(18) + ' ' + esc(window._aiName);
   } catch (e) {
     window._aiBattleActive = false;
     alert('開始できませんでした: ' + e.message);
@@ -370,9 +380,9 @@ function _renderWhy() {
     const fl = v && v.flair ? v.flair(_applyVoice(act0, v, true), e.mine) : '';
     const act = (fl ? fl + ' ' : '') + _applyVoice(act0, v, true);
     const why = _applyVoice(why0, v, false);
-    const icon = e.mine ? (v ? v.name.split(' ')[0] : '🤖') : '👀';
+    const icon = e.mine ? window._aiIconHtml(22) : '<span style="vertical-align:middle;">👀</span>';
     return head + '<div style="margin:6px 0;padding:6px 8px;border-left:3px solid ' + (e.mine ? '#6a2cff' : '#ff9f43') + ';background:rgba(255,255,255,0.03);border-radius:0 6px 6px 0;">'
-      + '<div style="color:#fff;font-size:12.5px;font-weight:bold;line-height:1.5;">' + icon + ' ' + esc(act) + '</div>'
+      + '<div style="color:#fff;font-size:12.5px;font-weight:bold;line-height:1.5;display:flex;gap:6px;align-items:flex-start;">' + icon + '<span>' + esc(act) + '</span></div>'
       + (why ? '<div style="color:#c8c8d8;font-size:12px;line-height:1.6;margin-top:2px;">' + esc(why) + '</div>' : '')
       + '</div>';
   }).join('') || '<div style="color:#777;font-size:12px;padding:12px;">まだありません</div>';
@@ -386,7 +396,7 @@ window.aiToggleWhy = function() {
   panel.style.cssText = 'position:fixed;right:8px;top:60px;bottom:80px;width:min(360px,calc(100vw - 16px));z-index:69000;background:rgba(12,8,24,0.96);'
     + 'border:1px solid #6a2cff;border-radius:12px;box-shadow:0 0 18px rgba(106,44,255,0.5);display:flex;flex-direction:column;';
   panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #3a2a66;">'
-    + '<div style="color:#c9b6ff;font-weight:bold;font-size:14px;">' + esc((_voiceOf() ? _voiceOf().name : '🧠 ' + (window._aiName || 'AI'))) + 'の頭の中</div>'
+    + '<div style="color:#c9b6ff;font-weight:bold;font-size:14px;display:flex;align-items:center;gap:8px;">' + window._aiIconHtml(32) + esc((window._aiName || 'AI')) + 'の頭の中</div>'
     + '<button onclick="aiToggleWhy()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button></div>'
     + '<div class="_why-list" style="flex:1;overflow-y:auto;padding:4px 12px 12px;"></div>';
   document.body.appendChild(panel);

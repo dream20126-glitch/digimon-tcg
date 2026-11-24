@@ -22,6 +22,8 @@
 .aib-lv.sel { border-color:var(--main-cyan); background:rgba(0,251,255,0.12); box-shadow:0 0 8px rgba(0,251,255,0.3); }
 .aib-lv.disabled { opacity:0.4; cursor:not-allowed; }
 .aib-lv-icon { font-size:32px; line-height:1.2; flex-shrink:0; }
+.aib-lv-img { width:64px; height:64px; border-radius:50%; object-fit:cover; display:block; filter:drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
+.aib-dice-who img { width:22px; height:22px; border-radius:50%; vertical-align:middle; margin-right:4px; }
 .aib-lv-text { min-width:0; }
 .aib-lv-rank { color:var(--main-cyan); font-size:11px; font-weight:bold; margin-top:4px; }
 .aib-lv-name { color:#fff; font-size:13px; font-weight:bold; margin-top:2px; word-break:keep-all; overflow-wrap:anywhere; }
@@ -65,6 +67,8 @@
   #aib-levels { grid-template-columns:1fr; }
   .aib-lv { flex-direction:row; text-align:left; gap:12px; padding:10px 12px; }
   .aib-lv-icon { font-size:28px; width:36px; text-align:center; }
+  .aib-lv-img { width:48px; height:48px; }
+  .aib-lv .aib-lv-icon:has(.aib-lv-img) { width:48px; }
   .aib-lv-rank { display:inline; margin:0 6px 0 0; }
   .aib-lv-name { display:inline; }
   .aib-lv-desc { margin-top:3px; }
@@ -94,12 +98,12 @@
           <div class="aib-lv-desc">できることは何でもやる、勢いまかせのテイマー</div></div>
         </div>
         <div class="aib-lv" data-v="mid" onclick="aibSetLevel(this)">
-          <div class="aib-lv-icon">⚔️</div>
+          <div class="aib-lv-icon"><img class="aib-lv-img" src="images/ai/veteran.png" alt="ベテランテイマー"></div>
           <div class="aib-lv-text"><div class="aib-lv-rank">中</div><div class="aib-lv-name">ベテランテイマー</div>
           <div class="aib-lv-desc">カードゲームに慣れたプレイヤーくらいの強さ。状況を見て、損な行動はしないテイマー</div></div>
         </div>
         <div class="aib-lv" data-v="high" onclick="aibSetLevel(this)">
-          <div class="aib-lv-icon">👑</div>
+          <div class="aib-lv-icon"><img class="aib-lv-img" src="images/ai/master.png" alt="デジモンマスター"></div>
           <div class="aib-lv-text"><div class="aib-lv-rank">高</div><div class="aib-lv-name">デジモンマスター</div>
           <div class="aib-lv-desc">大会に出るテイマーとも良い勝負をする強さ。1ターン先まで考えて勝ちに向けて組み立てる</div></div>
         </div>

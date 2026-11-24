@@ -8867,7 +8867,12 @@ function _clashFinish(textHint, cb, remoteInfo) {
   if (p.swap) out._swap = p.swap;
   if (p.swapInfo) out._swapInfo = p.swapInfo;
   if (p.subUnder) out._subUnder = p.subUnder;
-  const end0 = () => { try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb(); };
+  const end0 = () => {
+    // VS画面でトラッシュへ飛ばしたカードの「消滅演出を重ねない」印は、VS画面を閉じた時点から数え直す（決着の後にVS画面で
+    // 【道連れ】の順番を選んで演出した分だけ時間が経ち、印が切れて消滅演出がもう一度出ていた。ピエモン BT2-080 台帳）
+    try { if (Array.isArray(window._clashLosers)) { const _n = Date.now(); window._clashLosers.forEach((x) => { if (x) x.at = _n; }); } } catch (_) {}
+    try { p.close(); } catch (_) {} window._clashAt = Date.now(); cb && cb();
+  };
   // 決着（LOSE が出た後）、VS画面を閉じる前に【道連れ】の順番を決める（_michiVsHook）
   const end = () => _michiVsHook(p, out, remoteInfo, end0);
   if (!p.ctrl) { end(); return; }

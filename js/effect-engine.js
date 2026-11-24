@@ -16123,6 +16123,32 @@ function _cpuHandKeepScore(c, owner, bs, pool) {
       if (fromTrash) { tv += 40; why.push('トラッシュから使う効果の対象になる'); }
     } catch (_) {}
     s -= tv;
+  } else if (lvl === 'mid') {
+    // ベテラン: マスターほど細かくは見ない。自分のカードに書いてあることだけで分かる範囲
+    //  ・［トラッシュ］で使える効果を持つカード
+    //  ・場（バトルエリア・テイマー）のカードに「トラッシュから〜」の効果があり、同じ名前・特徴のカードを使えるか（ざっくり条件一致）
+    let tv = 0;
+    try {
+      const r = _parseCardRecipe(c);
+      const hasTrashZone = r && Object.keys(r).some(k => Array.isArray(r[k]) && r[k].some(st => st && st.in_zone === 'trash'));
+      if (hasTrashZone) { tv += 40; why.push('トラッシュにあると使える効果を持つ'); }
+      const users = [...(owner.battleArea || []), ...(owner.tamerArea || [])].filter(x => x && x !== c);
+      const fromTrash = users.some(u => {
+        const ur = _parseCardRecipe(u);
+        if (!ur) return false;
+        const all = [];
+        Object.keys(ur).forEach(k => { if (Array.isArray(ur[k])) all.push(...ur[k]); });
+        return all.some(st => {
+          if (!st) return false;
+          const z = Array.isArray(st.from) ? st.from : (st.from ? [st.from] : []);
+          if (!z.includes('trash') && st.action !== 'summon_from_trash') return false;
+          const f = _srcCardFilterOf(st) || st.filter || {};
+          try { return cardMatchesFilter(c, f, bs, 'ai', u); } catch (_) { return false; }
+        });
+      });
+      if (fromTrash) { tv += 25; why.push('場のカードの「トラッシュから〜」で使える'); }
+    } catch (_) {}
+    s -= tv;
   }
   return { s, why };
 }

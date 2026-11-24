@@ -19087,8 +19087,18 @@ function runRecipe(steps, ctx, callback) {
       }
       console.log('[runRecipe] step failed but next has continue_on_fail → continue');
     }
+    // 続けて選んでまとめて登場させる summon_from_trash（_sftPending）の途中で、続きの手順が飛ばされた・効果が終わった
+    // ときは、選んであった分をここで登場させてから進む（選んだカードが登場しないまま消えないように）
+    if (Array.isArray(store._sftPending) && store._sftPending.length > 0
+        && (idx >= steps.length || !steps[idx] || steps[idx].action !== 'summon_from_trash')) {
+      store._nextStep = null;
+      executeRecipeStep({ action: 'summon_from_trash', _sftFlush: true, filter: {} }, ctx, store, () => nextStep(success));
+      return;
+    }
     if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); _curStepConfirmed = false; ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
+    // 次の手順（summon_from_trash が続くとき、選ぶのを先に済ませてまとめて登場させるのに使う）
+    store._nextStep = steps[idx] || null;
     console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
     // 「強制 → その後、〇〇することで（任意）」: コスト持ちステップに来たらここで発動確認する
     // （_isInlineCostConfirmRecipe。効果の最初では確認していない）
@@ -22460,22 +22470,44 @@ function executeRecipeStep(step, ctx, store, callback) {
       const optional = !!step.optional;
       console.log('[summon_from_trash] ctx.side=' + ctx.side + ' effectiveSide=' + effectiveSide + ' player.trash.length=' + (player.trash ? player.trash.length : 'null') + ' filter=' + JSON.stringify(filter));
       console.log('[summon_from_trash] trash contents:', (player.trash || []).map(c => (c && c.name ? c.name : '?') + '(' + (c && c.color || '?') + '/Lv' + (c && c.level || '?') + '/' + (c && c.type || '?') + ')').join(', '));
-      const candidates = (player.trash || []).filter(c => cardMatchesFilter(c, filter));
-      console.log('[summon_from_trash] candidates.length=' + candidates.length);
+      // 「トラッシュから、紫のLv.3を1枚と紫のLv.4を1枚登場できる」（ネイルボーン ST6-16）のように summon_from_trash が
+      // 続くときは、全部選び終えてからまとめて登場させる（以前は1枚選ぶごとに登場していた）。
+      // 前の手順で選んだカード（_sftPending）は持ち越し、続く手順が無くなったところで登場させる
+      const step0 = step;
+      const _sftNx = store && store._nextStep;
+      const _sftChain = !!(_sftNx && _sftNx.action === 'summon_from_trash' && !(Array.isArray(_sftNx.cost) && _sftNx.cost.length > 0));
+      const _sftPend = (store && Array.isArray(store._sftPending)) ? store._sftPending : [];
+      if (store) store._sftPending = null;
+      const candidates = step._sftFlush ? [] : (player.trash || []).filter(c => cardMatchesFilter(c, filter) && !_sftPend.some(p => p.c === c));
+      console.log('[summon_from_trash] candidates.length=' + candidates.length + (_sftPend.length ? ' pending=' + _sftPend.length : '') + (_sftChain ? ' (続けて選ぶ)' : ''));
+      // 選び終えたら: 続く手順があれば持ち越し、最後ならここまでに選んだ分をまとめて登場させる
+      const _sftFinish = (chosenThis) => {
+        const all = _sftPend.concat((chosenThis || []).map(c => ({ c, st: step })));
+        if (_sftChain) { if (store) store._sftPending = all; callback(); return; }
+        if (all.length === 0) { callback(); return; }
+        _sftSummon(all);
+      };
       if (candidates.length === 0) {
-        ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
+        if (!step._sftFlush) ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
+        if (_sftChain || _sftPend.length > 0) { _sftFinish([]); return; }
         showEffectFailed(null, () => callback());
         return;
       }
       const onPicked = (chosen) => {
         if (!chosen || chosen.length === 0) {
-          if (optional) { ctx.addLog && ctx.addLog('☓ 「登場させない」を選択'); callback(); }
+          if (optional) { ctx.addLog && ctx.addLog('☓ 「登場させない」を選択'); _sftFinish([]); }
+          else if (_sftChain || _sftPend.length > 0) { _sftFinish([]); }
           else { showEffectFailed(null, () => callback()); }
           return;
         }
+        _sftFinish(chosen);
+      };
+      function _sftSummon(items) {
+        const chosen = items.map(x => x.c);
         let i = 0;
         function summonNext() {
           if (i >= chosen.length) { ctx.renderAll(); callback(); return; }
+          const step = items[i].st || step0;
           const c = chosen[i++];
           const ti = player.trash.indexOf(c);
           if (ti !== -1) player.trash.splice(ti, 1);
@@ -22545,7 +22577,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           });
         }
         summonNext();
-      };
+      }
       if (effectiveSide === 'ai') {
         onPicked(candidates.slice(0, wantCount));
       } else {

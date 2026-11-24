@@ -4520,7 +4520,93 @@ export function fxBoardMichizure(item, loserSide, callback) {
   return true;
 }
 
+// =====================================================
+//  【道連れ】（VS画面の演出）: バトルで負けた【道連れ】のカードと、巻き込まれる相手のカードを VS 画面のように並べ、
+//  負けたカードから黒いもやが伸びて相手を包み、相手が闇へ引きずり込まれる（ピエモン BT2-080。盤面ではなく VS 画面で見たい）。
+//  発揮するタイミングは誘発効果の順番どおり（バトルの決着の後。他の効果が先なら、その後）で、そのときにこの画面を出す。
+//  loser: 【道連れ】を持っていたカード（もう消滅している）、victim: 巻き込まれるカード
+// =====================================================
+export function fxVsMichizure(loser, victim, callback) {
+  if (typeof document === 'undefined' || !document.body || !victim) { callback && callback(); return false; }
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  _ensureHitStyle();
+  if (!document.getElementById('fx-michi-board-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-michi-board-style';
+    st.textContent = '@keyframes mzbSpin{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}'
+      + '@keyframes mzbLbl{0%{transform:translate(-50%,-100%) scale(1.8);opacity:0;filter:blur(5px)}55%{transform:translate(-50%,-100%) scale(0.95);opacity:1;filter:blur(0)}100%{transform:translate(-50%,-100%) scale(1);opacity:1}}'
+      + '@keyframes mzbShake{0%,100%{translate:0 0}20%{translate:-3px 1px}40%{translate:3px -1px}60%{translate:-2px -1px}80%{translate:2px 1px}}';
+    document.head.appendChild(st);
+  }
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47500;overflow:hidden;background:radial-gradient(ellipse at center,rgba(40,0,60,0.92) 0%,rgba(0,0,0,0.96) 70%);opacity:0;transition:opacity 0.3s;';
+  document.body.appendChild(layer);
+  requestAnimationFrame(() => { layer.style.opacity = '1'; });
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const W = window.innerWidth, H = window.innerHeight;
+  const cw = Math.min(W * 0.3, 170), ch = cw * 1.4;
+  const y = H * 0.5;
+  const lx = W * 0.28, vx = W * 0.72;
+  const imgOf = (c) => (c && (c.imgSrc || (() => { try { return cardImg(c); } catch (_) { return ''; } })())) || '';
+  const cardBox = (c, x, css) => add('position:absolute;left:' + (x - cw / 2) + 'px;top:' + (y - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:8px;overflow:hidden;background:#111;' + css,
+    imgOf(c) ? '<img src="' + imgOf(c) + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:12px;padding:6px;">' + ((c && c.name) || '') + '</div>');
+  // 負けた【道連れ】のカード（もう倒れている: 暗く・ひびが入った見た目）と、巻き込まれるカード
+  const L = cardBox(loser, lx, 'filter:grayscale(0.85) brightness(0.55);box-shadow:0 0 18px #5a0099;');
+  const V = cardBox(victim, vx, 'box-shadow:0 0 16px #ffffff55;transition:filter 0.6s,box-shadow 0.6s;');
+  add('position:absolute;left:' + lx + 'px;top:' + (y + ch / 2 + 6) + 'px;transform:translateX(-50%);color:#c9a6ff;font-size:12px;font-weight:bold;white-space:nowrap;', (loser && loser.name) || '');
+  add('position:absolute;left:' + vx + 'px;top:' + (y + ch / 2 + 6) + 'px;transform:translateX(-50%);color:#fff;font-size:12px;font-weight:bold;white-space:nowrap;', victim.name || '');
+  add('position:absolute;left:' + (W / 2) + 'px;top:' + y + 'px;transform:translate(-50%,-50%);color:#ffffff66;font-size:' + Math.max(22, cw * 0.28) + 'px;font-weight:900;font-style:italic;', 'VS');
+  void L;
+  // ① 「💀【道連れ】」
+  add('position:absolute;left:' + (W / 2) + 'px;top:' + (y - ch / 2 - 14) + 'px;white-space:nowrap;font-size:' + Math.max(24, Math.min(40, W * 0.07)) + 'px;font-weight:900;color:#e9c8ff;text-shadow:0 0 12px #9b3dff,0 0 28px #5a0099,0 0 2px #000;animation:mzbLbl 0.55s ease-out forwards;', '💀【道連れ】');
+  try { if (window._appendKeywordRuleLine) { const ruleBox = add('position:absolute;left:0;right:0;bottom:8%;display:flex;flex-direction:column;align-items:center;'); window._appendKeywordRuleLine(ruleBox, 'michizure'); } } catch (_) {}
+  // ② 負けたカードから黒いもやが伸びて、相手のカードへ
+  setTimeout(() => {
+    for (let i = 0; i < 16; i++) {
+      const t = i / 15, sz = cw * 0.45 + Math.random() * 22;
+      const px = lx + (vx - lx) * t + (Math.random() - 0.5) * 24, py = y + Math.sin(t * Math.PI) * -30 + (Math.random() - 0.5) * 24;
+      const pf = add('position:absolute;left:' + (px - sz / 2) + 'px;top:' + (py - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.95) 0%,rgba(70,10,100,0.55) 50%,rgba(20,0,30,0) 72%);opacity:0;transform:scale(0.3);transition:opacity 0.3s ' + (i * 0.045) + 's,transform 0.45s ' + (i * 0.045) + 's;');
+      requestAnimationFrame(() => { pf.style.opacity = '1'; pf.style.transform = 'scale(1)'; });
+      setTimeout(() => { pf.style.transition = 'opacity 0.5s'; pf.style.opacity = '0'; }, 1400 + i * 30);
+    }
+  }, 450);
+  // ③ もやの輪が相手のカードを渦巻いて包み、黒く染まって震える
+  setTimeout(() => {
+    const AW = cw * 1.9, AH = ch * 1.5;
+    for (let i = 0; i < 2; i++) {
+      const ring = add('position:absolute;left:' + vx + 'px;top:' + y + 'px;width:' + (AW * (1 - i * 0.18)) + 'px;height:' + (AH * (1 - i * 0.18)) + 'px;border-radius:50%;'
+        + 'background:conic-gradient(from ' + (i * 90) + 'deg,rgba(15,0,25,0.95),rgba(80,15,120,0.55),rgba(15,0,25,0.95),rgba(60,0,90,0.4),rgba(15,0,25,0.95));'
+        + '-webkit-mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);'
+        + 'animation:mzbSpin ' + (1.3 - i * 0.4) + 's linear infinite' + (i ? ' reverse' : '') + ';opacity:0;transition:opacity 0.4s;');
+      requestAnimationFrame(() => { ring.style.opacity = '1'; });
+      setTimeout(() => { ring.style.transition = 'opacity 0.5s'; ring.style.opacity = '0'; }, 1500);
+    }
+    V.style.filter = 'brightness(0.45) saturate(0.4) hue-rotate(230deg)';
+    V.style.boxShadow = '0 0 18px #5a0099,0 0 36px #1a0028';
+    V.style.animation = 'mzbShake 0.18s linear infinite';
+  }, 1050);
+  // ④ 相手のカードが、負けたカードと一緒に闇の底へ引きずり込まれる
+  setTimeout(() => {
+    [V, L].forEach((el, k) => {
+      el.style.animation = '';
+      el.style.transition = 'transform 0.9s cubic-bezier(.6,0,.9,.5) ' + (k * 0.08) + 's,opacity 0.9s ' + (k * 0.08) + 's';
+      el.style.transform = 'translateY(' + (H * 0.45) + 'px) rotate(' + (k ? -25 : 25) + 'deg) scale(0.3)';
+      el.style.opacity = '0';
+    });
+  }, 2300);
+  const total = 3400;
+  setTimeout(() => { layer.style.transition = 'opacity 0.3s'; layer.style.opacity = '0'; }, total);
+  setTimeout(() => { layer.remove(); done(); }, total + 320);
+  setTimeout(done, total + 4000);
+  return true;
+}
+
 if (typeof window !== 'undefined') {
+  window._fxVsMichizure = (loser, victim, cb) => {
+    try { return fxVsMichizure(loser, victim, cb); } catch (e) { console.error('[fxVsMichizure]', e); cb && cb(); return true; }
+  };
   window._fxBoardMichizure = (item, loserSide, cb) => {
     try { return fxBoardMichizure(item, loserSide, cb); } catch (e) { console.error('[fxBoardMichizure]', e); return false; }
   };

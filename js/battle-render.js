@@ -1149,7 +1149,14 @@ function showTamerMenu(card, tamerIdx, el) {
   const backdrop = document.getElementById('longpress-backdrop');
   if (!menu || !btns) return;
 
-  let html = `<button class="lp-action-btn lp-effect-btn" onclick="activateTamerEffect(${tamerIdx})">⚡ 効果</button>`;
+  // デジモンの長押しメニューと同じく、回数を使い切った・使っても何も起きない（条件を満たさない・コストを払えない・
+  // 対象が無い）ときは押せないようにする（太刀川ミミ BT1-089「緑のLv.5以上の自分のデジモンがいるとき」）
+  const _tst = mainEffectButtonState(card);
+  let html = _tst.usedUp
+    ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'
+    : _tst.unusable
+      ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用不可）</button>'
+      : `<button class="lp-action-btn lp-effect-btn" onclick="activateTamerEffect(${tamerIdx})">⚡ 効果</button>`;
   html += `<button class="lp-action-btn lp-cancel-btn" onclick="cancelTamerLongpress(${tamerIdx})">✕ キャンセル</button>`;
   btns.innerHTML = html;
 

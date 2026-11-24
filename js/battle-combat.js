@@ -1102,9 +1102,8 @@ function showCombatBackdrop() {
 // 相手の画面にも同じ演出を送る（相手から見た側に読み替える）。盤面の場所が分からなければ「💀 道連れ！」＋消滅の演出。
 // slot: { side:'player'|'ai', idx }（victim がいた枠。もう盤面からは外していてよい）、loserSide: 【道連れ】を持っていた側
 // 流れ（ピエモン BT2-080 で決めた演出）: バトルで負けた【道連れ】のデジモンは通常のバトルと同じくVS画面の隅のトラッシュへ →
-// 【道連れ】を発揮するとき、VS画面を出し直し、そのトラッシュから黒いもやが出て相手のデジモンを包み、トラッシュへ引きずり込む。
-// loser: 【道連れ】のカード、victimRole: 巻き込まれる側がアタックした側か（'atk'）ブロック/アタックされた側か（'def'）。
-// loser が無ければ盤面の演出
+// 道連れから発揮するなら、VS画面のまま、そのトラッシュから黒いもやが出て相手のデジモンを包み、引きずり込む（_michiVsHook で出し済み）。
+// 他の効果の後に発揮するときは盤面で演出する。loser・victimRole は相手の画面へ送る情報
 function playMichizureFx(victim, slot, loserSide, cb, loser, victimRole) {
   // バトル（VS画面）の黒い背景が残っていると盤面の演出が見えず、画面が真っ暗のままになる（ピエモン BT2-080）
   try { hideCombatBackdrop(); } catch (_) {}
@@ -1119,7 +1118,8 @@ function playMichizureFx(victim, slot, loserSide, cb, loser, victimRole) {
     try { _sendCommand({ type: 'fx_michizure', board: { victimSide: slot.side === 'player' ? 'opp' : 'self', idx: slot.idx, cardNo: (victim && victim.cardNo) || '', name: (victim && victim.name) || '', img: (victim && cardImg(victim)) || '' },
       vs: loser ? { name: loser.name || '', cardNo: loser.cardNo || '', img: cardImg(loser) || '', victimRole: victimRole || 'def' } : null }); } catch (_) {}
   }
-  if (loser && typeof window._fxVsMichizure === 'function') { window._fxVsMichizure(loser, victim, victimRole || 'def', cb); return; }
+  // VS画面で出していない【道連れ】（他の効果の後に発揮した）は盤面で演出する（ユーザー決定事項。VS画面を出し直さない）
+  void victimRole;
   const fx = window._fxBoardMichizure;
   if (fx && fx({ card: victim, slot }, loserSide, cb)) return;
   showMichizureAnnounce(() => showDestroyEffect(victim, cb), true);
@@ -8511,7 +8511,8 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     let _held = true;
     const _onFieldNow = (c) => !!c && ['player', 'ai'].some(sd => (bs[sd].battleArea || []).some(x => x && (x === c || (x.name === c.name && (!c.cardNo || x.cardNo === c.cardNo)))));
     // 相手から届いたVS画面のカードは名前と画像だけなので、こちらの盤面の同じカード（効果の情報を持つ）を探す
-    const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && (y === c || (y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)))); if (x) return x; } return c; };
+    // 同じカードがあればそれ（同名のデジモンが2体いると、名前で先に見つかった別の1体を使っていた。ピエモン BT2-080 台帳 c6）
+    const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { if ((bs[sd].battleArea || []).includes(c)) return c; } for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)); if (x) return x; } return c; };
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       atkReal: _realOf(atkCard), defReal: _realOf(secCard),
       // 相手の端末から届いたVS画面か（この端末はバトルを解決していない。【道連れ】の順番はここでは決めない。_michiVsHook）

@@ -4862,6 +4862,18 @@ function _cpuEffectAttackCands(step, ctx) {
 }
 // 守りのキーワード（自分のターン中だけ付いても役に立たない）
 const _CPU_DEF_KW = new Set(['blocker', 'barrier', 'evade', 'armor_break', 'jamming', 'reboot', 'indomitable', 'scapegoat', 'fragment', 'decoy']);
+// そのデジモンがキーワードをすでに持っているか（自身のキーワード・進化元・付与されたもの）
+function _cpuHasKeyword(c, kw) {
+  if (!c || !kw) return false;
+  if (c._permEffects && c._permEffects[kw]) return true;
+  if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_' + kw)) return true;
+  if (c._evoGrantedKeywords && typeof c._evoGrantedKeywords.has === 'function' && c._evoGrantedKeywords.has(kw)) return true;
+  try {
+    const r = _parseCardRecipe(c);
+    if (r && Array.isArray(r.passive) && r.passive.some(p => p && (p.flag === kw || p === kw) && !p.gate)) return true;
+  } catch (_) {}
+  return false;
+}
 // 1つの効果（手順）が、今使って得になるか
 function _cpuStepWorthIt(st, bs, card) {
   if (!st) return false;
@@ -4872,6 +4884,14 @@ function _cpuStepWorthIt(st, bs, card) {
   const onSelf = /^self(_card)?$/.test(String(st.target || ''));
   const kw = String(st.keyword || '');
   const offensive = st.action === 'dp_plus' || st.action === 'security_attack_plus' || (st.action === 'grant_keyword' && kw && !_CPU_DEF_KW.has(kw));
+  // キーワードを付ける効果: 付けられる自分のデジモンが、全員すでにそのキーワードを持っているなら意味がない
+  // （ヴァルナー・ドラグノフ BD02-08 が2体いて、デジモン1体に【貫通】を付けたあと、もう1体でも付けようとしていた）
+  if (st.action === 'grant_keyword' && kw && /^(own|self)/.test(String(st.target || ''))) {
+    const me = bs && bs.ai;
+    const pool = onSelf ? [card] : ((me && me.battleArea) || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')
+      && (!st.filter || cardMatchesFilter(c, st.filter, bs, 'ai', card)));
+    if (pool.length > 0 && pool.every(c => _cpuHasKeyword(c, kw))) return false;
+  }
   if (offensive) {
     // 自分のターン中だけの DP+・攻めのキーワードは、このターンにアタックできるときだけ（「このデジモンは」ならそのデジモンが）
     if (thisTurnOnly && ownTurn) {

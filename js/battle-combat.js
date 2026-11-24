@@ -5615,6 +5615,31 @@ if (typeof window !== 'undefined') window._aiHasWorthAttack = (only) => {
   } catch (_) { return true; }
 };
 
+// マスター: 育成エリアのデジモン（Lv.3以上）を、出さずに育成エリアで育て続けるべきか（相手の次の行動の予測）。理由の文か null。
+// 育成エリアでは効果を使えないので、育て続けるのは次のどれかで「今出すと危ない」と読んだときだけ:
+//  ・相手の場に、除去や進化元破棄の効果を持つデジモン/テイマーがいる（出すとすぐ狙われる）
+//  ・相手の場に、このデジモンにバトルで勝つ、レベルが上のデジモンがいる
+//  ・相手の育成エリアに Lv.4 以上がいて、次のターンに脅威になりそう
+//  ・相手のデッキをコントロール型（除去が多い）と読んでいる
+//  自分のセキュリティが2枚以下なら、場に出して守りに使う（育て続けない）
+function _aiMasterNurseryHoldReason(iku) {
+  if (!_aiIsHigh() || !iku) return null;
+  if ((bs.ai.security || []).length <= 2) return null;
+  try {
+    const pl = bs.player;
+    const removers = [...(pl.battleArea || []), ...(pl.tamerArea || [])].filter(c => { if (!c) return false; const t = _aiTagsOf(c); return t.removal || t.evoDiscard; });
+    if (removers.length) return 'あなたの場の「' + removers[0].name + '」は除去や進化元破棄の効果を持っているので、今出すとすぐ狙われるからです。育成エリアで安全に育ててから出します。';
+    const strong = (pl.battleArea || []).filter(_aiIsDigi).filter(d => _aiBattleOutcome(d, iku, 'ai').defDies && _lvOf(d) > _lvOf(iku));
+    if (strong.length) return 'あなたの「' + strong[0].name + '」にバトルで勝てないので、今出しても倒されやすいからです。もう少し育ててから出します。';
+    const pi = pl.ikusei;
+    if (pi && _lvOf(pi) >= 4) return 'あなたの育成エリアの「' + pi.name + '」（Lv.' + _lvOf(pi) + '）が次のターンに出てきそうなので、それに負けないくらいまで育てたいからです。';
+    const opp = _aiOppRead();
+    if (opp && opp.style === 'control') return 'あなたのデッキは除去が多いと読んでいるので、育成エリアで強くしてから出したいからです。';
+  } catch (_) {}
+  return null;
+}
+if (typeof window !== 'undefined') window._aiMasterNurseryHoldReason = (iku) => _aiMasterNurseryHoldReason(iku);
+
 // ===== マスターの「あなたのターン中の考え」=====
 // あなたのデジモンが登場・進化したとき、どう見ているか（脅威の大きさ・倒し方）。あなたのターンが終わったら次のターンの方針
 function _aiDescribe(c) {
@@ -7443,7 +7468,18 @@ function _aiPlayAutoBody(callback) {
   // ① 育成エリアで進化（プレイヤーの doEvolveIku と同じ処理: 代替進化・進化コスト-の予約 → 状態を引き継いだ新しい1体 →
   //    コスト支払い → 進化ドロー → 【進化時】）
   //    孵化したデジタマ（タイプ「デジタマ」の Lv.2）も進化させる（以前はタイプがデジモンのときだけで、育成エリアで一切進化していなかった）
-  if (bs.ai.ikusei && (bs.ai.ikusei.type === 'デジモン' || bs.ai.ikusei.type === 'デジタマ')) {
+  // 育成エリアでは【進化時】等の効果が使えない。Lv.3以上を育成エリアで進化させるのは（中・高）:
+  //  ・バトルエリアに進化できるデジモンがいるなら、先にそちらを進化させる（効果を使える方を優先）
+  //  ・高: 育成エリアで育て続けると判断したとき（_aiMasterNurseryHoldReason）だけ。それ以外は次の育成フェイズで出して、場で進化させる
+  //  ・中: Lv.3 → Lv.4 の1段だけ（進化ドローを得る）。それ以上は場に出してから進化させる
+  let _ikuOk = true;
+  if (bs.ai.ikusei && _aiIsMid() && _lvOf(bs.ai.ikusei) >= 3) {
+    const _battleEvo = (bs.ai.battleArea || []).some(b => b && _aiIsDigi(b) && (() => { try { return !!_aiFindEvolve(b); } catch (_) { return false; } })());
+    if (_battleEvo) _ikuOk = false;
+    else if (_aiIsHigh()) _ikuOk = !!_aiMasterNurseryHoldReason(bs.ai.ikusei);
+    else _ikuOk = _lvOf(bs.ai.ikusei) === 3;
+  }
+  if (_ikuOk && bs.ai.ikusei && (bs.ai.ikusei.type === 'デジモン' || bs.ai.ikusei.type === 'デジタマ')) {
     const _ev = _aiFindEvolve(bs.ai.ikusei);
     if (_ev) {
       _aiWhy('育成エリアの「' + bs.ai.ikusei.name + '」を「' + _ev.card.name + '」に進化させます ← '

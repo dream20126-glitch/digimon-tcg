@@ -1175,14 +1175,15 @@ function _aiMidHoldInNursery(iku) {
   if (lv >= 5) return false;
   // 【移動時】を持つデジモンは移動して効果を使う（育成エリアで進化させると一番上が変わり【移動時】が使えなくなる）
   if (typeof window._aiHasOnMove === 'function' && window._aiHasOnMove(iku)) return false;
-  // 高（デジモンマスター）: 出してもすぐ倒されそう（相手にこのデジモンよりDPの高いデジモンがいて、ブロッカーでもない）で、
-  // セキュリティに余裕があるなら、今は進化できなくても育成エリアで育て続ける
-  if (window._aiLevel === 'high' && (bs.ai.security || []).length > 2) {
-    const _ikuBlk = !!(iku._permEffects && iku._permEffects.blocker) || /【ブロッカー】|≪ブロッカー≫/.test(String(iku.effect || ''));
-    const _oppMax = Math.max(0, ...(bs.player.battleArea || []).filter(isDigi).map(c => parseInt(c.dp) || 0));
-    // 育たないまま残り続けて孵化できなくならないよう、続けて残すのは2ターンまで
-    if (!_ikuBlk && _oppMax > (parseInt(iku.dp) || 0) && (iku._aiHighHold = (iku._aiHighHold || 0) + 1) <= 2) return true;
+  // 高（デジモンマスター）: 育成エリアでは効果が使えないので、基本は出して場で育てる。相手の次の行動を読んで「今出すと危ない」と
+  // 判断したとき（battle-combat.js _aiMasterNurseryHoldReason）だけ育成エリアで育て続ける（続けて残すのは2ターンまで）
+  if (window._aiLevel === 'high') {
+    const _why = typeof window._aiMasterNurseryHoldReason === 'function' ? window._aiMasterNurseryHoldReason(iku) : null;
+    if (_why && (iku._aiHighHold = (iku._aiHighHold || 0) + 1) <= 2) { bs._aiNurseryHoldWhy = _why; return true; }
+    return false;
   }
+  // 中（ベテランテイマー）: 育成エリアで育てるのは Lv.3 → Lv.4 の1段だけ（それ以上は場に出して効果を使う）
+  if (lv >= 4) return false;
   if (!(window._aiCanEvolveNow && window._aiCanEvolveNow(iku))) return false;
   const oppDigi = (bs.player.battleArea || []).filter(isDigi);
   if ((bs.ai.security || []).length <= 2 && oppDigi.length > 0) {
@@ -1223,7 +1224,7 @@ function aiPhaseBreed() {
   const _ikuLv = bs.ai.ikusei ? (parseInt(bs.ai.ikusei.level) || 0) : 0;
   const _midHold = !!(window._aiBattleActive && (window._aiLevel === 'mid' || window._aiLevel === 'high') && _ikuLv >= 3 && _aiMidHoldInNursery(bs.ai.ikusei));
   if (window._aiWhy && bs.ai.ikusei && _ikuLv >= 3 && (window._aiLevel === 'mid' || window._aiLevel === 'high')) {
-    window._aiWhy(_midHold ? '育成エリアの「' + bs.ai.ikusei.name + '」は、まだ育成エリアに残します ← 育成エリアなら狙われずに進化させられて、進化ドローも得られるからです（今のメモリーで進化できる、または今出してもすぐ倒されそうなため）。'
+    window._aiWhy(_midHold ? '育成エリアの「' + bs.ai.ikusei.name + '」は、まだ育成エリアに残します ← ' + ((window._aiLevel === 'high' && bs._aiNurseryHoldWhy) ? bs._aiNurseryHoldWhy : '育成エリアなら狙われずに進化させられて、進化ドローも得られるからです（Lv.3からLv.4までは育成エリアで育てる）。')
       : '育成エリアの「' + bs.ai.ikusei.name + '」をバトルエリアへ移動させます ← ' + ((window._aiHasOnMove && window._aiHasOnMove(bs.ai.ikusei)) ? '【移動時】の効果を使いたいからです。' : '場で戦うデジモンが必要だからです（場のデジモンが少ない、Lv.5以上で十分戦える、または育成エリアではこれ以上進化できないため）。'));
   }
   if (bs.ai.ikusei && _ikuLv >= 3 && !_midHold) {

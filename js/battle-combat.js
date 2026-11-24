@@ -1104,6 +1104,18 @@ function showCombatBackdrop() {
 // 流れ（ピエモン BT2-080 で決めた演出）: バトルで負けた【道連れ】のデジモンは通常のバトルと同じくVS画面の隅のトラッシュへ →
 // 道連れから発揮するなら、VS画面のまま、そのトラッシュから黒いもやが出て相手のデジモンを包み、引きずり込む（_michiVsHook で出し済み）。
 // 他の効果の後に発揮するときは盤面で演出する。loser・victimRole は相手の画面へ送る情報
+// 【道連れ】で場から外したデジモンを、オンラインの相手の画面からも外す（以前は送っておらず、相手の画面に消滅したはずの
+// デジモンが残っていた。ピエモン BT2-080 台帳）。side: 'player'＝自分のデジモン / 'ai'＝相手のデジモン（持ち主の端末が消滅時を発揮）
+function _michiSyncRemoved(side, idx) {
+  if (!_onlineMode || !_sendCommand || idx == null || idx < 0) return;
+  try {
+    if (side === 'player') _sendCommand({ type: 'own_card_removed', slotIdx: idx, reason: 'destroy' });
+    else {
+      _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'destroy' });
+      if (window._markDestroyed) window._markDestroyed('ai', idx);
+    }
+  } catch (e) { console.error('[michiSyncRemoved]', e); }
+}
 function playMichizureFx(victim, slot, loserSide, cb, loser, victimRole) {
   // バトル（VS画面）の黒い背景が残っていると盤面の演出が見えず、画面が真っ暗のままになる（ピエモン BT2-080）
   try { hideCombatBackdrop(); } catch (_) {}
@@ -4915,6 +4927,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                 bs.player.trash.push(atk);
                 if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
                 _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
+                _michiSyncRemoved('player', _mzIdx);
                 renderAll();
                 playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
                   _fireDestroyChain(['player', 'ai'], function() { checkPendingTurnEnd(); }, { player: atk, ai: def }, { player: def, ai: atk });
@@ -4945,6 +4958,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                   bs.player.trash.push(atk);
                   if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
                   _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
+                  _michiSyncRemoved('player', _mzIdx);
                   renderAll();
                   playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
                     _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk }, { player: def });
@@ -5066,6 +5080,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                   bs.ai.trash.push(def);
                   if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
                   _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
+                  _michiSyncRemoved('ai', defIdx2);
                   renderAll();
                   playMichizureFx(def, { side: 'ai', idx: defIdx2 }, 'player', () => next(true), atk, 'def');
                 };

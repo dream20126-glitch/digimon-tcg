@@ -541,6 +541,9 @@ function processQueue(context, onComplete) {
       });
     });
     return;
+  } else if (!isLocalSide && sameLevel.length > 1 && _cpuMidActive() && !(window._isOnlineMode && window._isOnlineMode())) {
+    // AI対戦の CPU（中・高）: 同時に誘発した自分の効果の順番を考えて選ぶ（_cpuPickTriggerOrder）
+    next = _cpuPickTriggerOrder(sameLevel, context);
   } else if (sameLevelAutos.length > 0) {
     next = sameLevelAutos[0];
   } else {
@@ -1325,6 +1328,44 @@ if (typeof window !== 'undefined') {
 // ===== キュー順序選択UI =====
 // 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
 // 全部が任意効果なら「終了する」ボタンを出し、押されたら callback(-1)（どの効果も使わない）
+// CPU（中・高）が、同時に誘発した自分の効果のどれから使うかを選ぶ:
+//  ・ほかの効果の条件を満たす助けになる効果（相手のデジモンの進化元の破棄・除去・DP-等）を先に
+//  ・効果でアタックする効果は最後（アタックすると「ターン終了時」等のタイミングが過ぎ、残りの効果が使えなくなる）
+//  ・それ以外は今の順番のまま
+// 例: ユキナモン BT27-033 の【自分のターン終了時】（進化元を持つ相手のデジモンがいないならアタック）と、進化元のセッカモンの
+// 【自分のターン終了時】（相手の進化元を2枚破棄）→ セッカモンを先に使ってから、ユキナモンでアタックする
+function _cpuEntrySteps(e) {
+  try {
+    if (e && e.block && Array.isArray(e.block._grantedSteps)) return e.block._grantedSteps;
+    const code = e && e.block && e.block.trigger && e.block.trigger.code;
+    const rc = (e && e.block && e.block._recipeCard) || (e && e.card);
+    const st = code ? getRecipeForTrigger(rc, code, !!(e.block && e.block._recipeCard && e.block._recipeCard !== e.card)) : null;
+    return Array.isArray(st) ? st : [];
+  } catch (_) { return []; }
+}
+function _cpuPickTriggerOrder(entries, context) {
+  const flat = (steps) => { const out = []; (steps || []).forEach(s => { if (!s) return; out.push(s); (Array.isArray(s.alt_actions) ? s.alt_actions : []).forEach(a => a && out.push(a)); }); return out; };
+  const score = (e) => {
+    const ss = flat(_cpuEntrySteps(e));
+    let v = 0;
+    if (ss.some(s => s.action === 'attack')) v -= 100;
+    if (ss.some(s => /^opp/.test(String(s.target || '')) && /^(discard|evo_discard|destroy|bounce|return_hand|return_deck|dp_minus|dedigivolve|rest)/.test(String(s.action || '')))) v += 50;
+    if (ss.some(s => /^(draw|memory|memory_plus)$/.test(String(s.action || '')))) v += 10;
+    return v;
+  };
+  let best = entries[0], bestV = score(entries[0]);
+  for (let i = 1; i < entries.length; i++) { const v = score(entries[i]); if (v > bestV) { best = entries[i]; bestV = v; } }
+  try {
+    if (best !== entries[0] && typeof window !== 'undefined' && window._aiWhy) {
+      const nm = (e) => ((e.block && e.block._recipeCard) || e.card || {}).name || '?';
+      const others = entries.filter(e => e !== best).map(e => '「' + nm(e) + '」');
+      window._aiWhy('「' + nm(best) + '」の効果を先に使います（同時に誘発: ' + others.join('・') + '） ← '
+        + (bestV >= 50 ? 'あなたのデジモンの進化元を減らしたり取り除いたりしておくと、ほかの効果の条件を満たしやすくなるからです。' : '')
+        + (entries.some(e => e !== best && score(e) <= -100) ? 'アタックする効果を先に使うと、そこでタイミングが過ぎて残りの効果が使えなくなるので、最後に回します。' : ''));
+    }
+  } catch (_) {}
+  return best;
+}
 function showQueueOrderSelect(entries, callback0) {
   // 発動順を選んでいる間は効果の処理中として数える（_orderSelectOpen。止めたアタックを続ける見張りが、選んでいる途中で
   // 続けないように。メインフェイズ開始時の効果のアタックの後、残りのイクト/藤枝淑乃を選んでいる間にアタックが始まっていた）

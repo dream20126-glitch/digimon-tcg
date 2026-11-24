@@ -5394,6 +5394,8 @@ function _aiEstSecDp() {
 // 【アタック時】の効果がある／【消滅時】の効果がある（負けて消滅しても得をする）。進化元の効果も含む
 function _aiAttackMeaningful(c) {
   if (!c) return false;
+  // マスター: アタックしてもターン終了時にアクティブに戻るなら、アタックしておく意味がある（アクティブのまま終えると戻る効果が無駄）
+  if (_aiWillReactivateAtTurnEnd(c)) return true;
   const top = _aiTagsOf(c);
   if (top.onDestroy) return true;
   if ((c.stack || []).some(x => _aiTagsOf(x).onDestroyEvo)) return true;
@@ -5672,6 +5674,37 @@ function _aiMasterNurseryHoldReason(iku) {
 }
 if (typeof window !== 'undefined') window._aiMasterNurseryHoldReason = (iku) => _aiMasterNurseryHoldReason(iku);
 
+// マスター: このデジモンは、アタックしてレストしても自分のターン終了時にアクティブに戻るか（その効果を読む）。
+// 例: 進化元のセッカモン（ST26-04/BT27-029）の【自分のターン終了時】「相手のデジモン1体の進化元を2枚破棄する。破棄しなかったなら、
+// このデジモンをアクティブにできる」は、相手に進化元を持つデジモンがいなければ破棄できないので、アクティブに戻る
+function _aiWillReactivateAtTurnEnd(c) {
+  if (!_aiIsHigh() || !c) return false;
+  const parse = (r) => { if (typeof r === 'string') { try { return r ? JSON.parse(r) : null; } catch (_) { return null; } } return r; };
+  const stepsOf = (obj) => {
+    const out = [];
+    if (!obj || typeof obj !== 'object') return out;
+    Object.keys(obj).forEach(k => { if (k.split(',').map(x => x.trim()).includes('on_own_turn_end') && Array.isArray(obj[k])) out.push(...obj[k].filter(Boolean)); });
+    return out;
+  };
+  const steps = [];
+  const r0 = parse(c.recipe);
+  if (r0) steps.push(...stepsOf(r0));
+  (c.stack || []).forEach(x => { const r = parse(x && x.recipe); if (r && r.evo_source) steps.push(...stepsOf(r.evo_source)); });
+  const oppHasEvo = (bs.player.battleArea || []).some(d => _aiIsDigi(d) && (d.stack || []).length > 0);
+  return steps.some(st => {
+    const all = [st, ...(Array.isArray(st.alt_actions) ? st.alt_actions : [])];
+    const act = all.find(a => a && a.action === 'active' && /^self/.test(String(a.target || '')));
+    if (!act) return false;
+    // 「この効果で破棄しなかったなら」（cond_last_action_eq:0）: 前の手順が相手の進化元の破棄なら、破棄できない（進化元を持つ
+    // 相手のデジモンがいない）ときだけアクティブに戻る
+    if (/cond_last_action_eq:0/.test(String(act.condition || ''))) {
+      const evoDisc = st.filter && st.filter.target_evo_source && /^opp/.test(String(st.target || ''));
+      return evoDisc ? !oppHasEvo : false;
+    }
+    return !act.condition;
+  });
+}
+
 // ===== マスターの「あなたのターン中の考え」=====
 // あなたのデジモンが登場・進化したとき、どう見ているか（脅威の大きさ・倒し方）。あなたのターンが終わったら次のターンの方針
 function _aiDescribe(c) {
@@ -5818,7 +5851,9 @@ function _aiHighPickAttack(canAttack) {
   for (const i of idxs) {
     const c = area[i];
     const atkDp = _dpOf(c);
-    if (defense && isBlocker(c)) continue;
+    // ターン終了時にアクティブに戻るデジモンは、アタックしても守り（ブロッカー）に使える・レスト状態で狙われない
+    const _react = _aiWillReactivateAtTurnEnd(c);
+    if (defense && isBlocker(c) && !_react) continue;
     const _meaning = _aiAttackMeaningful(c);
     // 【アタック時】で相手のデジモンを取り除けるデジモンは先にアタックする（ブロッカー等を消してから本命が殴る）
     const _first = (_oppHasDigi && _aiOnAttackUseful(c) && [c, ...(c.stack || [])].some(x => { const t = _aiTagsOf(x); return t.removal || t.evoDiscard; })) ? 1500 : 0;
@@ -5835,7 +5870,7 @@ function _aiHighPickAttack(canAttack) {
         //  【プログレス】等で相手の効果を受けないデジモンは、セキュリティのオプションを気にしなくてよい
         const _risk = (_secThreat && !_aiImmuneDuringAttack(c)) ? _aiOwnValue(c) * 0.05 : 0;
         // アタックしてレストすると次の相手のターンに倒される Lv.5 以上は、意味のあるアタックでなければ控える（相手のセキュリティ2枚以下なら攻める）
-        const _expose = (secLeft > 2 && _lvOf(c) >= 5 && !_meaning && _aiExposedAfterAttack(c)) ? _aiOwnValue(c) * 0.15 : 0;
+        const _expose = (!_react && secLeft > 2 && _lvOf(c) >= 5 && !_meaning && _aiExposedAfterAttack(c)) ? _aiOwnValue(c) * 0.15 : 0;
         consider(checks * (secLeft <= 2 ? 6000 : 2500) - atkDp * 0.05 - _risk - _expose - _handRisk + _first, i, { mode: 'security' });
       }
     }
@@ -6162,6 +6197,7 @@ function _aiAttackPhaseBody(callback) {
         + (_o.atkDies ? '相打ちになりますが、あなたのデジモンの方が脅威なので倒しておきたいからです。' : 'こちらは生き残って、あなたのデジモンを倒せるからです。') + (isBlocker(_tgt.def) ? 'ブロッカーを先に倒しておくと、このあとのアタックが通りやすくなります。' : ''));
     } else {
       const _l = _aiIsHigh() && (() => { try { return _aiHighLethal((bs.ai.battleArea || []).filter(x => _aiIsDigi(x) && !x.suspended)); } catch (_) { return false; } })();
+      if (!_aiEffectAtkSet && _aiWillReactivateAtTurnEnd(_a)) _aiWhy('「' + _a.name + '」は、今アタックしてもターン終了時にアクティブに戻る ← 進化元の効果で「進化元を破棄しなかったならアクティブにする」が働くからです（あなたの場に進化元を持つデジモンがいないので、破棄は起きません）。アクティブのまま終えるとこの効果が無駄になるので、今アタックしておきます。');
       _aiWhy('「' + _a.name + '」でセキュリティにアタックします ← ' + ((bs.player.security || []).length === 0 ? 'セキュリティが0枚なので、とどめを刺します。' : _l ? 'このターンで勝ち切れる計算なので、全員で攻めます。' : 'このアタックを止められるブロッカーがいなく、セキュリティから強いデジモンが出ても負けないDP（' + _dpOf(_a) + '）なので、セキュリティを削ります。'));
     }
   }

@@ -3633,7 +3633,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         next();
       };
       if (!canShowPicker) {
-        // AI 側 / UI なし: 条件を満たす末尾 N 枚を自動破棄
+        // AI 側 / UI なし: 中・高は残したさの低いカードから（_pickHandDiscards と同じ判断）、それ以外は条件を満たす末尾 N 枚
+        if (ctx.side === 'ai') {
+          _pickHandDiscards('ai', _cdHandPool.slice(), n, false, (picked) => {
+            const auto = (picked && picked.length) ? picked : _cdHandPool.slice(-n);
+            _moveBatchIntro(ctx, auto, '手札', 'トラッシュ', () => runDiscards(auto, _cdFinishCallback));
+          });
+          return;
+        }
         const auto = _cdHandPool.slice(-n);
         _moveBatchIntro(ctx, auto, '手札', 'トラッシュ', () => runDiscards(auto, _cdFinishCallback));
         return;
@@ -16059,9 +16066,87 @@ function _handDiscardWantCount(handLen, poolLen, spec) {
 //  - ai 側（CPU）: ランダム（ユーザー決定事項: CPUが自分の手札から選ぶ場面はランダム）
 //  - player 側: 任意でなく候補が want 枚以下なら選択の余地が無いため自動、それ以外は手札ピッカー
 // done(picked[] | null)  null = 「破棄しない」を選んだ（optional 時のみ）
+// CPU（中・高）が手札を破棄するとき、どれを捨てるか: 「残したさ」が低いカードから捨てる
+//  残したい: 場のデジモンからすぐ進化できる・足りないテイマー・（高）手札に無いレベル（_cpuCardWant）、勝ち筋のカード、
+//            メモリーを増やす・手札を増やすカード
+//  捨ててよい: 同じカードが2枚以上ある分、今使っても無駄なカード
+//  高（デジモンマスター）はさらに「トラッシュに送ると役に立つか」も見る（捨てる方を優先）:
+//   ・［トラッシュ］で使える効果を持つ（トラッシュにあると働く）
+//   ・手札のデジモンの《アセンブリ》の材料になる（トラッシュから下に置ける）
+//   ・場や手札の「トラッシュから登場/進化/手札に加える」効果で使えるカードになる
+function _cpuHandKeepScore(c, owner, bs, pool) {
+  const lvl = typeof window !== 'undefined' ? window._aiLevel : null;
+  const why = [];
+  let s = 0;
+  const w = _cpuCardWant(c, owner);
+  s += w.s;
+  if (w.why.length) why.push('残したい: ' + w.why[0]);
+  const prof = typeof window !== 'undefined' ? window._aiProfile : null;
+  if (prof && Array.isArray(prof.finisherNames) && prof.finisherNames.includes(c.name)) { s += 70; why.push('勝ち筋のカード'); }
+  try {
+    const t = window._aiBrain && window._aiBrain.classifyCard ? window._aiBrain.classifyCard(c) : {};
+    if (t.memGain || t.memReset) { s += 20; }
+    if (t.search) { s += 10; }
+  } catch (_) {}
+  const same = pool.filter(x => x && x.name === c.name);
+  if (same.length >= 2 && same.indexOf(c) > 0) { s -= 30; why.push('同じカードがもう1枚ある'); }
+  if (lvl === 'high') {
+    let tv = 0;
+    try {
+      const r = _parseCardRecipe(c);
+      const hasTrashZone = r && Object.keys(r).some(k => Array.isArray(r[k]) && r[k].some(st => st && st.in_zone === 'trash'));
+      if (hasTrashZone) { tv += 60; why.push('トラッシュにあると使える効果を持つ'); }
+      // 手札のデジモンのアセンブリの材料
+      const asm = (owner.hand || []).filter(h => h && h !== c && h.type === 'デジモン').some(h => {
+        try {
+          return (getAssemblyOptions(h) || []).some(opt => (opt.cost || []).some(ci => ci && (Array.isArray(ci.from) ? ci.from : [ci.from]).includes('trash')
+            && filterAssemblyCandidates(ci, [c], bs, 'ai').length > 0));
+        } catch (_) { return false; }
+      });
+      if (asm) { tv += 50; why.push('手札のデジモンのアセンブリの材料になる'); }
+      // 場・手札の「トラッシュから〜」の効果で使える
+      const users = [...(owner.battleArea || []), ...(owner.tamerArea || []), ...(owner.hand || [])].filter(x => x && x !== c);
+      const fromTrash = users.some(u => {
+        const ur = _parseCardRecipe(u);
+        if (!ur) return false;
+        const all = [];
+        Object.keys(ur).forEach(k => { if (Array.isArray(ur[k])) all.push(...ur[k]); });
+        if (ur.evo_source && typeof ur.evo_source === 'object') Object.keys(ur.evo_source).forEach(k => { if (Array.isArray(ur.evo_source[k])) all.push(...ur.evo_source[k]); });
+        return all.some(st => {
+          if (!st) return false;
+          const z = Array.isArray(st.from) ? st.from : (st.from ? [st.from] : []);
+          if (!z.includes('trash') && st.action !== 'summon_from_trash') return false;
+          const f = _srcCardFilterOf(st) || st.filter || {};
+          try { return cardMatchesFilter(c, f, bs, 'ai', u); } catch (_) { return false; }
+        });
+      });
+      if (fromTrash) { tv += 40; why.push('トラッシュから使う効果の対象になる'); }
+    } catch (_) {}
+    s -= tv;
+  }
+  return { s, why };
+}
 function _pickHandDiscards(handSide, pool, want, optional, done, title, upTo) {
   if (want <= 0) { done([]); return; }
   if (handSide !== 'player') {
+    const lvl = typeof window !== 'undefined' ? window._aiLevel : null;
+    const smart = typeof window !== 'undefined' && window._aiBattleActive && (lvl === 'mid' || lvl === 'high') && !(window._isOnlineMode && window._isOnlineMode());
+    if (smart) {
+      const b = window._lastBattleState;
+      const owner = b && b[handSide];
+      const scored = pool.map(c => ({ c, k: _cpuHandKeepScore(c, owner || { hand: pool }, b, pool) })).sort((x, y) => x.k.s - y.k.s);
+      const picked = scored.slice(0, want).map(x => x.c);
+      try {
+        if (window._aiWhy) {
+          const kept = scored.slice(want).map(x => '「' + x.c.name + '」');
+          const reasons = scored.slice(0, want).map(x => '「' + x.c.name + '」' + (x.k.why.filter(w => !/^残したい/.test(w)).length ? '（' + x.k.why.filter(w => !/^残したい/.test(w)).join('・') + '）' : ''));
+          window._aiWhy('手札から' + reasons.join('・') + 'を破棄します ← 残したいカード（すぐ進化できる・勝ち筋・足りないテイマー等）を手元に残し、いらない方から捨てました。'
+            + (kept.length ? '残したのは' + kept.join('・') + 'です。' : ''));
+        }
+      } catch (_) {}
+      done(picked);
+      return;
+    }
     const rest = pool.slice();
     const picked = [];
     while (picked.length < want && rest.length > 0) picked.push(rest.splice(Math.floor(Math.random() * rest.length), 1)[0]);

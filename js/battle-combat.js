@@ -505,6 +505,10 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   if (c._permEffects && c._permEffects[flagName]) return true;
   // 効果で与えられたレシピ型のキーワード（grant_effect の _grantedRecipes[].kwFlag。【衝突】等）
   if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.some(g => g && g.kwFlag === flagName)) return true;
+  // 場を離れたばかりのカード（バトルで消滅した直後の【道連れ】の判定等）は、離れる直前に得ていた効果・キーワードで判定する
+  // （ヴェノムヴァンデモン ST6-12 で【道連れ】を得たヨウコモンが、バトルで消滅したときに【道連れ】を発揮しなかった）
+  if (Array.isArray(c._leftGrantedRecipes) && c._leftGrantedRecipes.some(g => g && g.kwFlag === flagName)) return true;
+  if (Array.isArray(c._leftKeywords) && c._leftKeywords.includes(flagName)) return true;
   // 【衝突】で付けたブロッカー（source:'collision'）は、そのアタックのブロック判定（強制）以外では数えない
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName && !(flagName === 'blocker' && b.source === 'collision'))) return true;
   // gate（「〜の間」条件）付きのpassiveは、条件判定済みの _permEffects（applyPermanentEffects）に任せ、
@@ -1097,6 +1101,8 @@ function showCombatBackdrop() {
 // 相手の画面にも同じ演出を送る（相手から見た側に読み替える）。盤面の場所が分からなければ「💀 道連れ！」＋消滅の演出。
 // slot: { side:'player'|'ai', idx }（victim がいた枠。もう盤面からは外していてよい）、loserSide: 【道連れ】を持っていた側
 function playMichizureFx(victim, slot, loserSide, cb) {
+  // バトル（VS画面）の黒い背景が残っていると盤面の演出が見えず、画面が真っ暗のままになる（ピエモン BT2-080）
+  try { hideCombatBackdrop(); } catch (_) {}
   if (_onlineMode && _sendCommand) {
     try { _sendCommand({ type: 'fx_michizure', board: { victimSide: slot.side === 'player' ? 'opp' : 'self', idx: slot.idx, cardNo: (victim && victim.cardNo) || '', name: (victim && victim.name) || '', img: (victim && cardImg(victim)) || '' } }); } catch (_) {}
   }

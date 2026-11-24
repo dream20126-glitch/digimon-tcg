@@ -9631,6 +9631,15 @@ function _purgeOffFieldGrants(bs) {
         // 消す前に _leftGrantedRecipes に残す（セキュリティバトルで消滅したパンプモン BT26-030 が得ていた【天昇】が、
         // 【消滅時】の処理の前の描き直しで消え、発動しなかった）。場に出直したら freshOnFieldEnter で消す
         if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) { c._leftGrantedRecipes = c._grantedRecipes; c._grantedRecipes = []; }
+        // 同じく、離れる直前に得ていたキーワード（常時効果のバフ・進化元から得たもの）も残す（レオモンX抗体 P-139 が
+        // 「進化元にレオモンがある間」得ていた【不屈】が、【消滅時】の前に消えて発揮しなかった）
+        if (z !== 'hand' && !c._leftKeywords) {
+          const _lk = new Set();
+          (Array.isArray(c.buffs) ? c.buffs : []).forEach(b => { if (b && typeof b.type === 'string' && b.type.startsWith('keyword_')) _lk.add(b.type.slice(8)); });
+          if (c._evoGrantedKeywords && typeof c._evoGrantedKeywords.forEach === 'function') c._evoGrantedKeywords.forEach(k => _lk.add(k));
+          if (c._permEffects) Object.keys(c._permEffects).forEach(k => { if (c._permEffects[k] === true && _EVO_PERM_KW.has(k)) _lk.add(k); });
+          if (_lk.size > 0) c._leftKeywords = [..._lk];
+        }
         if (Array.isArray(c._grantedKw) && c._grantedKw.length > 0) c._grantedKw = [];
         if (c._grantedOther) c._grantedOther = [];
         // トラッシュ・手札は公開/自分のカードとして表向き（テイマーの下で裏向きだったカードの印が残り、進化元に置き直したときも
@@ -13784,6 +13793,22 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       result = result ? result.concat(filled) : filled;
     });
   }
+  // 場を離れたカード（消滅したカード等）が離れる直前に得ていたキーワード（_leftKeywords。常時効果・進化元から得たもの）の
+  // テンプレートもマージする（【不屈】等の【消滅時】型のキーワード。レオモンX抗体 P-139）
+  if (card && Array.isArray(card._leftKeywords) && card._leftKeywords.length > 0 && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
+    const dict = getKeywordDict();
+    const passiveFlags = new Set(((recipeObj && Array.isArray(recipeObj.passive)) ? recipeObj.passive : []).map(p => p && p.flag));
+    card._leftKeywords.forEach((code) => {
+      if (!code || passiveFlags.has(code)) return;
+      const kw = dict[code];
+      if (!kw) return;
+      const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
+      if (!tplSteps) return;
+      const filled = _tagKeywordSteps(code, _adjustExecuteSteps(code, triggerCode, _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined), card));
+      if (filled.length === 0) return;
+      result = result ? result.concat(filled) : filled;
+    });
+  }
   // 進化元の常時効果で得たキーワード（applyPermanentEffects の _evoGrantedKeywords）にレシピテンプレートがあれば、
   // そのトリガー分もマージする（レプティリモン ST25-04 の進化元「【自分のターン】『ジェムモン』の記述があるこのデジモンは
   // 【急襲】を得る」= 【自分のターン終了時】このデジモンでアタックできる）。_permEffects で直接扱うキーワードは除く
@@ -17120,6 +17145,7 @@ function freshOnFieldEnter(card, byEffect) {
   if (!card) return;
   card._enteredByEffect = !!byEffect;
   delete card._leftGrantedRecipes;
+  delete card._leftKeywords;
   delete card._uid;
   card._usedEffects = [];
   delete card._executeAttacking;
@@ -17623,7 +17649,7 @@ function _stepLacksHandCandidate(step, card, bs, side) {
 // 「〜することで、〜する」（任意処理条件）は、後ろの処理ができなくても条件の内容（前の処理）を実行することを選べる
 // （公式ルール 15-7-5）ので、コスト側だけを見る（後ろは実行時に「対象がいません」）。
 // 判定できない形（デッキ・セキュリティからの取得、対象の条件が無い・進化元を対象にする等）は「候補あり」として扱う
-const _NC_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'place_under_self', 'place_under_digimon', 'place_under_tamer', 'add_to_hand', 'link']);
+const _NC_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'place_under_self', 'place_under_digimon', 'place_under_tamer', 'add_to_hand', 'link', 'place_in_battle_area']);
 const _NC_BOARD_ACTIONS = new Set(['destroy', 'rest', 'bounce', 'return_hand', 'return_deck', 'dp_minus', 'dp_plus', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'active', 'place_on_security_top', 'not_active', 'prevent_unsuspend', 'redirect_attack']);
 function _resolveLvMarkersInFilter(f, card, block, bs) {
   if (!f || typeof f !== 'object') return f;
@@ -17944,6 +17970,15 @@ function recipeWillExecuteAnything(recipe, ctx) {
     //   コストを支払えず効果自体が発動しないため、演出ポップアップも出さない）
     // 「リンクカードを破棄することで」（【分離】等）でリンクカードが無い場合も同様（_costStepsInfeasible）
     if (_costStepsInfeasible(step.cost, ctx.card, ctx.bs, ctx.side)) continue;
+    // 「〜N枚ごとに」（per_count）で、数えた数が N に届かず 0 回／値 0 になるなら何も起きないので、確認・発動の表示も出さない
+    // （デュークモン BT2-020【アタック時】「相手のトラッシュ10枚ごとに」で、9枚以下でも発動のポップアップが出ていた）。
+    // 「〜ごとに上限±N」（per_count_mode:'step'）は元の数値があるので対象外。コストを払ってから数えるものも対象外
+    if (step && step.per_count && step.per_count_mode !== 'step' && !(Array.isArray(step.cost) && step.cost.length > 0) && ctx.bs) {
+      try {
+        const _pcN = getRefSourceCountDirect(_refWithCountMode(step), ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+        if (Math.floor(_pcN / step.per_count) <= 0) { console.log('[recipeWillExecute] reactor=' + _reactor + ' per_count 0 → skip'); continue; }
+      } catch (_) {}
+    }
     // ≪ディレイ≫は、そのカードがバトルエリアに置かれたターンには発揮できない（公式ルール 16-17-3）。確認（「発動しますか？」）や
     // 発揮待ちにも出さない（紅玉の絆 ED01-09・雪片の絆 ED01-10 で、置いたターンにも確認が出て発動したように見えていた）
     // ≪ディレイ≫の後ろの効果（ディレイで発揮する効果）が何も実行できないなら、ディレイ自体も使う意味がない（CPU の判断用。
@@ -22264,6 +22299,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           c.summonedThisTurn = true;
           c.suspended = !!step.enter_suspended; // 「レスト状態で登場させる」
           c.buffs = [];
+          // トラッシュのカードは進化元・リンクを持たない。場にいたときの進化元が残っていると一緒に復活してしまう
+          // （ミレニアモン BT2-083 の【消滅時】で、進化元にあったハイアンドロモンまで一緒に登場していた）
+          c.stack = []; c.linkedCards = []; c._grantedRecipes = []; c._permEffects = {}; c.dpModifier = 0;
+          if (c.baseDp != null) c.dp = c.baseDp;
           // skip_on_play 指定時は登場時効果を発動しない
           if (step.skip_on_play) {
             c._skipOnPlayEffect = true;
@@ -22310,12 +22349,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       if (effectiveSide === 'ai') {
         onPicked(candidates.slice(0, wantCount));
-      } else if (optional && candidates.length <= wantCount) {
-        // 発動可否は上位の効果確認ダイアログ（block.isOptional→「発動しますか？」）で
-        // 既に確認済み。候補が必要数以下で選ぶ余地が無い場合はピッカーを経由せず直接登場させる
-        // （ミレニアモン「このカードをトラッシュから登場できる」等、自分自身のみが対象のケース）
-        onPicked(candidates.slice(0, wantCount));
       } else {
+        // 候補が1枚・必要数以下でも、トラッシュのカードは必ず選ぶ画面を出す（どのカードが登場するかを確かめられるように。
+        // 「登場させない」も選べる。ネイルボーン ST6-16 で、Lv.3 と Lv.4 が1枚ずつしかないと自動で登場していた）
         showTrashCardPicker(candidates, wantCount, optional, '🌟 登場させるカードを選んでください', onPicked, player.trash);
       }
       break;
@@ -22544,7 +22580,12 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         try { window._onlineSendStateSync(); } catch (_) {}
       }
-      callback();
+      // 効果で孵化したときも、育成フェイズの孵化と同じ演出を出す（太刀川ミミ BT1-089）
+      if (typeof window._fxHatchEffect === 'function' && typeof document !== 'undefined') {
+        let _hd = false;
+        const _hDone = () => { if (_hd) return; _hd = true; callback(); };
+        try { window._fxHatchEffect(egg, _hDone); setTimeout(_hDone, 6000); } catch (_) { _hDone(); }
+      } else callback();
       break;
     }
     // === バトルエリアから育成エリアに移動（「このデジモンを空いている自分の育成エリアに移動できる」ドリモゲモン P-143） ===
@@ -22596,9 +22637,15 @@ function executeRecipeStep(step, ctx, store, callback) {
         try { window._onlineSendStateSync(); } catch (_) {}
       }
       // 効果で移動したときも【移動時】と「自分のデジモンが育成エリアからバトルエリアに移動したとき」を誘発する
-      // （育成フェイズの移動と同じ。大和田ルイ P-130 の【登場時】で移動 → 大和田ルイ自身・ウッコモン P-123 が反応）
-      try { scanTriggers('on_move', _bamMoved, ctx.side, ctx); processQueue(ctx, () => callback()); }
-      catch (e) { console.error('[battle_area_make on_move]', e); callback(); }
+      // （育成フェイズの移動と同じ。大和田ルイ P-130 の【登場時】で移動 → 大和田ルイ自身・ウッコモン P-123 が反応）。
+      // 演出も育成フェイズの移動と同じ「バトルエリアへ移動！」を出してから（太刀川ミミ BT1-089）
+      const _bamGo = () => {
+        try { scanTriggers('on_move', _bamMoved, ctx.side, ctx); processQueue(ctx, () => callback()); }
+        catch (e) { console.error('[battle_area_make on_move]', e); callback(); }
+      };
+      if (typeof window.showPhaseAnnounce === 'function' && typeof document !== 'undefined') {
+        try { window.showPhaseAnnounce('🚀 バトルエリアへ移動！', ctx.side === 'player' ? '#00fbff' : '#ff9900', _bamGo); } catch (_) { _bamGo(); }
+      } else _bamGo();
       break;
     }
     // === トークンを生成して登場（コスト不要） ===
@@ -25189,6 +25236,38 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 使用処理（battle-combat.js / _useOptionCardFromEffect）の isCardInAnyZone 判定でトラッシュへ送られない。
     // card._placedInBattleArea を立てる（≪ディレイ≫等「バトルエリアに置かれたオプション」の判定用）
     case 'place_in_battle_area': {
+      // 「自分の手札/トラッシュから、〜のオプションカード1枚をバトルエリアに置く」（from に hand/trash）: 置くカードを選ぶ
+      // （ジャスティモン：クリティカルアーム P-179 のコスト。以前は効果のカード自身を置く形しか無く、選ぶ画面が出なかった）
+      {
+        const _pz = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+        if (_pz.includes('hand') || _pz.includes('trash')) {
+          const _isCost = _COST_STEP_SET.has(step);
+          const _ff = _srcCardFilterOf(step) || {};
+          const _pool = [...(_pz.includes('hand') ? (player.hand || []) : []), ...(_pz.includes('trash') ? (player.trash || []) : [])]
+            .filter(c => c && c.type === 'オプション' && cardMatchesFilter(c, _ff, ctx.bs, ctx.side, ctx.card));
+          if (_pool.length === 0) { ctx.addLog && ctx.addLog('💨 置けるオプションカードがありません'); callback(_isCost ? false : undefined); break; }
+          const _place = (c) => {
+            ['hand', 'trash'].forEach(z => { const i = (player[z] || []).indexOf(c); if (i !== -1) player[z].splice(i, 1); });
+            if (!player.tamerArea) player.tamerArea = [];
+            c.suspended = false; c.buffs = []; c.stack = [];
+            c._placedInBattleArea = true;
+            c._placedTurnKey = ctx.bs ? (ctx.bs.turn + ':' + !!ctx.bs.isPlayerTurn) : null;
+            c.summonedThisTurn = true;
+            player.tamerArea.push(c);
+            ctx.addLog && ctx.addLog('📍 「' + c.name + '」をバトルエリアに置いた');
+            ctx.renderAll && ctx.renderAll();
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+            callback(true);
+          };
+          if (ctx.side !== 'player') { _place(_pool[0]); break; }
+          showTrashCardPicker(_pool, 1, true, '📍 バトルエリアに置くオプションカードを選んでください', (picked) => {
+            const c = picked && picked[0];
+            if (!c) { ctx.addLog && ctx.addLog('☓ 置かなかった'); callback(_isCost ? false : undefined); return; }
+            _place(c);
+          }, _pool);
+          break;
+        }
+      }
       const _pibCard = ctx.card;
       if (!_pibCard) { callback(); break; }
       if (player.battleArea.includes(_pibCard) || (player.tamerArea || []).includes(_pibCard)) { callback(); break; }
@@ -27772,6 +27851,18 @@ export function mainEffectButtonState(card) {
   res.usedUp = max > 0 && used >= max;
   const evoN = (card.stack || []).length;
   res.unusable = steps.length > 0 && steps.every(s => (Array.isArray(s.cost) ? s.cost : []).some(c => c && c.action === 'cost_digiburst' && evoN < (parseInt(c.value, 10) || 1)));
+  // 使っても何も起きない（条件を満たさない・コストを払えない・対象や候補が無い）なら「効果」ボタンも使えなくする
+  // （太刀川ミミ BT1-089「緑のLv.5以上の自分のデジモンがいるとき」を満たさないのにボタンが押せた）
+  if (!res.usedUp && !res.unusable && steps.length > 0) {
+    try {
+      const _b = typeof window !== 'undefined' ? window._lastBattleState : null;
+      if (_b) {
+        const _onPl = [...(_b.player.battleArea || []), ...(_b.player.tamerArea || [])].includes(card);
+        const _side = _onPl ? 'player' : 'ai';
+        if (!recipeWillExecuteAnything(steps, { card, bs: _b, side: _side, _sourceCard: card })) res.unusable = true;
+      }
+    } catch (_) {}
+  }
   return res;
 }
 

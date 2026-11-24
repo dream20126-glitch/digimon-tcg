@@ -386,6 +386,7 @@ export function setupCommonWindowExports() {
   window.doIkuMove = () => { doIkuMove(); }; // 育成フェイズの終了は onBreedMove（演出・【移動時】の後）で行う
   window.showYourTurn = showYourTurn;
   window.showPhaseAnnounce = showPhaseAnnounce;
+  window._fxHatchEffect = fxHatchEffect; // 効果で孵化したときも育成フェイズの孵化と同じ演出（effect-engine.js hatch）
   window.showSkipAnnounce = showSkipAnnounce;
 
   // Phase 4: 戦闘

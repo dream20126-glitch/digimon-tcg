@@ -1100,14 +1100,18 @@ function showCombatBackdrop() {
 // 【道連れ】の演出: 巻き込まれるカード（victim）の盤面の場所で、もやが引きずり込む演出（battle-fx.js fxBoardMichizure）。
 // 相手の画面にも同じ演出を送る（相手から見た側に読み替える）。盤面の場所が分からなければ「💀 道連れ！」＋消滅の演出。
 // slot: { side:'player'|'ai', idx }（victim がいた枠。もう盤面からは外していてよい）、loserSide: 【道連れ】を持っていた側
-// 流れ: バトルで負けた【道連れ】のデジモンは通常のバトルと同じくトラッシュへ → そのトラッシュから黒いもやが出て相手のデジモンを
-// 包み、トラッシュへ引きずり込む（ピエモン BT2-080 で決めた演出）
-function playMichizureFx(victim, slot, loserSide, cb) {
+// 流れ（ピエモン BT2-080 で決めた演出）: バトルで負けた【道連れ】のデジモンは通常のバトルと同じくVS画面の隅のトラッシュへ →
+// 【道連れ】を発揮するとき、VS画面を出し直し、そのトラッシュから黒いもやが出て相手のデジモンを包み、トラッシュへ引きずり込む。
+// loser: 【道連れ】のカード、victimRole: 巻き込まれる側がアタックした側か（'atk'）ブロック/アタックされた側か（'def'）。
+// loser が無ければ盤面の演出
+function playMichizureFx(victim, slot, loserSide, cb, loser, victimRole) {
   // バトル（VS画面）の黒い背景が残っていると盤面の演出が見えず、画面が真っ暗のままになる（ピエモン BT2-080）
   try { hideCombatBackdrop(); } catch (_) {}
   if (_onlineMode && _sendCommand) {
-    try { _sendCommand({ type: 'fx_michizure', board: { victimSide: slot.side === 'player' ? 'opp' : 'self', idx: slot.idx, cardNo: (victim && victim.cardNo) || '', name: (victim && victim.name) || '', img: (victim && cardImg(victim)) || '' } }); } catch (_) {}
+    try { _sendCommand({ type: 'fx_michizure', board: { victimSide: slot.side === 'player' ? 'opp' : 'self', idx: slot.idx, cardNo: (victim && victim.cardNo) || '', name: (victim && victim.name) || '', img: (victim && cardImg(victim)) || '' },
+      vs: loser ? { name: loser.name || '', cardNo: loser.cardNo || '', img: cardImg(loser) || '', victimRole: victimRole || 'def' } : null }); } catch (_) {}
   }
+  if (loser && typeof window._fxVsMichizure === 'function') { window._fxVsMichizure(loser, victim, victimRole || 'def', cb); return; }
   const fx = window._fxBoardMichizure;
   if (fx && fx({ card: victim, slot }, loserSide, cb)) return;
   showMichizureAnnounce(() => showDestroyEffect(victim, cb), true);
@@ -4725,7 +4729,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                   renderAll();
                   playMichizureFx(atk, { side: 'player', idx: _mzIdx }, 'ai', function() {
                     _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk }, { player: def });
-                  });
+                  }, def, 'atk');
                 }, { ai: def }, { ai: atk });
               });
               return;
@@ -4845,7 +4849,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                   if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
                   _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
                   renderAll();
-                  playMichizureFx(def, { side: 'ai', idx: defIdx2 }, 'player', () => next(true));
+                  playMichizureFx(def, { side: 'ai', idx: defIdx2 }, 'player', () => next(true), atk, 'def');
                 };
                 // 【消滅時】と【道連れ】の両方があれば、どちらから発揮するかを選ぶ（公式ルール 15-4-3-4）
                 askMichizureOrder(atk, (order) => {
@@ -5032,7 +5036,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                   if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
                   _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
                   renderAll();
-                  playMichizureFx(atk, { side: 'ai', idx: _mzIdx }, 'player', () => next(true));
+                  playMichizureFx(atk, { side: 'ai', idx: _mzIdx }, 'player', () => next(true), def, 'atk');
                 };
                 const finish = (removed) => {
                   if (removed) _fireDestroyChain(['ai'], function() { renderAll(); callback(); }, { ai: atk }, { ai: def });
@@ -5108,12 +5112,12 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
         renderAll();
         showDestroyEffect(atk, () => {
-          // 巻き込まれた def に盤面で「道連れ」の演出
+          // 巻き込まれた def に VS 画面で「道連れ」の演出
           playMichizureFx(def, { side: 'player', idx: defIdx2 }, 'ai', () => {
             _fireDestroyChain(['ai', 'player'], () => {
               showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', () => { renderAll(); callback(); }, '両者消滅', '#ff4444');
             }, { ai: atk, player: def }, { ai: def, player: atk });
-          });
+          }, atk, 'def');
         });
         return;
       }

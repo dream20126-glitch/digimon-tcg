@@ -4523,7 +4523,107 @@ export function fxBoardMichizure(item, loserSide, callback) {
   return true;
 }
 
+// =====================================================
+//  【道連れ】（VS画面の演出）: バトルで負けた【道連れ】のデジモンは通常のバトルと同じくVS画面の隅のトラッシュへ飛んでいる。
+//  そのトラッシュ（VS画面の隅の渦）から黒いもやが湧き出して、勝った相手のデジモンを包み、トラッシュへ引きずり込む
+//  （ピエモン BT2-080）。発揮のタイミングは誘発効果の順番どおり（同時に誘発した効果の後）なので、そのときにVS画面を出し直す。
+//  loser: 【道連れ】のカード、victim: 巻き込まれるカード、victimRole: 'atk' | 'def'（VS画面ではアタックした側が左）
+// =====================================================
+export function fxVsMichizure(loser, victim, victimRole, callback) {
+  if (typeof document === 'undefined' || !document.body || !victim) { callback && callback(); return false; }
+  let fin = false;
+  const done = () => { if (fin) return; fin = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 1) - 1); try { callback && callback(); } catch (_) {} };
+  window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+  if (!document.getElementById('fx-vsmichi-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-vsmichi-style';
+    st.textContent = '@keyframes vmSpin{0%{transform:translate(-50%,-50%) rotate(0deg)}100%{transform:translate(-50%,-50%) rotate(360deg)}}'
+      + '@keyframes vmBin{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}'
+      + '@keyframes vmBinHit{0%,100%{transform:translate(-50%,-50%) scale(1) rotate(0)}30%{transform:translate(-50%,-50%) scale(1.3) rotate(-10deg)}60%{transform:translate(-50%,-50%) scale(0.95) rotate(6deg)}}'
+      + '@keyframes vmLbl{0%{transform:translate(-50%,-50%) scale(2);opacity:0;filter:blur(5px)}45%{transform:translate(-50%,-50%) scale(0.95);opacity:1;filter:blur(0)}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}'
+      + '@keyframes vmShake{0%,100%{translate:0 0}20%{translate:-4px 2px}40%{translate:4px -2px}60%{translate:-3px -1px}80%{translate:3px 1px}}'
+      + '@keyframes vmPulse{0%,100%{box-shadow:0 0 24px #9b3dff,0 0 50px #5a0099,inset 0 0 18px #9b3dff}50%{box-shadow:0 0 40px #c27bff,0 0 80px #7a1fd0,inset 0 0 26px #c27bff}}';
+    document.head.appendChild(st);
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:47600;overflow:hidden;background:#000;opacity:0;transition:opacity 0.25s;';
+  document.body.appendChild(layer);
+  requestAnimationFrame(() => { layer.style.opacity = '1'; });
+  const add = (css, html) => { const d = document.createElement('div'); d.style.cssText = css; if (html) d.innerHTML = html; layer.appendChild(d); return d; };
+  const imgOf = (c) => (c && (c.imgSrc || (() => { try { return cardImg(c); } catch (_) { return ''; } })())) || '';
+  // VS画面と同じ並び: アタックした側が左。負けた側の隅にトラッシュ（VS画面で負けたカードが飛んでいった渦）
+  const victimLeft = victimRole === 'atk';
+  const cw = Math.min(W * 0.32, 180), ch = cw * 1.4;
+  const vx = victimLeft ? W * 0.3 : W * 0.7, vy = H * 0.42;
+  const bx = victimLeft ? Math.min(W - 56, W * 0.87) : Math.max(56, W * 0.13), by = H - Math.max(80, H * 0.14);
+  const vSrc = imgOf(victim);
+  const V = add('position:absolute;left:' + (vx - cw / 2) + 'px;top:' + (vy - ch / 2) + 'px;width:' + cw + 'px;height:' + ch + 'px;border-radius:10px;overflow:hidden;background:#111;box-shadow:0 0 22px #ffd84a88;transition:filter 0.6s,box-shadow 0.6s;',
+    vSrc ? '<img src="' + vSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:13px;padding:8px;">' + (victim.name || '') + '</div>');
+  add('position:absolute;left:' + vx + 'px;top:' + (vy + ch / 2 + 8) + 'px;transform:translateX(-50%);color:#fff;font-size:13px;font-weight:bold;white-space:nowrap;text-shadow:0 0 4px #000;', victim.name || '');
+  // 負けた【道連れ】のカードが入ったトラッシュ（渦と🗑）
+  const vortex = add('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:130px;height:130px;border-radius:50%;border:5px dashed #9b3dff;box-sizing:border-box;animation:vmBin 0.3s ease-out, vmSpin 0.9s linear 0.3s infinite;opacity:0.9;');
+  const bin = add('position:absolute;left:' + bx + 'px;top:' + by + 'px;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle,#5a009977 0%,#0a0010 72%);border:3px solid #9b3dff;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:30px;animation:vmBin 0.3s ease-out forwards, vmPulse 0.8s ease-in-out 0.3s infinite;z-index:2;',
+    '🗑<div style="font-size:10px;font-weight:bold;margin-top:-2px;">トラッシュ</div>');
+  if (loser && loser.name) add('position:absolute;left:' + bx + 'px;top:' + (by + 58) + 'px;transform:translateX(-50%);color:#c9a6ff;font-size:11px;font-weight:bold;white-space:nowrap;text-shadow:0 0 4px #000;', '「' + loser.name + '」');
+  // ① 「💀【道連れ】」
+  add('position:absolute;left:' + (W / 2) + 'px;top:' + Math.max(40, vy - ch / 2 - 40) + 'px;white-space:nowrap;font-size:' + Math.max(26, Math.min(42, W * 0.08)) + 'px;font-weight:900;color:#e9c8ff;text-shadow:0 0 12px #9b3dff,0 0 28px #5a0099,0 0 2px #000;animation:vmLbl 0.55s ease-out forwards;', '💀【道連れ】');
+  // ② トラッシュから黒いもやが湧き出して、相手のデジモンへ伸びる
+  setTimeout(() => {
+    for (let i = 0; i < 18; i++) {
+      const t = i / 17, sz = cw * 0.42 + Math.random() * 22;
+      const px = bx + (vx - bx) * t + (Math.random() - 0.5) * 26, py = by + (vy - by) * t - Math.sin(t * Math.PI) * 40 + (Math.random() - 0.5) * 26;
+      const pf = add('position:absolute;left:' + (px - sz / 2) + 'px;top:' + (py - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.95) 0%,rgba(70,10,100,0.6) 50%,rgba(20,0,30,0) 72%);opacity:0;transform:scale(0.3);transition:opacity 0.3s ' + (i * 0.04) + 's,transform 0.45s ' + (i * 0.04) + 's;');
+      requestAnimationFrame(() => { pf.style.opacity = '1'; pf.style.transform = 'scale(1)'; });
+      setTimeout(() => { pf.style.transition = 'opacity 0.5s'; pf.style.opacity = '0'; }, 1500 + i * 30);
+    }
+  }, 500);
+  // ③ もやの輪が相手のデジモンを渦巻いて包み、黒く染まって震える
+  setTimeout(() => {
+    const AW = cw * 1.9, AH = ch * 1.5;
+    for (let i = 0; i < 2; i++) {
+      const ring = add('position:absolute;left:' + vx + 'px;top:' + vy + 'px;width:' + (AW * (1 - i * 0.18)) + 'px;height:' + (AH * (1 - i * 0.18)) + 'px;border-radius:50%;'
+        + 'background:conic-gradient(from ' + (i * 90) + 'deg,rgba(15,0,25,0.95),rgba(80,15,120,0.55),rgba(15,0,25,0.95),rgba(60,0,90,0.4),rgba(15,0,25,0.95));'
+        + '-webkit-mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);mask:radial-gradient(ellipse,transparent 0 46%,#000 52% 66%,transparent 74%);'
+        + 'animation:vmSpin ' + (1.3 - i * 0.4) + 's linear infinite' + (i ? ' reverse' : '') + ';opacity:0;transition:opacity 0.4s;');
+      requestAnimationFrame(() => { ring.style.opacity = '1'; });
+      setTimeout(() => { ring.style.transition = 'opacity 0.5s'; ring.style.opacity = '0'; }, 1500);
+    }
+    V.style.filter = 'brightness(0.45) saturate(0.4) hue-rotate(230deg)';
+    V.style.boxShadow = '0 0 20px #5a0099,0 0 40px #1a0028';
+    V.style.animation = 'vmShake 0.18s linear infinite';
+  }, 1150);
+  // ④ もやごとトラッシュへ引きずり込まれる
+  setTimeout(() => {
+    V.style.animation = '';
+    V.style.transition = 'transform 0.9s cubic-bezier(.6,0,.9,.5),opacity 0.9s,filter 0.4s';
+    V.style.transform = 'translate(' + (bx - vx) + 'px,' + (by - vy) + 'px) rotate(' + (victimLeft ? 540 : -540) + 'deg) scale(0.1)';
+    V.style.opacity = '0.25';
+    for (let k = 0; k < 10; k++) {
+      const sz = 26 + Math.random() * 18;
+      const tr = add('position:absolute;left:' + (vx - sz / 2) + 'px;top:' + (vy - sz / 2) + 'px;width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;background:radial-gradient(circle,rgba(20,0,32,0.9),rgba(60,10,90,0) 70%);transition:transform 0.85s cubic-bezier(.6,0,.9,.5) ' + (k * 0.04) + 's,opacity 0.85s ' + (k * 0.04) + 's;');
+      requestAnimationFrame(() => { tr.style.transform = 'translate(' + (bx - vx) + 'px,' + (by - vy) + 'px) scale(0.3)'; tr.style.opacity = '0'; });
+    }
+  }, 2550);
+  // ⑤ 吸い込まれる: トラッシュが揺れて閉じる
+  setTimeout(() => {
+    V.style.opacity = '0';
+    bin.style.animation = 'vmBinHit 0.45s ease-out';
+    const fl = add('position:absolute;inset:0;background:radial-gradient(circle at ' + bx + 'px ' + by + 'px,rgba(200,140,255,0.8) 0%,rgba(90,0,153,0.5) 18%,rgba(0,0,0,0) 50%);opacity:1;transition:opacity 0.5s;');
+    requestAnimationFrame(() => { fl.style.opacity = '0'; });
+    setTimeout(() => { vortex.style.transition = 'opacity 0.4s'; vortex.style.opacity = '0'; }, 400);
+  }, 3450);
+  const total = 4300;
+  setTimeout(() => { layer.style.transition = 'opacity 0.3s'; layer.style.opacity = '0'; }, total);
+  setTimeout(() => { layer.remove(); done(); }, total + 320);
+  setTimeout(done, total + 4000);
+  return true;
+}
+
 if (typeof window !== 'undefined') {
+  window._fxVsMichizure = (loser, victim, victimRole, cb) => {
+    try { return fxVsMichizure(loser, victim, victimRole, cb); } catch (e) { console.error('[fxVsMichizure]', e); cb && cb(); return true; }
+  };
   window._fxBoardMichizure = (item, loserSide, cb) => {
     try { return fxBoardMichizure(item, loserSide, cb); } catch (e) { console.error('[fxBoardMichizure]', e); return false; }
   };

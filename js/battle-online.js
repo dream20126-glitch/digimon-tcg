@@ -2058,6 +2058,13 @@ function onRemoteCommand(cmd) {
     case 'fx_michizure': {
       // VS画面の決着で【道連れ】を見せたなら重ねない（1回分）
       if (window._clashRecoilPending > 0 && window._clashRecoilAt && Date.now() - window._clashRecoilAt < 60000) { window._clashRecoilPending = 0; break; }
+      // 【道連れ】のカードが分かれば、送り手と同じVS画面の演出（トラッシュから黒いもやが出て相手を引きずり込む）
+      if (cmd.vs && cmd.board && typeof window._fxVsMichizure === 'function') {
+        const lCard = { name: cmd.vs.name || '', cardNo: cmd.vs.cardNo || '', imgSrc: cmd.vs.img || '' };
+        const vCard = { name: cmd.board.name || '', cardNo: cmd.board.cardNo || '', imgSrc: cmd.board.img || '' };
+        window._fxVsMichizure(lCard, vCard, cmd.vs.victimRole || 'def', () => {});
+        break;
+      }
       // 盤面の場所が分かれば、盤面で巻き込まれるカードを引きずり込む演出（送り手から見た側を、こちらから見た側に読み替え済み）
       if (cmd.board && typeof window._fxBoardMichizure === 'function') {
         const vSide = cmd.board.victimSide === 'self' ? 'player' : 'ai';
@@ -3095,7 +3102,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(after);
                   else after();
                 };
-                if (typeof window._playMichizureFx === 'function') window._playMichizureFx(cur, { side: 'ai', idx: cmd.atkIdx }, 'player', _afterFx);
+                if (typeof window._playMichizureFx === 'function') window._playMichizureFx(cur, { side: 'ai', idx: cmd.atkIdx }, 'player', _afterFx, blocker, 'atk');
                 else {
                   sendCommand({ type: 'fx_michizure' });
                   sendCommand({ type: 'fx_destroy', cardName: cur.name, cardImg: cardImg(cur) });
@@ -3174,7 +3181,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             showDE(atk, () => {
               // 巻き込まれた blocker を盤面で引きずり込む「道連れ」演出（自他両画面）
               const _mzFx = (cb) => {
-                if (typeof window._playMichizureFx === 'function') { window._playMichizureFx(blocker, { side: 'player', idx: blockerIdx }, 'ai', cb); return; }
+                if (typeof window._playMichizureFx === 'function') { window._playMichizureFx(blocker, { side: 'player', idx: blockerIdx }, 'ai', cb, atk, 'def'); return; }
                 sendCommand({ type: 'fx_michizure' });
                 const showMichi = window._showMichizureAnnounce || ((c) => c && c());
                 showMichi(() => showDE(blocker, cb));

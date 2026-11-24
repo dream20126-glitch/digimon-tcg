@@ -1268,6 +1268,7 @@ function _michiRecv(kind, cmd) {
     if (_michiQWait) { const f = _michiQWait; _michiQWait = null; f(cmd); return; }
     // こちらのVS画面はまだ始まっていないことがある（相手の端末の方が先に決着する）ので、決着まで取っておく。
     // VS画面が決着を待たずに閉じたときも、_michiVsHookRemote（skip）が取っておいた問い合わせに返す
+    if (_michiNoVsAt && Date.now() - _michiNoVsAt < 15000 && !_clashPending) { _michiNoVsAt = 0; _michiAnswerLater(cmd); return; }
     _michiQBuf = { cmd, at: Date.now() };
   }
   else { if (_michiAWait) { const f = _michiAWait; _michiAWait = null; f(cmd); } else _michiABuf = { cmd, at: Date.now() }; }
@@ -1292,8 +1293,13 @@ function _askRemoteMichiOrder(card, cb) {
   _michiWait('a', (a) => cb(a && a.order === 'michizure' ? 'michizure' : 'destroy'));
 }
 function _michiAnswerLater(q) {
-  if (q && q.mode === 'ask' && _sendCommand) { try { _sendCommand({ type: 'michi_a', order: 'destroy' }); } catch (_) {} }
+  if (!q || !_sendCommand) return;
+  // 'ask' → 【消滅時】等から（選ぶ場面が無い）。'later' → こちらのVS画面を閉じた合図（相手はこれを待ってから勝った側の効果へ進む）
+  if (q.mode === 'ask') { try { _sendCommand({ type: 'michi_a', order: 'destroy' }); } catch (_) {} }
+  else if (q.mode === 'later') { try { _sendCommand({ type: 'michi_a', order: 'later' }); } catch (_) {} }
 }
+// こちらにVS画面が無いまま相手のバトルが決着した（_clashFinish で VS画面が無い）: この後に届く問い合わせにはすぐ返す
+let _michiNoVsAt = 0;
 function _michiWait(kind, cb) {
   const buf = kind === 'q' ? _michiQBuf : _michiABuf;
   if (kind === 'q') _michiQBuf = null; else _michiABuf = null;
@@ -1318,7 +1324,7 @@ function _michiVsHookRemote(p, out, remoteInfo, go) {
   const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
   _michiWait('q', (q) => {
     try {
-      if (!q || q.mode !== 'ask' || !loser || !winner) { go(); return; }
+      if (!q || q.mode !== 'ask' || !loser || !winner) { _michiAnswerLater(q); go(); return; }
       const answer = (order) => {
         try { _sendCommand({ type: 'michi_a', order }); } catch (_) {}
         if (order === 'michizure' && typeof window._fxVsMichizure === 'function') window._fxVsMichizure(loser, winner, w, go);
@@ -1349,7 +1355,12 @@ function _michiVsHook(p, out, remoteInfo, go) {
     const rival = window._battleMichizureRivalTriggers || (() => true);
     const plan = { loserName: loser.name, victimName: winner.name, at: Date.now(), order: 'later' };
     window._michiVsPlan = plan;
-    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { sendQ('later'); go(); return; }
+    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) {
+      // 勝った側（ターンプレイヤー）の効果が先。相手の画面のVS画面が閉じてから勝った側の効果を見せる（両方の画面で
+      // 「決着 → バトルに勝ったときの効果 → 道連れ側の誘発」の順。相手の画面のVS画面は遅れて終わることがある）
+      if (oppLoser) { sendQ('later'); _michiABuf = null; _michiWait('a', () => go()); return; }
+      go(); return;
+    }
     if (oppLoser) {
       // 持ち主の端末で選んでもらう（こちらのカードは同期した写しなので、持ち主の端末が本物のカードで判断する）
       sendQ('ask');
@@ -4895,6 +4906,9 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             // （公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから
             // 非ターンプレイヤー側に進む）
             const fireOnBattleWin = (afterDone) => {
+              // VS画面は閉じた後なので、バトルの黒い背景を外して盤面を見せる（メモリー+1 等で、ゲージのどこへ動いたかが
+              // 見えず「+1」だけが出ていた。ピエモン BT2-080 台帳）
+              try { if (!_clashPending) { const _bd = document.getElementById('_combat-backdrop'); if (_bd) _bd.style.display = 'none'; } } catch (_) {}
               bs._lastBattleWinner = atk;
               // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
               // 正しく参照できるようにする（メタルティラノモン等）
@@ -8800,7 +8814,11 @@ function _clashRecoilSide(p) {
 }
 function _clashFinish(textHint, cb, remoteInfo) {
   const p = _clashPending;
-  if (!p) { cb && cb(); return; }
+  if (!p) {
+    // 相手の端末の決着が届いたがこちらにVS画面が無い: 【道連れ】の問い合わせに待たせず返す
+    if (remoteInfo && remoteInfo.recoilName) { const b = _michiQBuf; _michiQBuf = null; if (b) _michiAnswerLater(b.cmd); else _michiNoVsAt = Date.now(); }
+    cb && cb(); return;
+  }
   // 相手の端末で決まった【道連れ】（こちらの画面の相手のカードには【道連れ】の情報が無いことがある）
   if (remoteInfo && remoteInfo.recoilName) p._forceRecoilName = remoteInfo.recoilName;
   _clashPending = null;

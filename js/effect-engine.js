@@ -1413,6 +1413,7 @@ function _cpuPickTriggerOrder(entries, context) {
   } catch (_) {}
   return best;
 }
+if (typeof window !== 'undefined') window._showQueueOrderSelect = (entries, cb) => showQueueOrderSelect(entries, cb);
 function showQueueOrderSelect(entries, callback0) {
   // 発動順を選んでいる間は効果の処理中として数える（_orderSelectOpen。止めたアタックを続ける見張りが、選んでいる途中で
   // 続けないように。メインフェイズ開始時の効果のアタックの後、残りのイクト/藤枝淑乃を選んでいる間にアタックが始まっていた）

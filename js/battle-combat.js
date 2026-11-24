@@ -1157,6 +1157,42 @@ function askMichizureOrder(card, cb, force) {
   let hasOnDestroy = false;
   try { hasOnDestroy = !!card && (_hasRecipeTrigger(card, 'on_destroy') || _hasEvoStackTrigger(card, 'on_destroy')); } catch (_) {}
   if (!hasOnDestroy && !force) { cb('michizure'); return; }
+  // 同時に誘発した効果の順番は、通常の効果の順番選択の画面で選ぶ（ユーザー決定事項 2026-11-24。専用の画面は作らない）
+  if (typeof window._showQueueOrderSelect === 'function') {
+    try {
+      const entries = [];
+      const kinds = [];
+      const blk = (code, extra) => Object.assign({ raw: '', trigger: { code }, actions: [], conditions: [] }, extra || {});
+      // 【道連れ】
+      entries.push({ card, block: blk('michizure', { _grantedSteps: [{ action: 'michizure', display_text: '【道連れ】', _kwFlag: 'michizure' }] }) });
+      kinds.push('michizure');
+      // このデジモンの【消滅時】（本体・進化元）
+      try {
+        if (_hasRecipeTrigger(card, 'on_destroy')) { entries.push({ card, block: blk('on_destroy', { raw: card.effect || '' }) }); kinds.push('destroy'); }
+        (card.stack || []).forEach((src) => {
+          if (src && !src._faceDown && _hasEvoStackTrigger({ stack: [src] }, 'on_destroy')) { entries.push({ card, block: blk('on_destroy', { _recipeCard: src }) }); kinds.push('destroy'); }
+        });
+      } catch (_) {}
+      // 同じ側の他のカードの「自分のデジモンが消滅したとき」等
+      try {
+        const rival = window._battleMichizureRivalTriggers;
+        const P = bs.player || {};
+        if (typeof rival === 'function') {
+          [...(P.battleArea || []), ...(P.tamerArea || [])].forEach((c) => {
+            if (!c || c === card) return;
+            if (rival('player', { name: '', stack: [] }, { player: { battleArea: [c], tamerArea: [] } }, 'loser')) { entries.push({ card: c, block: blk('on_destroy', { raw: c.effect || '' }) }); kinds.push('destroy'); }
+          });
+        }
+      } catch (_) {}
+      if (entries.length < 2) { entries.push({ card, block: blk('on_destroy', { _grantedSteps: [{ action: 'other', display_text: 'ほかに同時に誘発した効果' }] }) }); kinds.push('destroy'); }
+      window._showQueueOrderSelect(entries, (i) => {
+        const val = kinds[i] === 'destroy' ? 'destroy' : 'michizure';
+        addLog('↕ 「' + (card.name || '') + '」は' + (val === 'destroy' ? (hasOnDestroy ? '【消滅時】' : 'ほかの効果') : '【道連れ】') + 'から発揮');
+        cb(val);
+      });
+      return;
+    } catch (e) { console.error('[askMichizureOrder]', e); }
+  }
   const overlay = document.createElement('div');
   overlay.id = '_michizure-order';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:65000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);padding:16px;';
@@ -1215,7 +1251,6 @@ if (typeof window !== 'undefined') window._askMichizureOrder = michizureOrder;
 // 'none' 道連れにならない）、持ち主の端末 → michi_a（order）。届いた方が先なら取っておく
 let _michiQBuf = null, _michiQWait = null, _michiABuf = null, _michiAWait = null;
 function _michiRecv(kind, cmd) {
-  try { console.log('[michiRecv]', kind, JSON.stringify(cmd || {}), 'waiting=' + !!(kind === 'q' ? _michiQWait : _michiAWait), 'vs=' + !!_clashPending); } catch (_) {}
   if (kind === 'q') {
     if (cmd && cmd.board) { _michiBoardAsk(cmd); return; }
     if (_michiQWait) { const f = _michiQWait; _michiQWait = null; f(cmd); return; }
@@ -1240,7 +1275,6 @@ function _michiBoardAsk(q) {
 }
 // 相手の【道連れ】のデジモンの順番を、持ち主の端末に盤面で聞く。cb('michizure' | 'destroy')
 function _askRemoteMichiOrder(card, cb) {
-  console.log('[askRemoteMichiOrder]', card && card.name);
   _michiABuf = null;
   try { _sendCommand({ type: 'michi_q', mode: 'ask', board: true, loserName: (card && card.name) || '', loserNo: (card && card.cardNo) || '' }); } catch (_) { cb('destroy'); return; }
   _michiWait('a', (a) => cb(a && a.order === 'michizure' ? 'michizure' : 'destroy'));
@@ -1263,7 +1297,6 @@ if (typeof window !== 'undefined') {
 function _michiVsHookRemote(p, out, remoteInfo, go) {
   // 待たないときは、届いている問い合わせに返しておく（相手の端末を待たせない）
   const skip = () => { const b = _michiQBuf; _michiQBuf = null; if (b) _michiAnswerLater(b.cmd); go(); };
-  console.log('[michiVsHookRemote]', JSON.stringify(remoteInfo || {}), 'winner=' + (p && p.winner), 'turn=' + !!bs.isPlayerTurn);
   if (!_onlineMode || !_sendCommand || !remoteInfo || !remoteInfo.recoilName || !p.winner || p.winner === 'tie') { skip(); return; }
   const w = p.winner, ls = w === 'atk' ? 'def' : 'atk';
   const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
@@ -1285,14 +1318,11 @@ function _michiVsHookRemote(p, out, remoteInfo, go) {
     } catch (e) { console.error('[michiVsHookRemote]', e); go(); }
   });
 }
-function _michiVsHook(p, out, remoteInfo, go0) {
-  // 診断: どこで決めたかをログに出す（道連れの順番選択が出ない調査。ピエモン BT2-080 台帳）
-  let _why = 'start';
-  const go = () => { try { console.log('[michiVsHook]', _why, 'winner=' + (p && p.winner), 'remote=' + !!(remoteInfo || (p && p.remote)), 'online=' + !!_onlineMode); } catch (_) {} go0(); };
+function _michiVsHook(p, out, remoteInfo, go) {
   try {
-    if (remoteInfo || p.remote) { _why = 'remote:' + JSON.stringify(remoteInfo || {}); _michiVsHookRemote(p, out, remoteInfo, go); return; } // 相手の端末で決まった決着
+    if (remoteInfo || p.remote) { _michiVsHookRemote(p, out, remoteInfo, go); return; } // 相手の端末で決まった決着
     const w = _clashRecoilSide(p);
-    if (!w) { _why = 'no-recoil(loserMichizure=' + hasMichizure((p.winner === 'atk' ? p.defReal : p.atkReal) || {}) + ')'; go(); return; }
+    if (!w) { go(); return; }
     const ls = w === 'atk' ? 'def' : 'atk';
     const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
     const loserSide = ls === 'atk' ? turnSide : (turnSide === 'player' ? 'ai' : 'player');
@@ -1300,19 +1330,18 @@ function _michiVsHook(p, out, remoteInfo, go0) {
     // 相手の【道連れ】（オンライン）: 持ち主の端末は問い合わせを待っているので、どの場合も必ず返す
     const oppLoser = !!(_onlineMode && _sendCommand && loserSide === 'ai');
     const sendQ = (mode) => { if (oppLoser) { try { _sendCommand({ type: 'michi_q', mode }); } catch (_) {} } };
-    if (!['trash', 'indomitable'].includes(out && out[ls])) { _why = 'not-trash:' + (out && out[ls]); sendQ('none'); go(); return; } // 負けた側が消滅しなかった
+    if (!['trash', 'indomitable'].includes(out && out[ls])) { sendQ('none'); go(); return; } // 負けた側が消滅しなかった
     const loser = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
     const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
-    if (!loser || !winner || typeof window._fxVsMichizure !== 'function') { _why = 'no-card'; sendQ('none'); go(); return; }
+    if (!loser || !winner || typeof window._fxVsMichizure !== 'function') { sendQ('none'); go(); return; }
     const rival = window._battleMichizureRivalTriggers || (() => true);
     const plan = { loserName: loser.name, victimName: winner.name, at: Date.now(), order: 'later' };
     window._michiVsPlan = plan;
-    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { _why = 'winner-first'; sendQ('later'); go(); return; }
+    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { sendQ('later'); go(); return; }
     if (oppLoser) {
       // 持ち主の端末で選んでもらう（こちらのカードは同期した写しなので、持ち主の端末が本物のカードで判断する）
       sendQ('ask');
       _michiWait('a', (a) => {
-        _why = 'remote-answer:' + (a && a.order);
         if (a && a.order === 'michizure') { plan.order = 'michizure'; plan.shown = true; window._fxVsMichizure(loser, winner, w, go); }
         else { plan.order = 'destroy'; go(); }
       });
@@ -4877,7 +4906,6 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               // VS画面の決着で「道連れから」に決まっていれば（ターンプレイヤー側に先に解決する効果が無いとき。_michiVsHook）、
               // CPU の【消滅時】より先に道連れで atk を消滅させる（演出は出し済み）
               const _p1Plan = _michiPlanFor(def);
-              console.log('[michizure def]', def && def.name, 'plan=' + (_p1Plan ? _p1Plan.order : 'none'), 'online=' + !!_onlineMode);
               // 道連れから: atk を消滅させてから、両方の消滅時（演出はVS画面で出し済みなら重ねない）
               const _michiFirst = () => {
                 const _mzIdx = bs.player.battleArea.indexOf(atk);

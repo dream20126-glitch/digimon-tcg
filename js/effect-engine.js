@@ -26553,7 +26553,30 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === リンク（手札/Bエリアからリンク） ===
     case 'link': {
-      const linkTarget = ctx.card; // 対象は常にこのカード自身（target: self/self_card 前提）
+      // リンク先: 「自分のデジモン1体に〜リンクできる」（target: own:N。テイマーの効果 大空勇仁 P-233・桂レイ P-241）なら、
+      // 自分のデジモンから選ぶ（1体なら自動）。以前は対象が常にこのカード自身で、テイマーにリンクしていた
+      if (!step._linkTo && /^own(:|$)/.test(String(step.target || ''))) {
+        const _lp = (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai) || {};
+        const _ba = _lp.battleArea || [];
+        const _valid = [];
+        _ba.forEach((c, i) => { if (c && c.type !== 'テイマー') _valid.push(i); });
+        if (_valid.length === 0) { ctx.addLog && ctx.addLog('💨 リンクできる自分のデジモンがいません'); callback(); break; }
+        // リンクできるカードが無ければ、デジモンを選ばせずに終える（下の「条件を満たすカードがありません」と同じ扱い）
+        const _lz = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+        const _lf = step.from_filter || step.filter || {};
+        const _hasCand = _lz.some((z) => (z === 'hand' && (_lp.hand || []).some((c) => c && cardMatchesFilter(c, _lf)))
+          || (z === 'trash' && (_lp.trash || []).some((c) => c && cardMatchesFilter(c, _lf)))
+          || (z === 'evo_source' && _ba.some((h) => h && (h.stack || []).some((c) => c && cardMatchesFilter(c, _lf)))));
+        const _go = (idx) => {
+          const t = idx == null ? null : _ba[idx];
+          if (!t) { callback(); return; }
+          executeRecipeStep(Object.assign({}, step, { _linkTo: t }), ctx, store, callback);
+        };
+        if (!_hasCand || _valid.length === 1 || effectiveSide === 'ai') { _go(_valid[0]); break; }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _valid, null, '#00fbff', (sel) => _go(sel), '🔗 リンクする自分のデジモンを選んでください');
+        break;
+      }
+      const linkTarget = step._linkTo || ctx.card; // 対象は選んだ自分のデジモン、無ければこのカード自身（target: self/self_card）
       if (!linkTarget) { callback(); break; }
 
       // リンク容量チェック（手動リンクのdoLinkと同じ計算式）。上限到達時は既存のリンクカードを
@@ -26846,7 +26869,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
         // 「自分のデジモンのリンクカードが効果で破棄されたとき」（大空勇仁 P-233）は、この効果のあと
-        if (_gone.length > 0) enqueueReaction(ctx.bs, _fireLinkedDiscardTriggers, [_gone, ctx.card, ctx.side, ctx.bs, ctx]);
+        // バトルのVS画面の途中（【分離】で消滅しなかったとき等）なら、VS画面を閉じてから（大空勇仁 P-233 台帳: VS画面の上で、
+        // 消滅を免れる前に発揮していた）
+        if (_gone.length > 0) {
+          const _ldArgs = [_gone, ctx.card, ctx.side, ctx.bs, ctx];
+          if (typeof window._clashIsPending === 'function' && window._clashIsPending() && typeof window._deferUntilClashEnd === 'function') {
+            window._deferUntilClashEnd((done) => _fireLinkedDiscardTriggers(..._ldArgs, done));
+          } else enqueueReaction(ctx.bs, _fireLinkedDiscardTriggers, _ldArgs);
+        }
         // 「〇〇のリンクカード → トラッシュ」の移動演出（相手の画面にも）
         const _from = '「' + (ctx.card.name || '') + '」のリンクカード';
         let _gi = 0;

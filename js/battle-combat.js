@@ -8714,6 +8714,9 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
 // VS画面の3回目の押し合いの間に、消滅回避の判定（確認のポップアップを含む）を行い、その結果で決着の演出を変える。
 // 回避の結果は _clashNote で記録し、勝敗の表示（showBattleResult）・消滅演出（showDestroyEffect）等の手前で _clashFinish する
 let _clashPending = null;
+// VS画面を閉じてから発揮する効果（バトルの途中で誘発したもの。リンクカードが破棄されたとき 大空勇仁 P-233 等）
+const _afterClashRuns = [];
+if (typeof window !== 'undefined') window._deferUntilClashEnd = (fn) => { if (typeof fn === 'function') _afterClashRuns.push(fn); };
 function _clashSideOf(card) {
   const p = _clashPending;
   if (!p || !card) return null;
@@ -8868,6 +8871,13 @@ function _clashFinish(textHint, cb, remoteInfo) {
   if (p.swapInfo) out._swapInfo = p.swapInfo;
   if (p.subUnder) out._subUnder = p.subUnder;
   const end0 = () => {
+    // VS画面の途中で誘発し、閉じるまで待たせていた効果（_deferUntilClashEnd）を、VS画面を閉じてから発揮する
+    const _runs = _afterClashRuns.splice(0);
+    if (_runs.length) {
+      try { p.close(); } catch (_) {}
+      const _cb1 = cb; let _k = 0;
+      cb = () => { if (_k >= _runs.length) { _cb1 && _cb1(); return; } const f = _runs[_k++]; try { f(() => cb()); } catch (e) { console.error('[afterClash]', e); cb(); } };
+    }
     // VS画面でトラッシュへ飛ばしたカードの「消滅演出を重ねない」印は、VS画面を閉じた時点から数え直す（決着の後にVS画面で
     // 【道連れ】の順番を選んで演出した分だけ時間が経ち、印が切れて消滅演出がもう一度出ていた。ピエモン BT2-080 台帳）
     try { if (Array.isArray(window._clashLosers)) { const _n = Date.now(); window._clashLosers.forEach((x) => { if (x) x.at = _n; }); } } catch (_) {}

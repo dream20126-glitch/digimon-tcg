@@ -2055,6 +2055,16 @@ function onRemoteCommand(cmd) {
       if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
       break;
     }
+    case 'michi_q': {
+      // 相手の端末から: こちらの【道連れ】のデジモンがバトルで負けた。順番を選ぶか（_michiVsHookRemote）
+      if (typeof window._onMichiQ === 'function') window._onMichiQ(cmd);
+      break;
+    }
+    case 'michi_a': {
+      // 相手の端末から: 相手の【道連れ】のデジモンの順番（'michizure' | 'destroy'）
+      if (typeof window._onMichiA === 'function') window._onMichiA(cmd);
+      break;
+    }
     case 'fx_michiVs': {
       // 相手の端末で、バトルの決着のあと【道連れ】から発揮すると決まった: こちらもVS画面で道連れの演出（_michiVsHook）
       if (typeof window._fxVsMichizure === 'function') {

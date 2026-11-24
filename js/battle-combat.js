@@ -1210,23 +1210,87 @@ if (typeof window !== 'undefined') window._askMichizureOrder = michizureOrder;
 //  ・他に無い → 道連れから
 //  道連れからなら、そのままVS画面で演出（負けたカードが入ったトラッシュから黒いもや → 相手を引きずり込む）。実際の消滅は
 //  それぞれの経路で行い、演出は出し済みなので重ねない（playMichizureFx）
+// オンラインで【道連れ】のデジモンが相手（持ち主はもう一方の端末）のとき: 順番を選ぶのは持ち主（公式ルール 15-4-3-4）。
+// バトルを解決する端末 → 持ち主の端末へ michi_q（mode: 'ask' 選んでほしい / 'later' 先に解決する効果があるので選ばない /
+// 'none' 道連れにならない）、持ち主の端末 → michi_a（order）。届いた方が先なら取っておく
+let _michiQBuf = null, _michiQWait = null, _michiABuf = null, _michiAWait = null;
+function _michiRecv(kind, cmd) {
+  if (kind === 'q') {
+    if (_michiQWait) { const f = _michiQWait; _michiQWait = null; f(cmd); return; }
+    // こちらのVS画面がもう閉じている（決着を待たずに閉じた等）: 選ぶ場面が無いので【消滅時】等から（盤面で道連れ）。相手を待たせない
+    if (!_clashPending) { _michiAnswerLater(cmd); return; }
+    _michiQBuf = { cmd, at: Date.now() };
+  }
+  else { if (_michiAWait) { const f = _michiAWait; _michiAWait = null; f(cmd); } else _michiABuf = { cmd, at: Date.now() }; }
+}
+function _michiAnswerLater(q) {
+  if (q && q.mode === 'ask' && _sendCommand) { try { _sendCommand({ type: 'michi_a', order: 'destroy' }); } catch (_) {} }
+}
+function _michiWait(kind, cb) {
+  const buf = kind === 'q' ? _michiQBuf : _michiABuf;
+  if (kind === 'q') _michiQBuf = null; else _michiABuf = null;
+  if (buf && Date.now() - buf.at < 30000) { cb(buf.cmd); return; }
+  if (kind === 'q') _michiQWait = cb; else _michiAWait = cb;
+}
+if (typeof window !== 'undefined') {
+  window._onMichiQ = (cmd) => _michiRecv('q', cmd);
+  window._onMichiA = (cmd) => _michiRecv('a', cmd);
+}
+// 相手の端末が解決したバトルの決着（こちらは見ているだけ）: こちらの【道連れ】のデジモンが負けたら、相手の端末の問い合わせを待ち、
+// こちらのVS画面の上で順番を選んで返す
+function _michiVsHookRemote(p, out, remoteInfo, go) {
+  // 待たないときは、届いている問い合わせに返しておく（相手の端末を待たせない）
+  const skip = () => { const b = _michiQBuf; _michiQBuf = null; if (b) _michiAnswerLater(b.cmd); go(); };
+  if (!_onlineMode || !_sendCommand || !remoteInfo || !remoteInfo.recoilName || !p.winner || p.winner === 'tie') { skip(); return; }
+  const w = p.winner, ls = w === 'atk' ? 'def' : 'atk';
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  const loserSide = ls === 'atk' ? turnSide : (turnSide === 'player' ? 'ai' : 'player');
+  if (loserSide !== 'player') { skip(); return; } // 相手の【道連れ】: 相手の端末で決めて演出が届く
+  const loser = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
+  const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
+  _michiWait('q', (q) => {
+    try {
+      if (!q || q.mode !== 'ask' || !loser || !winner) { go(); return; }
+      const answer = (order) => {
+        try { _sendCommand({ type: 'michi_a', order }); } catch (_) {}
+        if (order === 'michizure' && typeof window._fxVsMichizure === 'function') window._fxVsMichizure(loser, winner, w, go);
+        else go();
+      };
+      const rival = window._battleMichizureRivalTriggers || (() => true);
+      if (!rival('player', loser, bs, 'loser')) { answer('michizure'); return; }
+      askMichizureOrder(loser, answer, true);
+    } catch (e) { console.error('[michiVsHookRemote]', e); go(); }
+  });
+}
 function _michiVsHook(p, out, remoteInfo, go) {
   try {
-    if (remoteInfo || p.remote) { go(); return; } // 相手の端末で決まった決着: 決めるのはバトルを解決している端末（fx_michiVs で演出が届く）
+    if (remoteInfo || p.remote) { _michiVsHookRemote(p, out, remoteInfo, go); return; } // 相手の端末で決まった決着
     const w = _clashRecoilSide(p);
     if (!w) { go(); return; }
     const ls = w === 'atk' ? 'def' : 'atk';
-    if (!['trash', 'indomitable'].includes(out && out[ls])) { go(); return; } // 負けた側が消滅しなかった
-    const loser = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
-    const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
-    if (!loser || !winner || typeof window._fxVsMichizure !== 'function') { go(); return; }
     const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
     const loserSide = ls === 'atk' ? turnSide : (turnSide === 'player' ? 'ai' : 'player');
     const winSide = loserSide === 'player' ? 'ai' : 'player';
+    // 相手の【道連れ】（オンライン）: 持ち主の端末は問い合わせを待っているので、どの場合も必ず返す
+    const oppLoser = !!(_onlineMode && _sendCommand && loserSide === 'ai');
+    const sendQ = (mode) => { if (oppLoser) { try { _sendCommand({ type: 'michi_q', mode }); } catch (_) {} } };
+    if (!['trash', 'indomitable'].includes(out && out[ls])) { sendQ('none'); go(); return; } // 負けた側が消滅しなかった
+    const loser = (ls === 'atk' ? p.atkReal : p.defReal) || p[ls];
+    const winner = (w === 'atk' ? p.atkReal : p.defReal) || p[w];
+    if (!loser || !winner || typeof window._fxVsMichizure !== 'function') { sendQ('none'); go(); return; }
     const rival = window._battleMichizureRivalTriggers || (() => true);
     const plan = { loserName: loser.name, victimName: winner.name, at: Date.now(), order: 'later' };
     window._michiVsPlan = plan;
-    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { go(); return; }
+    if (loserSide !== turnSide && rival(winSide, winner, bs, 'winner')) { sendQ('later'); go(); return; }
+    if (oppLoser) {
+      // 持ち主の端末で選んでもらう（こちらのカードは同期した写しなので、持ち主の端末が本物のカードで判断する）
+      sendQ('ask');
+      _michiWait('a', (a) => {
+        if (a && a.order === 'michizure') { plan.order = 'michizure'; plan.shown = true; window._fxVsMichizure(loser, winner, w, go); }
+        else { plan.order = 'destroy'; go(); }
+      });
+      return;
+    }
     const playVs = () => {
       plan.order = 'michizure'; plan.shown = true;
       if (_onlineMode && _sendCommand) {
@@ -1239,7 +1303,6 @@ function _michiVsHook(p, out, remoteInfo, go) {
       askMichizureOrder(loser, (o) => { if (o === 'michizure') playVs(); else { plan.order = 'destroy'; go(); } }, true);
       return;
     }
-    if (_onlineMode) { go(); return; } // 相手の道連れで他の効果もある: 相手が後で選ぶ（盤面で演出）
     playVs(); // CPU は道連れから
   } catch (e) { console.error('[michiVsHook]', e); go(); }
 }
@@ -8513,6 +8576,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
     // 相手から届いたVS画面のカードは名前と画像だけなので、こちらの盤面の同じカード（効果の情報を持つ）を探す
     // 同じカードがあればそれ（同名のデジモンが2体いると、名前で先に見つかった別の1体を使っていた。ピエモン BT2-080 台帳 c6）
     const _realOf = (c) => { if (!c) return c; for (const sd of ['player', 'ai']) { if ((bs[sd].battleArea || []).includes(c)) return c; } for (const sd of ['player', 'ai']) { const x = (bs[sd].battleArea || []).find(y => y && y.name === c.name && (!c.cardNo || y.cardNo === c.cardNo)); if (x) return x; } return c; };
+    _michiQBuf = null; _michiABuf = null; // 前のバトルの【道連れ】の問い合わせが残っていれば捨てる
     const _p = _clashPending = { atk: atkCard, def: secCard, winner: _winner, notes: {}, ctrl: null, defOnField: _onFieldNow(secCard), atkOnField: _onFieldNow(atkCard),
       atkReal: _realOf(atkCard), defReal: _realOf(secCard),
       // 相手の端末から届いたVS画面か（この端末はバトルを解決していない。【道連れ】の順番はここでは決めない。_michiVsHook）

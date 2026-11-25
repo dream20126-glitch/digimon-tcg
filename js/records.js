@@ -259,10 +259,21 @@ function chips(items, cur, fn) {
   return '<div class="rec-chips">' + items.map(([v, l, icon]) => '<button class="rec-chip' + (v === cur ? ' sel' : '') + '" onclick="' + fn + '(' + jsArg(v) + ')">' + (icon ? '<span class="rec-chip-ic">' + icon + '</span>' : '') + esc(l) + '</button>').join('') + '</div>';
 }
 
+// ===== 種類の絞り込み（対戦の一覧・デッキごと） =====
+// 値: 'all' / 'online' / 'ai'（AIの全レベル）/ 'ai:low' 'ai:mid' 'ai:high'（AIのレベルだけ）
+function modeChipItems() {
+  return [['all', 'すべて'], ['online', '🌐 オンライン'], ['ai', '🤖 AI（すべて）'], ...AI_ORDER.map((lv) => ['ai:' + lv, AI_LV[lv].name, aiIcon(lv, 18)])];
+}
+const modeParts = (m) => (!m || m === 'all' ? { mode: '', lv: '' } : m.startsWith('ai:') ? { mode: 'ai', lv: m.slice(3) } : { mode: m, lv: '' });
+const modeOk = (r, m) => { const p = modeParts(m); return (!p.mode || r.mode === p.mode) && (!p.lv || r.aiLevel === p.lv); };
+const modeName = (m) => { const p = modeParts(m); return p.lv ? lvName(p.lv) + 'との' : p.mode === 'ai' ? 'AI対戦の' : p.mode === 'online' ? 'オンライン対戦の' : ''; };
+
 // ===== リセット =====
 const _resetArgs = [];
-function resetBtn(label, mode, myDeck, n) {
-  _resetArgs.push({ label, mode, myDeck, n });
+// mode: modeChipItems の値（'all' / 'online' / 'ai' / 'ai:mid' 等）
+function resetBtn(label, m, myDeck, n) {
+  const p = modeParts(m);
+  _resetArgs.push({ label, mode: p.mode, aiLevel: p.lv, myDeck, n });
   return '<div class="rec-reset"><button class="rec-reset-btn" onclick="recReset(' + (_resetArgs.length - 1) + ')">🗑 ' + esc(label) + '</button>'
     + '<div class="rec-reset-sub">' + n + '件の記録を消します（期間・中断の表示に関わらず）。元に戻せません。</div></div>';
 }
@@ -272,9 +283,9 @@ window.recReset = async function(i) {
   if (!confirm(a.label + '\n\n' + a.n + '件の記録を消します。消した記録は元に戻せません。\nリセットしますか？')) return;
   resetting = true;
   try {
-    const r = await gasPost('deleteMatchRecords', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', mode: a.mode, myDeck: a.myDeck });
+    const r = await gasPost('deleteMatchRecords', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', mode: a.mode, myDeck: a.myDeck, aiLevel: a.aiLevel });
     if (!r || r.status !== 'OK') throw new Error((r && r.message) || '不明なエラー');
-    records = records.filter((x) => !((!a.mode || x.mode === a.mode) && (!a.myDeck || x.myDeck === a.myDeck)));
+    records = records.filter((x) => !((!a.mode || x.mode === a.mode) && (!a.aiLevel || x.aiLevel === a.aiLevel) && (!a.myDeck || x.myDeck === a.myDeck)));
     if (a.myDeck && prefs.deckSel === a.myDeck) prefs.deckSel = '';
     saveCache(); savePrefs(); render();
     alert('リセットしました（' + (r.deleted || 0) + '件）');
@@ -318,15 +329,15 @@ function renderAi() {
       + trend(list)
       + section('AIのデッキごと', groupRows(aiDecks))
       + section('決着の理由', reasons(list))
-      + listLink(list.length, 'ai')
+      + listLink(list.length, prefs.aiLevel ? 'ai:' + prefs.aiLevel : 'ai')
       : emptyTab('この条件の記録はありません', '期間や絞り込みを変えてみてください。'))
     + resetBtn('AI対戦の戦績をすべてリセット', 'ai', '', allRaw.length);
 }
 
 function renderDeck() {
-  const allRaw = prefs.deckMode === 'all' ? records : records.filter((r) => r.mode === prefs.deckMode);
+  const allRaw = records.filter((r) => modeOk(r, prefs.deckMode));
   const all = base(allRaw);
-  const modeChips = chips([['all', 'すべて'], ['online', '🌐 オンライン'], ['ai', '🤖 AI']], prefs.deckMode, 'recDeckMode');
+  const modeChips = chips(modeChipItems(), prefs.deckMode, 'recDeckMode');
   if (!all.length) return '<div class="rec-filter">' + modeChips + '</div>' + emptyTab('この条件の記録はありません', '対戦をすると、デッキごとの成績がここに出ます。');
   const decks = groupBy(all, (r) => r.myDeck).map((g) => Object.assign(g, { html: deckLabel('my', g.key) }));
   if (!prefs.deckSel || !decks.some((d) => d.key === prefs.deckSel)) prefs.deckSel = decks[0].key;
@@ -373,7 +384,7 @@ function renderDeck() {
     + groupRows(oppColorGroups(mine))
     + '</div>'
     + listLink(mine.length, prefs.deckMode, sel)
-    + resetBtn('「' + (sel || '（名前なし）') + '」の' + (prefs.deckMode === 'online' ? 'オンライン対戦の' : prefs.deckMode === 'ai' ? 'AI対戦の' : '') + '戦績をリセット', prefs.deckMode === 'all' ? '' : prefs.deckMode, sel, allRaw.filter((r) => r.myDeck === sel).length);
+    + resetBtn('「' + (sel || '（名前なし）') + '」の' + modeName(prefs.deckMode) + '戦績をリセット', prefs.deckMode, sel, allRaw.filter((r) => r.myDeck === sel).length);
 }
 
 // 各タブの下: 「対戦の一覧」タブへ（そのタブの種類・デッキで絞った状態で開く）
@@ -386,10 +397,10 @@ function renderList() {
   const allRaw = records;
   if (!allRaw.length) return emptyTab('記録はまだありません', 'オンライン対戦・AI対戦をすると、ここに1試合ずつ並びます。');
   let list = base(allRaw);
-  if (prefs.listMode !== 'all') list = list.filter((r) => r.mode === prefs.listMode);
-  const deckPool = prefs.listMode === 'all' ? allRaw : allRaw.filter((r) => r.mode === prefs.listMode);
+  list = list.filter((r) => modeOk(r, prefs.listMode));
+  const deckPool = allRaw.filter((r) => modeOk(r, prefs.listMode));
   if (prefs.listDeck) list = list.filter((r) => r.myDeck === prefs.listDeck);
-  return '<div class="rec-filter">' + chips([['all', 'すべて'], ['online', '🌐 オンライン'], ['ai', '🤖 AI']], prefs.listMode, 'recListMode')
+  return '<div class="rec-filter">' + chips(modeChipItems(), prefs.listMode, 'recListMode')
     + deckSelect(deckPool, prefs.listDeck, 'recListDeck') + '</div>'
     + section('対戦の一覧（' + list.length + '件）<small>　「詳細」で詳しい情報・メモ</small>', history(list));
 }

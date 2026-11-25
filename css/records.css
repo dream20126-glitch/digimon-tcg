@@ -132,3 +132,9 @@
   .rec-row-bar { order: 3; grid-column: 1 / -1; }
   .rec-strip { grid-template-columns: repeat(10, minmax(0, 1fr)); }
 }
+
+/* リセット（いちばん下。押し間違えないよう控えめに） */
+.rec-reset { text-align: center; margin: 20px 0 4px; }
+.rec-reset-btn { background: none; border: 1px solid #ff547066; color: #ff8a9c; border-radius: 8px; padding: 9px 16px; font-size: 12px; cursor: pointer; max-width: 100%; white-space: normal; }
+.rec-reset-btn:hover { background: rgba(255, 84, 112, 0.1); border-color: var(--rec-lose); }
+.rec-reset-sub { font-size: 10px; color: var(--rec-muted); margin-top: 5px; }

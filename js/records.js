@@ -4,7 +4,7 @@
 //  - デッキごと: 自分のデッキごとの勝率 → 選んだデッキの「相手のデッキごと」の勝ち負け・先攻/後攻
 // 勝率は「勝ち ÷（勝ち＋負け）」。中断は数に出すが勝率には入れない。
 // 記録は js/match-record.js が付ける（GAS のシート「戦績」）
-import { gasGet } from './firebase-config.js';
+import { gasGet, gasPost } from './firebase-config.js';
 
 const AI_LV = { low: { name: '見習いテイマー', short: '低' }, mid: { name: 'ベテランテイマー', short: '中' }, high: { name: 'デジモンマスター', short: '高' } };
 const AI_ORDER = ['low', 'mid', 'high'];
@@ -176,7 +176,8 @@ function renderOnline() {
     + recent(list)
     + section('相手ごと', groupRows(groupBy(list, (r) => r.opp)), legend())
     + section('決着の理由', reasons(list))
-    + section('対戦の一覧（' + list.length + '件）', historyTable(list, 'online'));
+    + section('対戦の一覧（' + list.length + '件）', historyTable(list, 'online'))
+    + resetBtn('オンライン対戦の戦績をすべてリセット', 'online', '', all.length);
 }
 
 function renderAi() {
@@ -191,7 +192,8 @@ function renderAi() {
     + recent(list)
     + section('AIのデッキごと', groupRows(groupBy(list, (r) => r.oppDeck)))
     + section('決着の理由', reasons(list))
-    + section('対戦の一覧（' + list.length + '件）', historyTable(list, 'ai'));
+    + section('対戦の一覧（' + list.length + '件）', historyTable(list, 'ai'))
+    + resetBtn('AI対戦の戦績をすべてリセット', 'ai', '', all.length);
 }
 
 function renderDeck() {
@@ -220,8 +222,36 @@ function renderDeck() {
     + '<div class="rec-deck-sum">' + s.n + '戦 ' + wl(s) + '　勝率 <b>' + pct(s.rate) + '</b>　先攻 ' + f + '回・後攻 ' + (s.n - f) + '回</div>'
     + '<div class="rec-sec-title" style="margin-top:12px;">相手のデッキごと</div>'
     + '<div class="rec-table-wrap"><table class="rec-table rec-mu"><thead><tr><th>相手のデッキ</th><th class="r">対戦</th><th class="r">勝</th><th class="r">敗</th><th>勝率</th><th>先攻</th><th>後攻</th></tr></thead><tbody>' + matchRows + '</tbody></table></div>'
-    + '</div>';
+    + '</div>'
+    + resetBtn('「' + (deckSel || '（名前なし）') + '」の' + (deckMode === 'online' ? 'オンライン対戦の' : deckMode === 'ai' ? 'AI対戦の' : '') + '戦績をリセット', deckMode === 'all' ? '' : deckMode, deckSel, mine.length);
 }
+
+// リセットのボタン（押すと確認 → GAS で記録を消す）。mode: 'online' / 'ai' / ''（両方）、myDeck: 空なら全デッキ
+const _resetArgs = [];
+function resetBtn(label, mode, myDeck, n) {
+  _resetArgs.push({ label, mode, myDeck, n });
+  return '<div class="rec-reset"><button class="rec-reset-btn" onclick="recReset(' + (_resetArgs.length - 1) + ')">🗑 ' + esc(label) + '</button>'
+    + '<div class="rec-reset-sub">' + n + '件の記録を消します。元に戻せません。</div></div>';
+}
+window.recReset = async function(i) {
+  const a = _resetArgs[i];
+  if (!a || resetting) return;
+  if (!confirm(a.label + '\n\n' + a.n + '件の記録を消します。消した記録は元に戻せません。\nリセットしますか？')) return;
+  resetting = true;
+  try {
+    const r = await gasPost('deleteMatchRecords', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', mode: a.mode, myDeck: a.myDeck });
+    if (!r || r.status !== 'OK') throw new Error((r && r.message) || '不明なエラー');
+    records = records.filter((x) => !((!a.mode || x.mode === a.mode) && (!a.myDeck || x.myDeck === a.myDeck)));
+    if (a.myDeck && deckSel === a.myDeck) deckSel = '';
+    render();
+    alert('リセットしました（' + (r.deleted || 0) + '件）');
+  } catch (e) {
+    alert('リセットできませんでした: ' + e.message);
+  } finally {
+    resetting = false;
+  }
+};
+let resetting = false;
 
 const emptyTab = (t, sub) => '<div class="rec-empty"><div class="rec-empty-icon">📭</div><div>' + t + '</div><div class="rec-empty-sub">' + sub + '</div></div>';
 
@@ -229,6 +259,7 @@ function render() {
   document.querySelectorAll('#records-screen .rec-tab').forEach((b) => b.classList.toggle('sel', b.dataset.tab === tab));
   const body = document.getElementById('rec-body');
   if (!body) return;
+  _resetArgs.length = 0;
   if (!loaded) { body.innerHTML = '<div class="rec-empty">' + (loading ? '読み込み中...' : '') + '</div>'; return; }
   body.innerHTML = tab === 'ai' ? renderAi() : tab === 'deck' ? renderDeck() : renderOnline();
 }

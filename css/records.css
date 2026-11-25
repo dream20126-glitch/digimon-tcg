@@ -212,3 +212,24 @@
   .rec-hist-cards { display: block; }
   .rec-tr-ax { font-size: 22px; }
 }
+
+/* ===== 2026-11-25 追加: 「対戦の一覧」タブ・1試合ずつ削除 ===== */
+.rec-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rec-list-link { display: block; width: 100%; background: rgba(0, 251, 255, 0.06); border: 1px solid var(--border-col); color: var(--main-cyan); border-radius: 12px; padding: 12px; font-size: 13px; font-weight: bold; cursor: pointer; margin-bottom: 12px; }
+.rec-list-link:hover { background: rgba(0, 251, 255, 0.12); }
+.rec-del { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--rec-muted); font-size: 14px; padding: 2px 6px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+.rec-del:hover { border-color: #ff547088; background: rgba(255, 84, 112, 0.12); }
+.rec-hc-top .rec-del { margin-left: 2px; }
+.rec-md-del { margin-right: auto; background: none; border: 1px solid #ff547066; color: #ff8a9c; border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+@media (max-width: 640px) {
+  .rec-tab { font-size: 11px; padding: 9px 2px; }
+}
+
+/* メモのボタン（一覧の各行・各カード） */
+.rec-table tbody tr { cursor: default; }
+.rec-memo-btn { background: rgba(0, 251, 255, 0.06); border: 1px solid #1d4552; color: var(--rec-ink2); border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.rec-memo-btn:hover { border-color: var(--main-cyan); color: var(--main-cyan); }
+.rec-memo-btn.has { border-color: var(--main-cyan); color: var(--main-cyan); }
+.rec-hc { cursor: default; }
+.rec-hc-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #0a2633; }
+.rec-hc-foot .rec-hc-memo { flex: 1; min-width: 0; margin: 0; }

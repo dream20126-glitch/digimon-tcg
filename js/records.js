@@ -1,9 +1,9 @@
-// 戦績の画面（pages/records.html）。3つのタブ:
+// 戦績の画面（pages/records.html）。4つのタブ:
 //  - オンライン: 勝率・勝率の移り変わり・相手ごと・相手のデッキの色ごと・決着の理由 → 対戦の一覧
 //  - AI: 勝率・AIのレベルごと・勝率の移り変わり・AIのデッキごと・決着の理由 → 対戦の一覧
 //  - デッキごと: 自分のデッキごとの勝率 → 選んだデッキの「相手のデッキごと」「相手のデッキの色ごと」の勝ち負け・先攻/後攻
 // 勝率は「勝ち ÷（勝ち＋負け）」。中断は数に出すが勝率には入れない（「中断を表示」を切ると数にも出さない）。
-// 一覧（表・スマホはカード）の1試合を押すと詳しい情報とメモ。
+//  - 対戦の一覧: オンライン・AI の全対戦（表・スマホはカード）。「📝 メモ」ボタンで詳しい情報とメモ、🗑 で1試合ずつ削除
 // 読み込み: 前回読んだ記録を端末に覚えておき、開いたらすぐ出す → 裏で最新を読み直して差し替える
 // 記録は js/match-record.js が付ける（GAS のシート「戦績」）
 import { gasGet, gasPost } from './firebase-config.js';
@@ -26,6 +26,7 @@ let resetting = false;
 // 開いていたタブ・絞り込み（この端末に覚える）
 const PREF_KEY = 'recPrefs';
 const prefs = Object.assign({ tab: 'online', period: 'all', showAbort: true, onlineDeck: '', aiLevel: '', aiDeck: '', deckMode: 'all', deckSel: '' },
+  { listMode: 'all', listDeck: '' },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}') || {}; } catch (_) { return {}; } })());
 function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (_) {} }
 
@@ -140,7 +141,7 @@ function recent(list) {
   const cell = (r) => {
     const ch = r.result === '勝ち' ? '勝' : r.result === '負け' ? '負' : '中';
     const tip = fmtDate(r.startedAt) + '\n' + (r.mode === 'ai' ? lvName(r.aiLevel) : 'vs ' + r.opp) + '\n' + r.myDeck + ' → ' + r.oppDeck + '\n' + r.result + (r.result === '中断' ? '' : '（' + r.reason + '）');
-    return '<span class="rec-dot rec-c-' + resKey(r) + '" data-tip="' + esc(tip) + '" onclick="recOpen(' + jsArg(r.id) + ')">' + ch + '</span>';
+    return '<span class="rec-dot rec-c-' + resKey(r) + '" data-tip="' + esc(tip) + '">' + ch + '</span>';
   };
   return section('直近' + last.length + '戦の流れ', '<div class="rec-strip">' + last.map(cell).join('') + '</div><div class="rec-strip-axis"><span>古い</span><span>新しい →</span></div>');
 }
@@ -212,13 +213,17 @@ const section = (title, body, extra) => '<div class="rec-sec"><div class="rec-se
 const resultBadge = (r) => '<span class="rec-badge rec-c-' + resKey(r) + '">' + esc(r.result) + '</span>';
 const secText = (r) => (r.mySec == null && r.oppSec == null ? '—' : (r.mySec ?? '?') + ' - ' + (r.oppSec ?? '?'));
 
-// 対戦の一覧: 広い画面は表、スマホ（640px以下）はカード。押すと詳しい情報とメモ
-function history(list, mode) {
+// 対戦の一覧: 広い画面は表、スマホ（640px以下）はカード。「📝 メモ」ボタンで詳しい情報とメモ、🗑 で1試合削除
+// （行を押してメモが開くのは分かりにくい、とのことでボタンにした）
+const oppOf = (r) => (r.mode === 'ai' ? '🤖 ' + lvName(r.aiLevel) : '🌐 ' + (r.opp || '相手'));
+const delBtn = (r) => '<button class="rec-del" title="この記録を削除" onclick="recDelete(' + jsArg(r.id) + ')">🗑</button>';
+const memoBtn = (r) => '<button class="rec-memo-btn' + (r.memo ? ' has' : '') + '"' + (r.memo ? ' title="' + esc(r.memo) + '"' : '') + ' onclick="recOpen(' + jsArg(r.id) + ')">📝 ' + (r.memo ? 'メモあり' : 'メモ') + '</button>';
+function history(list) {
   if (!list.length) return '<div class="rec-empty-sm">まだ記録がありません</div>';
-  const head = ['日時', mode === 'ai' ? 'AIのレベル' : '相手', '自分のデッキ', mode === 'ai' ? 'AIのデッキ' : '相手のデッキ', '勝敗', '先/後', '決着の理由', 'ターン', '対戦時間', 'セキュリティ<br><small>自分-相手</small>', ''];
-  const rows = list.map((r) => '<tr onclick="recOpen(' + jsArg(r.id) + ')">'
+  const head = ['日時', '相手', '自分のデッキ', '相手のデッキ', '勝敗', '先/後', '決着の理由', 'ターン', '対戦時間', 'セキュリティ<br><small>自分-相手</small>', 'メモ', ''];
+  const rows = list.map((r) => '<tr>'
     + '<td class="nw">' + fmtDate(r.startedAt) + '</td>'
-    + '<td>' + esc(mode === 'ai' ? lvName(r.aiLevel) : r.opp) + '</td>'
+    + '<td class="nw">' + esc(oppOf(r)) + '</td>'
     + '<td>' + deckLabel('my', r.myDeck, { noThumb: true }) + '</td><td>' + deckLabel('opp', r.oppDeck, { noThumb: true }) + '</td>'
     + '<td>' + resultBadge(r) + '</td>'
     + '<td class="nw">' + (r.first ? '先攻' : '後攻') + '</td>'
@@ -226,15 +231,16 @@ function history(list, mode) {
     + '<td class="r">' + (r.turns || '—') + '</td>'
     + '<td class="r nw">' + (r.durationSec ? fmtDur(r.durationSec) : '—') + '</td>'
     + '<td class="r nw">' + secText(r) + '</td>'
-    + '<td class="c">' + (r.memo ? '<span title="' + esc(r.memo) + '">📝</span>' : '') + '</td></tr>').join('');
+    + '<td class="c">' + memoBtn(r) + '</td>'
+    + '<td class="c">' + delBtn(r) + '</td></tr>').join('');
   const table = '<div class="rec-table-wrap rec-hist-table"><table class="rec-table"><thead><tr>' + head.map((h, i) => '<th' + (i >= 7 && i <= 9 ? ' class="r"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   const cards = '<div class="rec-hist-cards">' + list.map((r) => {
     const facts = [r.first ? '先攻' : '後攻', r.turns ? r.turns + 'ターン' : '', r.result === '中断' ? '' : r.reason, r.durationSec ? fmtDur(r.durationSec) : '', (r.mySec != null || r.oppSec != null) ? '🛡 ' + secText(r) : ''].filter(Boolean);
-    return '<div class="rec-hc rec-hc-' + resKey(r) + '" onclick="recOpen(' + jsArg(r.id) + ')">'
-      + '<div class="rec-hc-top">' + resultBadge(r) + '<span class="rec-hc-opp">' + (mode === 'ai' ? '🤖 ' + esc(lvName(r.aiLevel)) : 'vs ' + esc(r.opp || '相手')) + '</span><span class="rec-hc-date">' + fmtShort(r.startedAt) + '</span></div>'
+    return '<div class="rec-hc rec-hc-' + resKey(r) + '">'
+      + '<div class="rec-hc-top">' + resultBadge(r) + '<span class="rec-hc-opp">' + esc(oppOf(r)) + '</span><span class="rec-hc-date">' + fmtShort(r.startedAt) + '</span></div>'
       + '<div class="rec-hc-decks">' + deckLabel('my', r.myDeck) + '<span class="rec-hc-vs">→</span>' + deckLabel('opp', r.oppDeck) + '</div>'
       + '<div class="rec-hc-facts">' + facts.map((f) => '<span>' + esc(f) + '</span>').join('') + '</div>'
-      + (r.memo ? '<div class="rec-hc-memo">📝 ' + esc(r.memo) + '</div>' : '')
+      + '<div class="rec-hc-foot"><span class="rec-hc-memo">' + (r.memo ? esc(r.memo) : '') + '</span>' + memoBtn(r) + delBtn(r) + '</div>'
       + '</div>';
   }).join('') + '</div>';
   return table + cards;
@@ -288,7 +294,7 @@ function renderOnline() {
       + section('相手ごと', groupRows(groupBy(list, (r) => r.opp)), legend())
       + section('相手のデッキの色ごと', groupRows(oppColorGroups(list)))
       + section('決着の理由', reasons(list))
-      + section('対戦の一覧（' + list.length + '件）<small>　押すとメモを書けます</small>', history(list, 'online'))
+      + listLink(list.length, 'online')
       : emptyTab('この条件の記録はありません', '期間や絞り込みを変えてみてください。'))
     + resetBtn('オンライン対戦の戦績をすべてリセット', 'online', '', allRaw.length);
 }
@@ -308,7 +314,7 @@ function renderAi() {
       + trend(list)
       + section('AIのデッキごと', groupRows(aiDecks))
       + section('決着の理由', reasons(list))
-      + section('対戦の一覧（' + list.length + '件）<small>　押すとメモを書けます</small>', history(list, 'ai'))
+      + listLink(list.length, 'ai')
       : emptyTab('この条件の記録はありません', '期間や絞り込みを変えてみてください。'))
     + resetBtn('AI対戦の戦績をすべてリセット', 'ai', '', allRaw.length);
 }
@@ -362,8 +368,26 @@ function renderDeck() {
     + '<div class="rec-sec-title" style="margin-top:14px;">相手のデッキの色ごと</div>'
     + groupRows(oppColorGroups(mine))
     + '</div>'
-    + section('「' + esc(sel) + '」の対戦の一覧（' + mine.length + '件）', history(mine, prefs.deckMode === 'ai' ? 'ai' : 'online'))
+    + listLink(mine.length, prefs.deckMode, sel)
     + resetBtn('「' + (sel || '（名前なし）') + '」の' + (prefs.deckMode === 'online' ? 'オンライン対戦の' : prefs.deckMode === 'ai' ? 'AI対戦の' : '') + '戦績をリセット', prefs.deckMode === 'all' ? '' : prefs.deckMode, sel, allRaw.filter((r) => r.myDeck === sel).length);
+}
+
+// 各タブの下: 「対戦の一覧」タブへ（そのタブの種類・デッキで絞った状態で開く）
+function listLink(n, mode, deck) {
+  return '<button class="rec-list-link" onclick="recGoList(' + jsArg(mode || 'all') + ',' + jsArg(deck || '') + ')">📋 この対戦の一覧を見る（' + n + '件） →</button>';
+}
+window.recGoList = (mode, deck) => { prefs.listMode = mode; prefs.listDeck = deck; prefs.tab = 'list'; savePrefs(); render(); window.scrollTo(0, 0); };
+
+function renderList() {
+  const allRaw = records;
+  if (!allRaw.length) return emptyTab('記録はまだありません', 'オンライン対戦・AI対戦をすると、ここに1試合ずつ並びます。');
+  let list = base(allRaw);
+  if (prefs.listMode !== 'all') list = list.filter((r) => r.mode === prefs.listMode);
+  const deckPool = prefs.listMode === 'all' ? allRaw : allRaw.filter((r) => r.mode === prefs.listMode);
+  if (prefs.listDeck) list = list.filter((r) => r.myDeck === prefs.listDeck);
+  return '<div class="rec-filter">' + chips([['all', 'すべて'], ['online', '🌐 オンライン'], ['ai', '🤖 AI']], prefs.listMode, 'recListMode')
+    + deckSelect(deckPool, prefs.listDeck, 'recListDeck') + '</div>'
+    + section('対戦の一覧（' + list.length + '件）<small>　📝 でメモ／🗑 で削除</small>', history(list));
 }
 
 const emptyTab = (t, sub) => '<div class="rec-empty"><div class="rec-empty-icon">📭</div><div>' + t + '</div><div class="rec-empty-sub">' + sub + '</div></div>';
@@ -382,7 +406,7 @@ function render() {
   if (!body) return;
   _resetArgs.length = 0;
   if (!loaded) { body.innerHTML = '<div class="rec-empty">' + (loading ? '読み込み中...' : '') + '</div>'; return; }
-  body.innerHTML = commonFilter() + (prefs.tab === 'ai' ? renderAi() : prefs.tab === 'deck' ? renderDeck() : renderOnline());
+  body.innerHTML = commonFilter() + (prefs.tab === 'ai' ? renderAi() : prefs.tab === 'deck' ? renderDeck() : prefs.tab === 'list' ? renderList() : renderOnline());
 }
 
 // ===== 1試合の詳しい情報とメモ =====
@@ -406,7 +430,7 @@ window.recOpen = function(id) {
     + row('決着時のセキュリティ', secText(r) === '—' ? '—' : '自分 ' + (r.mySec ?? '?') + '枚 ／ 相手 ' + (r.oppSec ?? '?') + '枚')
     + '<div class="rec-md-memo-t">📝 メモ</div>'
     + '<textarea id="rec-md-memo" maxlength="500" placeholder="例: 序盤に事故った／〇〇が刺さった">' + esc(r.memo || '') + '</textarea>'
-    + '<div class="rec-md-btns"><button class="rec-chip" onclick="recCloseModal()">閉じる</button><button class="rec-chip sel" id="rec-md-save" onclick="recSaveMemo(' + jsArg(r.id) + ')">メモを保存</button></div>'
+    + '<div class="rec-md-btns"><button class="rec-md-del" onclick="recDelete(' + jsArg(r.id) + ')">🗑 この記録を削除</button><button class="rec-chip" onclick="recCloseModal()">閉じる</button><button class="rec-chip sel" id="rec-md-save" onclick="recSaveMemo(' + jsArg(r.id) + ')">メモを保存</button></div>'
     + '</div>';
   document.getElementById('records-screen').appendChild(m);
 };
@@ -429,6 +453,28 @@ window.recSaveMemo = async function(id) {
   } catch (e) {
     alert('メモを保存できませんでした: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = 'メモを保存'; }
+  }
+};
+
+// ===== 1試合ずつ削除 =====
+let deleting = false;
+window.recDelete = async function(id) {
+  const r = records.find((x) => x.id === id);
+  if (!r || deleting) return;
+  const desc = fmtDate(r.startedAt) + '　' + oppOf(r) + '\n' + (r.myDeck || '') + ' → ' + (r.oppDeck || '') + '　' + r.result;
+  if (!confirm('この対戦の記録を削除しますか？\n\n' + desc + '\n\n削除した記録は元に戻せません。')) return;
+  deleting = true;
+  try {
+    const res = await gasPost('deleteMatchRecord', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', id });
+    if (!res || res.status !== 'OK') throw new Error((res && res.message) || '不明なエラー');
+    records = records.filter((x) => x.id !== id);
+    saveCache();
+    closeModal();
+    render();
+  } catch (e) {
+    alert('削除できませんでした: ' + e.message);
+  } finally {
+    deleting = false;
   }
 };
 
@@ -498,6 +544,8 @@ window.recAiDeck = (v) => setPref('aiDeck', v);
 window.recDeckMode = (v) => setPref('deckMode', v);
 window.recDeckSel = (v) => { mergeOpen = false; setPref('deckSel', v); };
 window.recPeriod = (v) => setPref('period', v);
+window.recListMode = (v) => { prefs.listDeck = ''; setPref('listMode', v); };
+window.recListDeck = (v) => setPref('listDeck', v);
 window.recShowAbort = (v) => setPref('showAbort', !!v);
 
 // 数字の吹き出し（マウスを乗せる・タップする）

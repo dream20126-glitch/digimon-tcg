@@ -9,10 +9,11 @@
       <button class="rec-tab" data-tab="online" onclick="recSetTab('online')">🌐 オンライン</button>
       <button class="rec-tab" data-tab="ai" onclick="recSetTab('ai')">🤖 AI</button>
       <button class="rec-tab" data-tab="deck" onclick="recSetTab('deck')">🃏 デッキごと</button>
+      <button class="rec-tab" data-tab="list" onclick="recSetTab('list')">📋 対戦の一覧</button>
     </div>
     <div id="rec-status" class="rec-status"></div>
     <div id="rec-body"><div class="rec-empty">読み込み中...</div></div>
-    <button class="menu-btn rec-back" onclick="backToTop()">TOPへ戻る</button>
+    <button class="menu-btn rec-back" onclick="showScreen('battle-mode-screen')">対戦の画面へ戻る</button>
   </div>
   <div id="rec-tip" class="rec-tip"></div>
 </div>

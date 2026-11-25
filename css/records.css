@@ -233,3 +233,11 @@
 .rec-hc { cursor: default; }
 .rec-hc-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #0a2633; }
 .rec-hc-foot .rec-hc-memo { flex: 1; min-width: 0; margin: 0; }
+
+/* 一覧の表の小さい表紙・AIのアイコン */
+.rec-deck.sm .rec-thumb { width: 20px; height: 28px; font-size: 11px; }
+.rec-ai { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.rec-ai > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-chip-ic { display: inline-flex; vertical-align: middle; margin-right: 5px; }
+.rec-chip { display: inline-flex; align-items: center; }
+.rec-hc-opp .rec-ai { max-width: 100%; }

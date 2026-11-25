@@ -73,15 +73,36 @@ function thumb(cover) {
   const u = cover ? getGoogleDriveDirectLink(cover) : '';
   return u ? '<img class="rec-thumb" src="' + esc(u) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">' : '<span class="rec-thumb rec-thumb-ph">🃏</span>';
 }
-// デッキ名 → 最後に記録した表紙・色（記録ごとに付いているので、いちばん新しいものを使う）
+// デッキ名 → 表紙（マイデッキ・おすすめデッキ（AI用）の表紙）。表紙を記録する前の対戦や、記録に表紙が無い対戦の表示に使う
+const deckCovers = { my: {}, ai: {} };
+let coversLoaded = false;
+async function loadDeckCovers() {
+  if (coversLoaded) return;
+  coversLoaded = true;
+  try {
+    const [mine, ai] = await Promise.all([
+      gasGet('getDecks', { pw: window.currentSessionPassword || '' }).catch(() => []),
+      gasGet('getSampleDecks', { forAi: '1' }).catch(() => []),
+    ]);
+    (Array.isArray(mine) ? mine : []).forEach((d) => { if (d && d.name && d.cover) deckCovers.my[d.name] = d.cover; });
+    (Array.isArray(ai) ? ai : []).forEach((d) => { const n = d && (d.deckName || d.name); if (n && d.cover) deckCovers.ai[n] = d.cover; });
+    if (loaded) render();
+  } catch (e) { console.warn('[戦績] デッキの表紙を読めませんでした', e); }
+}
+// デッキ名 → 最後に記録した表紙・色（記録ごとに付いているので、いちばん新しいものを使う）。表紙が無ければマイデッキ等の表紙
 function deckInfo(side, name) {
   const r = records.find((x) => (side === 'my' ? x.myDeck : x.oppDeck) === name && (side === 'my' ? (x.myCover || x.myColors) : (x.oppCover || x.oppColors)));
-  return r ? { cover: side === 'my' ? r.myCover : r.oppCover, colors: side === 'my' ? r.myColors : r.oppColors } : { cover: '', colors: '' };
+  const inf = r ? { cover: side === 'my' ? r.myCover : r.oppCover, colors: side === 'my' ? r.myColors : r.oppColors } : { cover: '', colors: '' };
+  if (!inf.cover) inf.cover = side === 'my' ? (deckCovers.my[name] || '') : (deckCovers.ai[name] || deckCovers.my[name] || '');
+  return inf;
 }
 function deckLabel(side, name, opt = {}) {
   const inf = deckInfo(side, name);
-  return '<span class="rec-deck">' + (opt.noThumb ? '' : thumb(inf.cover)) + '<span class="rec-deck-name">' + esc(name || '（名前なし）') + '</span>' + colorDots(inf.colors) + '</span>';
+  return '<span class="rec-deck' + (opt.small ? ' sm' : '') + '">' + thumb(inf.cover) + '<span class="rec-deck-name">' + esc(name || '（名前なし）') + '</span>' + colorDots(inf.colors) + '</span>';
 }
+// AIのアイコン（ベテラン・マスターは顔のアイコン、見習いは絵文字。ai-battle.js の _aiIconHtml）
+const aiIcon = (lv, size) => (typeof window._aiIconHtml === 'function' ? window._aiIconHtml(size || 20, lv) : '🤖');
+const aiLabel = (lv, size) => '<span class="rec-ai">' + aiIcon(lv, size) + '<span>' + esc(lvName(lv)) + '</span></span>';
 
 // ===== 部品 =====
 // 勝率のドーナツ（勝ち・負け・中断の割合）。真ん中に勝率
@@ -216,6 +237,7 @@ const secText = (r) => (r.mySec == null && r.oppSec == null ? '—' : (r.mySec ?
 // 対戦の一覧: 広い画面は表、スマホ（640px以下）はカード。「📝 メモ」ボタンで詳しい情報とメモ、🗑 で1試合削除
 // （行を押してメモが開くのは分かりにくい、とのことでボタンにした）
 const oppOf = (r) => (r.mode === 'ai' ? '🤖 ' + lvName(r.aiLevel) : '🌐 ' + (r.opp || '相手'));
+const oppHtml = (r) => (r.mode === 'ai' ? aiLabel(r.aiLevel, 20) : esc('🌐 ' + (r.opp || '相手')));
 const delBtn = (r) => '<button class="rec-del" title="この記録を削除" onclick="recDelete(' + jsArg(r.id) + ')">🗑</button>';
 const memoBtn = (r) => '<button class="rec-memo-btn' + (r.memo ? ' has' : '') + '"' + (r.memo ? ' title="' + esc(r.memo) + '"' : '') + ' onclick="recOpen(' + jsArg(r.id) + ')">📝 ' + (r.memo ? 'メモあり' : 'メモ') + '</button>';
 function history(list) {
@@ -223,8 +245,8 @@ function history(list) {
   const head = ['日時', '相手', '自分のデッキ', '相手のデッキ', '勝敗', '先/後', '決着の理由', 'ターン', '対戦時間', 'セキュリティ<br><small>自分-相手</small>', 'メモ', ''];
   const rows = list.map((r) => '<tr>'
     + '<td class="nw">' + fmtDate(r.startedAt) + '</td>'
-    + '<td class="nw">' + esc(oppOf(r)) + '</td>'
-    + '<td>' + deckLabel('my', r.myDeck, { noThumb: true }) + '</td><td>' + deckLabel('opp', r.oppDeck, { noThumb: true }) + '</td>'
+    + '<td class="nw">' + oppHtml(r) + '</td>'
+    + '<td>' + deckLabel('my', r.myDeck, { small: true }) + '</td><td>' + deckLabel('opp', r.oppDeck, { small: true }) + '</td>'
     + '<td>' + resultBadge(r) + '</td>'
     + '<td class="nw">' + (r.first ? '先攻' : '後攻') + '</td>'
     + '<td class="nw">' + esc(r.result === '中断' ? '—' : r.reason) + '</td>'
@@ -237,7 +259,7 @@ function history(list) {
   const cards = '<div class="rec-hist-cards">' + list.map((r) => {
     const facts = [r.first ? '先攻' : '後攻', r.turns ? r.turns + 'ターン' : '', r.result === '中断' ? '' : r.reason, r.durationSec ? fmtDur(r.durationSec) : '', (r.mySec != null || r.oppSec != null) ? '🛡 ' + secText(r) : ''].filter(Boolean);
     return '<div class="rec-hc rec-hc-' + resKey(r) + '">'
-      + '<div class="rec-hc-top">' + resultBadge(r) + '<span class="rec-hc-opp">' + esc(oppOf(r)) + '</span><span class="rec-hc-date">' + fmtShort(r.startedAt) + '</span></div>'
+      + '<div class="rec-hc-top">' + resultBadge(r) + '<span class="rec-hc-opp">' + oppHtml(r) + '</span><span class="rec-hc-date">' + fmtShort(r.startedAt) + '</span></div>'
       + '<div class="rec-hc-decks">' + deckLabel('my', r.myDeck) + '<span class="rec-hc-vs">→</span>' + deckLabel('opp', r.oppDeck) + '</div>'
       + '<div class="rec-hc-facts">' + facts.map((f) => '<span>' + esc(f) + '</span>').join('') + '</div>'
       + '<div class="rec-hc-foot"><span class="rec-hc-memo">' + (r.memo ? esc(r.memo) : '') + '</span>' + memoBtn(r) + delBtn(r) + '</div>'
@@ -252,7 +274,8 @@ function deckSelect(list, cur, fn) {
     + names.map((n) => '<option value="' + esc(n) + '"' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
 }
 function chips(items, cur, fn) {
-  return '<div class="rec-chips">' + items.map(([v, l]) => '<button class="rec-chip' + (v === cur ? ' sel' : '') + '" onclick="' + fn + '(' + jsArg(v) + ')">' + esc(l) + '</button>').join('') + '</div>';
+  // items: [値, 名前, 前に付けるアイコンのHTML（任意）]
+  return '<div class="rec-chips">' + items.map(([v, l, icon]) => '<button class="rec-chip' + (v === cur ? ' sel' : '') + '" onclick="' + fn + '(' + jsArg(v) + ')">' + (icon ? '<span class="rec-chip-ic">' + icon + '</span>' : '') + esc(l) + '</button>').join('') + '</div>';
 }
 
 // ===== リセット =====
@@ -304,10 +327,10 @@ function renderAi() {
   if (!allRaw.length) return emptyTab('AI対戦の記録はまだありません', 'AI対戦をすると、ここに勝ち負けが記録されます。');
   const all = base(allRaw);
   let list = prefs.aiDeck ? all.filter((r) => r.myDeck === prefs.aiDeck) : all;
-  const byLv = AI_ORDER.map((lv) => ({ key: lv, label: lvName(lv), list: list.filter((r) => r.aiLevel === lv) })).filter((g) => g.list.length);
+  const byLv = AI_ORDER.map((lv) => ({ key: lv, label: lvName(lv), html: aiLabel(lv, 24), list: list.filter((r) => r.aiLevel === lv) })).filter((g) => g.list.length);
   if (prefs.aiLevel) list = list.filter((r) => r.aiLevel === prefs.aiLevel);
   const aiDecks = groupBy(list, (r) => r.oppDeck).map((g) => Object.assign(g, { html: deckLabel('opp', g.key) }));
-  return '<div class="rec-filter">' + chips([['', 'すべて'], ...AI_ORDER.map((lv) => [lv, AI_LV[lv].short + '：' + AI_LV[lv].name])], prefs.aiLevel, 'recAiLevel') + deckSelect(allRaw, prefs.aiDeck, 'recAiDeck') + '</div>'
+  return '<div class="rec-filter">' + chips([['', 'すべて'], ...AI_ORDER.map((lv) => [lv, AI_LV[lv].name, aiIcon(lv, 18)])], prefs.aiLevel, 'recAiLevel') + deckSelect(allRaw, prefs.aiDeck, 'recAiDeck') + '</div>'
     + (list.length ? summary(list)
       + section('AIのレベルごと <small>（押すとそのレベルだけ）</small>', groupRows(byLv, { onclick: 'recAiLevel', sel: prefs.aiLevel }), legend())
       + recent(list)
@@ -422,7 +445,7 @@ window.recOpen = function(id) {
   m.innerHTML = '<div class="rec-md">'
     + '<div class="rec-md-head">' + resultBadge(r) + '<span>' + fmtDate(r.startedAt) + '</span><button class="rec-md-x" onclick="recCloseModal()">✕</button></div>'
     + '<div class="rec-md-decks">' + deckLabel('my', r.myDeck) + '<span class="rec-hc-vs">→</span>' + deckLabel('opp', r.oppDeck) + '</div>'
-    + row(r.mode === 'ai' ? 'AIのレベル' : '相手', esc(r.mode === 'ai' ? lvName(r.aiLevel) : r.opp))
+    + row(r.mode === 'ai' ? 'AIのレベル' : '相手', r.mode === 'ai' ? aiLabel(r.aiLevel, 22) : esc(r.opp))
     + row('先攻/後攻', r.first ? '先攻' : '後攻')
     + row('決着の理由', esc(r.result === '中断' ? '—' : r.reason))
     + row('ターン数', r.turns ? r.turns + 'ターン' : '—')
@@ -531,10 +554,11 @@ window.loadRecords = async function(force) {
 let _recUser = '';
 window.showRecords = function() {
   // ログインし直したら前の人の記録を出さない
-  if (_recUser !== (window.currentPlayerName || '')) { _recUser = window.currentPlayerName || ''; loaded = false; records = []; }
+  if (_recUser !== (window.currentPlayerName || '')) { _recUser = window.currentPlayerName || ''; loaded = false; records = []; coversLoaded = false; deckCovers.my = {}; deckCovers.ai = {}; }
   mergeOpen = false;
   showScreen('records-screen');
   window.loadRecords(true);
+  loadDeckCovers();
 };
 const setPref = (k, v) => { prefs[k] = v; savePrefs(); render(); };
 window.recSetTab = (t) => { mergeOpen = false; setPref('tab', t); };

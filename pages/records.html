@@ -1,0 +1,17 @@
+<!-- ===== 戦績（オンライン対戦 / AI対戦 / デッキごと）。中身は js/records.js が描く ===== -->
+<div id="records-screen" class="screen">
+  <div class="rec-wrap">
+    <div class="rec-head">
+      <h2 class="rec-title">📊 戦績</h2>
+      <button class="rec-reload" onclick="loadRecords(true)">↻ 更新</button>
+    </div>
+    <div class="rec-tabs" role="tablist">
+      <button class="rec-tab" data-tab="online" onclick="recSetTab('online')">🌐 オンライン</button>
+      <button class="rec-tab" data-tab="ai" onclick="recSetTab('ai')">🤖 AI</button>
+      <button class="rec-tab" data-tab="deck" onclick="recSetTab('deck')">🃏 デッキごと</button>
+    </div>
+    <div id="rec-body"><div class="rec-empty">読み込み中...</div></div>
+    <button class="menu-btn rec-back" onclick="backToTop()">TOPへ戻る</button>
+  </div>
+  <div id="rec-tip" class="rec-tip"></div>
+</div>

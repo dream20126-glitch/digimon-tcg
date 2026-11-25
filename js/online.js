@@ -239,6 +239,8 @@ function updateLobbyUI(data) {
         showScreen('battle-screen');
         if (typeof startOnlineBattle === 'function') {
           const oppName = data[oppKey2]?.name || '相手プレイヤー';
+          // 戦績に残すデッキ名
+          window._onlineMatchInfo = { myDeck: data[myPlayerKey]?.deckName || '', oppDeck: data[oppKey2]?.deckName || '' };
           startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey, oppName);
         }
       }

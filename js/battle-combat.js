@@ -4205,7 +4205,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
       //   にする。
       // クリアモーダルを勝利演出より先に出させないためのフラグ
       bs._tutorialExpectVictory = true;
-      const _runDirect = () => showDirectAttack(atk, 'player', () => { battleVictory(); });
+      const _runDirect = () => showDirectAttack(atk, 'player', () => { battleVictory('ダイレクトアタック'); });
       if (window._tutorialRunner && window._tutorialRunner.active) {
         try {
           window._tutorialRunner.notifyEvent('attack_declared', {
@@ -6898,7 +6898,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks, _chec
     }
   } else {
     const aiAtk = bs.ai.battleArea.find(c => c !== null) || { name: 'AI', dp: 0 };
-    showDirectAttack(aiAtk, 'ai', () => { battleDefeat(); });
+    showDirectAttack(aiAtk, 'ai', () => { battleDefeat('ダイレクトアタック'); });
   }
 }
 
@@ -8193,9 +8193,12 @@ if (typeof window !== 'undefined') window._checkPendingTurnEndOnly = checkPendin
 
 // ===== 勝敗判定 =====
 
-export function battleVictory() {
+// reason: 決着の理由（戦績に記録。'ダイレクトアタック' / 'デッキ切れ' / '投了'）。オンラインは相手にも理由を送る
+export function battleVictory(reason) {
   const wasOnline = _onlineMode;
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'defeat' });
+  const _reason = typeof reason === 'string' && reason ? reason : 'その他';
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'defeat', reason: _reason });
+  try { if (window._matchRecord) window._matchRecord.end('勝ち', _reason); } catch (_) {}
   showGameEndOverlay('🎉 勝利！', 'victory', () => {
     cleanupBattle();
     if (wasOnline && window._cleanupOnline) window._cleanupOnline();
@@ -8208,9 +8211,11 @@ export function battleVictory() {
   });
 }
 
-export function battleDefeat() {
+export function battleDefeat(reason) {
   const wasOnline = _onlineMode;
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'victory' });
+  const _reason = typeof reason === 'string' && reason ? reason : 'その他';
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'victory', reason: _reason });
+  try { if (window._matchRecord) window._matchRecord.end('負け', _reason); } catch (_) {}
   showGameEndOverlay('😢 敗北...', 'defeat', () => {
     cleanupBattle();
     if (wasOnline && window._cleanupOnline) window._cleanupOnline();

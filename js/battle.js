@@ -186,6 +186,8 @@ window.confirmExitGate = function() {
       if (window._tutorialRunner.cleared) return; // クリアモーダル → シナリオ一覧へ遷移するので以降をスキップ
     }
     const wasOnline = isOnlineMode();
+    // 途中で出た: 戦績は「中断」
+    try { if (window._matchRecord) window._matchRecord.abort(); } catch (_) {}
     if (wasOnline) sendCommand({ type: 'player_exit', playerName: '' });
     cleanupOnline();
     // AI対戦: 準備画面に戻る（CPU の続きの行動は止める）
@@ -198,6 +200,23 @@ window.confirmExitGate = function() {
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 };
+
+// 投了（オンライン対戦・AI対戦だけ）。自分の負けで終わり、決着の理由は「投了」
+window.confirmSurrender = function() {
+  if (!(isOnlineMode() || window._aiBattleActive)) return;
+  showConfirm({ title: '🏳 投了', message: '投了しますか？\nこの対戦は負けになります。', yesText: '投了する', noText: 'やめる', color: '#ff4444' }).then(yes => {
+    if (!yes) return;
+    if (bs._battleAborted) return;
+    addLog('🏳 投了しました');
+    battleDefeat('投了');
+  });
+};
+// 投了ボタンは戦績を付ける対戦（オンライン・AI）だけ出す
+function _updateSurrenderBtn() {
+  const b = document.getElementById('surrender-btn');
+  if (b) b.style.display = (isOnlineMode() || window._aiBattleActive) && !(window._tutorialRunner && window._tutorialRunner.active) ? '' : 'none';
+}
+window._updateSurrenderBtn = _updateSurrenderBtn;
 
 // ===== マリガン =====
 let _mulliganUsed = false;
@@ -480,7 +499,7 @@ window.doMulligan = function() {
 setPhaseHooks({
   aiMainPhase: aiMainPhase,
   aiAttackPhase: aiAttackPhase,
-  onDeckOut: () => { addLog('⚠ デッキ切れ！'); battleDefeat(); },
+  onDeckOut: () => { addLog('⚠ デッキ切れ！'); battleDefeat('デッキ切れ'); },
 });
 
 // Phase 6: オンラインモジュールに各演出/フェーズ関数を注入
@@ -635,6 +654,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 自分側の名前（下端のリボン）
   const myNameLabel = document.getElementById('my-name-label');
   if (myNameLabel) myNameLabel.innerText = window.currentPlayerName || 'あなた';
+  _updateSurrenderBtn();
 
   // デッキパース
   const plCards = parseDeck(playerDeckData);
@@ -755,6 +775,11 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
   setOnlineInfo(true, myKey);
   // ゲーム開始
   await window.startBattleGame(playerDeckData, oppDeckData, playerFirst);
+  // 戦績の記録を始める（デッキ名は online.js がルームの情報から渡す）
+  try {
+    const mi = window._onlineMatchInfo || {};
+    if (window._matchRecord) window._matchRecord.start({ mode: 'online', opp: oppName || '', myDeck: mi.myDeck || '', oppDeck: mi.oppDeck || '', first: playerFirst, roomId });
+  } catch (e) { console.warn('[戦績] 開始の記録に失敗', e); }
   // 相手の名前を表示
   const oppLabel = document.getElementById('opponent-name-label');
   if (oppLabel) oppLabel.innerText = '🎮 ' + (oppName || '相手プレイヤー');
@@ -778,6 +803,8 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
 window.resumeOnlineBattle = async function(info, snap, applySnapshot) {
   const { roomId, myKey, playerFirst, oppName, myList, oppList } = info;
   await resumeOnline(roomId, myKey);
+  // 戦績: 端末に残した記録の続きから
+  try { if (window._matchRecord) window._matchRecord.resume(roomId); } catch (_) {}
   setFirstPlayer(playerFirst);
   window._isFirstPlayer = playerFirst;
   setOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
@@ -803,6 +830,7 @@ window.resumeOnlineBattle = async function(info, snap, applySnapshot) {
   showScreen('battle-screen');
   updateMemGauge();
   renderAll();
+  _updateSurrenderBtn();
   addLog('🔌 対戦に戻りました。相手の盤面を受け取っています…');
   // コマンドの受信を再開 → 相手に盤面・ターンを送り直してもらい、こちらの盤面も送る
   startOnlineListener();

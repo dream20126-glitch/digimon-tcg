@@ -341,7 +341,7 @@ export function getOppTurnColor() {
 // ===== プレイヤーターン開始 =====
 
 export function startPlayerTurn() {
-  bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);
+  bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn);
   showYourTurn('自分のターン開始', '', '#00fbff', async () => {
     // チュートリアル: プレイヤーターンの AIスクリプト (block/select_target 意図セット)
     //   通算ターン番号 = 2 * bs.turn - 1 (プレイヤー N 回目 = 2N-1)
@@ -369,7 +369,7 @@ export function startPlayerTurn() {
  */
 export function startFirstTurn() {
   console.log('[診断] startFirstTurn called @', new Date().toISOString(), 'runner=', !!window._tutorialRunner, 'opponentScriptRunner=', !!window._tutorialRunner?.opponentScriptRunner);
-  bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);
+  bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn);
   showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', async () => {
     console.log('[診断] startFirstTurn showYourTurn cb @', new Date().toISOString(), 'opponentScriptRunner=', !!window._tutorialRunner?.opponentScriptRunner);
     // チュートリアル: プレイヤーターンの AIスクリプト (block/select_target 意図セット)
@@ -780,7 +780,7 @@ export function onEndTurn() {
     });
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
+      bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
       // ターン中アタック回数のリセット
       bs._currentTurnAttackCount = 0;
       bs._evolveCountThisTurn = 0;
@@ -820,7 +820,7 @@ export function onEndTurn() {
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
+      bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
       setTimeout(() => aiTurn(), 500);
     });
   });
@@ -988,7 +988,7 @@ export function checkAutoTurnEnd() {
     // バースト進化の保留処理（ターン終了時、バースト進化したカードを破棄）。相手にターンを渡す前に行う
     await new Promise((res) => { try { _processBurstEvolvePendingDiscard(bs, 'player', res); } catch (_) { res(); } });
     bs._autoTurnEnding = false;
-    bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
+    bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
     // プレイヤーのターン終了。AI対戦では CPU のカードの「相手のターン終了時」効果を解決してから期間を切る
     // （公式ルール6-6-3。CPU が「次の相手のターン終了まで」与えた『【相手のターン終了時】〜』が先に消えないように。
     // ディルビットモンACE LM-013）
@@ -1156,7 +1156,7 @@ function aiPhaseDraw() {
   } else {
     addLog('⚠ AIのデッキ切れ！');
     // デッキが0枚でドローできない → 相手（AI）の敗北（公式ルール）
-    if (typeof window.battleVictory === 'function') window.battleVictory();
+    if (typeof window.battleVictory === 'function') window.battleVictory('デッキ切れ');
     return;
   }
 }
@@ -1385,7 +1385,7 @@ async function endAiTurn() {
   updateMemGauge();
 
   showYourTurn('相手のターン終了', '', '#555555', () => {
-    bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);
+    bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn);
     // ターン中アタック回数のリセット
     bs._currentTurnAttackCount = 0;
     bs._evolveCountThisTurn = 0;

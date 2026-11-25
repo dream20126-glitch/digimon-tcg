@@ -987,7 +987,7 @@ function onRemoteCommand(cmd) {
         renderAll();
         if (m.showYourTurn) {
           m.showYourTurn('相手のターン終了', '', '#555555', () => {
-            bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);
+            bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); if (window._matchTurnStart) window._matchTurnStart(bs.isPlayerTurn);
             m.showYourTurn('自分のターン開始', '', '#00fbff', () => {
               const afterStart = () => {
                 bs._receivingTurn = false;
@@ -1644,6 +1644,7 @@ function onRemoteCommand(cmd) {
           if (!el.classList.contains('screen')) el.remove();
         });
         const isWin = cmd.result === 'victory';
+        try { if (window._matchRecord) window._matchRecord.end(isWin ? '勝ち' : '負け', cmd.reason || 'その他'); } catch (_) {}
         m.showGameEndOverlay(isWin ? '🎉 勝利！' : '😢 敗北...', isWin ? 'victory' : 'defeat', () => {
           cleanupOnline();
           if (window._onGameEnd) { window._onGameEnd(); return; }
@@ -1673,6 +1674,8 @@ function onRemoteCommand(cmd) {
     }
     case 'player_exit': {
       try { if (window._onlineResume) window._onlineResume.onBattleEnded(); } catch (_) {}
+      // 相手が途中で退室した: 戦績は「中断」
+      try { if (window._matchRecord) window._matchRecord.abort(); } catch (_) {}
       const exitOv = document.createElement('div');
       exitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:60000;display:flex;align-items:center;justify-content:center;';
       const exitBox = document.createElement('div');

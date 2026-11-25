@@ -264,7 +264,8 @@ async function beginBattle(playerFirst) {
     await window.startBattleGame({ list: my.list }, { list: ai.list }, playerFirst);
     // 戦績の記録を始める
     try {
-      if (window._matchRecord) window._matchRecord.start({ mode: 'ai', opp: window._aiName || 'AI', aiLevel: level, myDeck: deckName(my), oppDeck: deckName(ai), first: playerFirst });
+      if (window._matchRecord) window._matchRecord.start({ mode: 'ai', opp: window._aiName || 'AI', aiLevel: level, myDeck: deckName(my), oppDeck: deckName(ai),
+        myCover: my.cover || '', oppCover: ai.cover || '', myList: my.list, oppList: ai.list, first: playerFirst });
     } catch (e) { console.warn('[戦績] 開始の記録に失敗', e); }
     const oppLabel = document.getElementById('opponent-name-label');
     if (oppLabel) oppLabel.innerHTML = window._aiIconHtml(18) + ' ' + esc(window._aiName);

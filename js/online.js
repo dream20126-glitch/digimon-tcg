@@ -240,7 +240,8 @@ function updateLobbyUI(data) {
         if (typeof startOnlineBattle === 'function') {
           const oppName = data[oppKey2]?.name || '相手プレイヤー';
           // 戦績に残すデッキ名
-          window._onlineMatchInfo = { myDeck: data[myPlayerKey]?.deckName || '', oppDeck: data[oppKey2]?.deckName || '' };
+          window._onlineMatchInfo = { myDeck: data[myPlayerKey]?.deckName || '', oppDeck: data[oppKey2]?.deckName || '',
+            myCover: data[myPlayerKey]?.deckCover || '', oppCover: data[oppKey2]?.deckCover || '' };
           startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey, oppName);
         }
       }
@@ -279,7 +280,7 @@ window.setPlayerReady = function() {
   // キャッシュ済みデッキからカードリストを取得（GAS再呼び出し不要）
   const deck = _loadedDecks.find(d => d.name === deckName);
   if (!deck || !deck.list) { alert('デッキデータが見つかりません。ページを再読み込みしてください。'); return; }
-  update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { ready: true, deckName, deckList: deck.list });
+  update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { ready: true, deckName, deckList: deck.list, deckCover: deck.cover || '' });
   document.getElementById('deck-select-area').innerHTML = `<p style="color:var(--main-cyan); font-weight:bold; margin:0;">デッキ確定: ${deckName}</p><p style="color:#aaa; font-size:12px; margin-top:8px;">相手の準備を待っています...</p>`;
 };
 

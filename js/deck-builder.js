@@ -518,6 +518,14 @@ window.handleSaveRequest = async function() {
       throw new Error((saveResult && saveResult.error) || '保存できませんでした');
     }
     const isUpdate = saveResult.status === 'SUCCESS_UPDATE';
+    // マイデッキの編集で名前を変えた: 前の名前の戦績を新しい名前にまとめるか聞く（デッキ名で戦績を分けているため）
+    const _oldName = window._editDeckName;
+    if (_oldName && _oldName !== name && !window.isSampleMode && !isTutorialMode) {
+      if (confirm('戦績の「' + _oldName + '」の記録を、新しい名前「' + name + '」にまとめますか？\n（まとめないと、前の名前の記録は別のデッキとして残ります）')) {
+        gasPost('renameMatchDeck', { playerName: window.currentPlayerName || '', password: pw, from: _oldName, to: name })
+          .catch((e) => console.warn('[戦績] デッキ名をまとめられませんでした', e));
+      }
+    }
     document.getElementById('finish-status-title').innerText =
       isUpdate ? 'デッキの編集が完了しました' : 'デッキの保存が完了しました';
     document.getElementById('finish-deck-name').innerText = name;

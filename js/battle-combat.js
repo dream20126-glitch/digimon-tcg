@@ -9242,6 +9242,25 @@ export function showGameEndOverlay(text, type, callback) {
   };
   overlay.appendChild(btn);
 
+  // 戦績を付けた対戦（オンライン・AI）: 「戦績に記録しました」と、戦績の画面へ移るボタン
+  const _mr = window._matchRecord;
+  if (_mr && _mr.justRecorded && typeof window.showRecords === 'function') {
+    _mr.justRecorded = false;
+    const note = document.createElement('div');
+    note.style.cssText = 'position:relative;z-index:1;margin-top:16px;font-size:12px;color:#ffffffaa;opacity:0;animation:gateTextAppear 1s ease 1.6s forwards;';
+    note.innerText = '📊 この対戦を戦績に記録しました';
+    overlay.appendChild(note);
+    const rb = document.createElement('button');
+    rb.style.cssText = 'position:relative;z-index:1;margin-top:10px;background:none;color:#00fbff;border:1px solid #00fbff88;padding:9px 22px;border-radius:10px;font-size:0.9rem;cursor:pointer;opacity:0;animation:gateTextAppear 1s ease 1.7s forwards;';
+    rb.innerText = '📊 戦績を見る';
+    rb.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback();
+      setTimeout(() => window.showRecords(), 0);
+    };
+    overlay.appendChild(rb);
+  }
+
   document.body.appendChild(overlay);
 }
 

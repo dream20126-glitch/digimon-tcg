@@ -21,7 +21,7 @@ export { ref, set, update, remove, onValue, onDisconnect };
 
 // ===== GAS REST API ヘルパー =====
 // デプロイ後にここのURLを更新してください
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxB3kIy-fSGrGfJm65RWaNxGGvpCeF0GqrqGitXT7yBRLZE9LtW-SbpOqydxTLgDKf8/exec';
+export const GAS_URL = 'https://script.google.com/macros/s/AKfycbxB3kIy-fSGrGfJm65RWaNxGGvpCeF0GqrqGitXT7yBRLZE9LtW-SbpOqydxTLgDKf8/exec';
 
 // GAS Webアプリの302リダイレクト先(script.googleusercontent.com)が
 // 一定確率(実測15〜25%)で404を返す既知の間欠障害があるため、

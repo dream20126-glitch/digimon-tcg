@@ -171,6 +171,21 @@ setupCommonHooks();
 // チュートリアルランナー用: parseDeck を公開（cardNo→カードオブジェクト変換に使用）
 window.parseDeck = parseDeck;
 
+// 戦績用: デッキの色（カードの「色」を数える。2色のカードは半分ずつ。2割以上の色を多い順に最大3色 → '赤/黄'）
+// 対戦の開始後（デッキのカードを読み込んだ後）に呼ぶ
+window._deckColorsOf = function(list) {
+  if (!list) return '';
+  const cnt = {};
+  let total = 0;
+  parseDeck({ list }).forEach((c) => {
+    const cols = String(c.color || '').split('/').map((x) => x.trim()).filter(Boolean);
+    cols.forEach((col) => { cnt[col] = (cnt[col] || 0) + 1 / cols.length; });
+    if (cols.length) total++;
+  });
+  if (!total) return '';
+  return Object.entries(cnt).filter(([, v]) => v / total >= 0.2).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k).join('/');
+};
+
 // HTML onclick から呼ばれる補助関数（battle.js固有）
 window.confirmExitGate = function() {
   // チュートリアル: ボタン押下時点で通知（確認ダイアログ表示前の進行条件用）
@@ -778,7 +793,9 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
   // 戦績の記録を始める（デッキ名は online.js がルームの情報から渡す）
   try {
     const mi = window._onlineMatchInfo || {};
-    if (window._matchRecord) window._matchRecord.start({ mode: 'online', opp: oppName || '', myDeck: mi.myDeck || '', oppDeck: mi.oppDeck || '', first: playerFirst, roomId });
+    if (window._matchRecord) window._matchRecord.start({ mode: 'online', opp: oppName || '', myDeck: mi.myDeck || '', oppDeck: mi.oppDeck || '',
+      myCover: mi.myCover || '', oppCover: mi.oppCover || '', myList: playerDeckData && playerDeckData.list, oppList: oppDeckData && oppDeckData.list,
+      first: playerFirst, roomId });
   } catch (e) { console.warn('[戦績] 開始の記録に失敗', e); }
   // 相手の名前を表示
   const oppLabel = document.getElementById('opponent-name-label');

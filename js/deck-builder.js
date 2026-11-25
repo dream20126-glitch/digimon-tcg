@@ -153,10 +153,30 @@ let resultList = [];
 let renderedCount = 0;
 let resultObserver = null;
 
+// デッキに入れている枚数（このカードNoの分）
+function deckCountOf(id) {
+  const item = tempDeck.find(i => i.card["カードNo"] === id);
+  return item ? item.count : 0;
+}
+// 検索結果のカードに、デッキに入れている印（青く光る・枚数）を付ける／外す
+function applyThumbMark(el, id) {
+  if (!el) return;
+  const n = deckCountOf(id);
+  el.classList.toggle('in-deck', n > 0);
+  let b = el.querySelector('.thumb-count');
+  if (n > 0) {
+    if (!b) { b = document.createElement('div'); b.className = 'thumb-count'; el.appendChild(b); }
+    b.innerText = '×' + n;
+  } else if (b) b.remove();
+}
+function refreshThumbMarks() {
+  document.querySelectorAll('#search-results .card-thumb[data-id]').forEach(el => applyThumbMark(el, el.getAttribute('data-id')));
+}
 function thumbHtml(c) {
   const safeId = c["カードNo"].replace(/[^a-z0-9]/gi, '');
   const imgUrl = getCardImageUrl(c);
-  return `<div class="card-thumb" onclick="showPreview('${c["カードNo"]}')">
+  const n = deckCountOf(c["カードNo"]);
+  return `<div class="card-thumb${n > 0 ? ' in-deck' : ''}" data-id="${c["カードNo"]}" onclick="showPreview('${c["カードNo"]}')">${n > 0 ? `<div class="thumb-count">×${n}</div>` : ''}
       <div id="img-box-${safeId}">${imgUrl ? `<img src="${imgUrl}" loading="lazy" decoding="async" style="width:100%">` : '<div style="height:100px; background:#111;"></div>'}</div>
       <div style="font-size:9px; color:#555; margin-top:3px;">${c["カードNo"]}</div>
     </div>`;
@@ -444,6 +464,8 @@ window.updateDeckUI = function() {
   const tamaEl = document.getElementById('tama-count');
   if (mainEl) mainEl.innerText = mainTotal;
   if (tamaEl) tamaEl.innerText = tamaTotal;
+  // 検索結果の「デッキに入れている」印も合わせる
+  refreshThumbMarks();
 };
 
 // ===== 保存処理（GAS API） =====

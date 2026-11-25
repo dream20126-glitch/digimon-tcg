@@ -325,12 +325,36 @@
   line-height: 1.6;
   white-space: pre-wrap;
 }
-/* カード詳細の枚数ボタン（0〜4）: 今の枚数を光らせる */
-.qty-btn.active {
-  background: rgba(0, 251, 255, 0.2);
+/* カード詳細の枚数ボタン（0〜4）: 今の枚数を塗りつぶして光らせる（他のボタンと見分けがつくように） */
+.ctrl-btn.qty-btn.active,
+.ctrl-btn.qty-btn.active:hover {
+  background: var(--main-cyan);
+  border-color: #bffeff;
+  color: #001417;
+  font-weight: 900;
+  box-shadow: 0 0 14px var(--glow-cyan), 0 0 4px #fff inset;
+}
+/* 検索結果: デッキに入れているカードは青く光らせ、右上に枚数 */
+.card-thumb.in-deck {
   border-color: var(--main-cyan);
-  color: var(--main-cyan);
-  font-weight: bold;
+  box-shadow: 0 0 12px var(--glow-cyan), inset 0 0 8px rgba(0, 251, 255, 0.35);
+}
+.card-thumb .thumb-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  min-width: 24px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--main-cyan);
+  color: #001417;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 8px var(--glow-cyan);
+  pointer-events: none;
 }
 /* カード詳細の効果（メイン効果／進化元効果・オプション効果・リンク効果／セキュリティ効果） */
 .effect-item {

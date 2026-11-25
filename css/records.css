@@ -241,3 +241,33 @@
 .rec-chip-ic { display: inline-flex; vertical-align: middle; margin-right: 5px; }
 .rec-chip { display: inline-flex; align-items: center; }
 .rec-hc-opp .rec-ai { max-width: 100%; }
+
+/* ===== 対戦の一覧（1試合1行: 日付・勝敗・相手 ＋ 詳細・削除） ===== */
+.rec-hist { display: flex; flex-direction: column; gap: 6px; }
+.rec-hr { display: flex; align-items: center; gap: 10px; background: #041620; border: 1px solid var(--rec-line); border-left: 4px solid var(--rec-abort); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.rec-hr-win { border-left-color: var(--rec-win); }
+.rec-hr-lose { border-left-color: var(--rec-lose); }
+.rec-hr-date { font-size: 12px; color: var(--rec-ink2); white-space: nowrap; width: 84px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.rec-hr .rec-badge { flex-shrink: 0; min-width: 40px; text-align: center; }
+.rec-hr-opp { flex: 1; min-width: 0; font-size: 13px; color: var(--rec-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.rec-hr-opp .rec-ai { min-width: 0; }
+.rec-hr-memo { font-size: 12px; flex-shrink: 0; }
+.rec-hr-detail { flex-shrink: 0; background: rgba(0, 251, 255, 0.1); border: 1px solid var(--main-cyan); color: var(--main-cyan); border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: bold; cursor: pointer; }
+.rec-hr-detail:hover { background: rgba(0, 251, 255, 0.2); }
+/* 削除: 赤で目立たせ、「詳細」から離して置く */
+.rec-hr-del { flex-shrink: 0; margin-left: 10px; background: rgba(255, 84, 112, 0.12); border: 1.5px solid var(--rec-lose); color: #ff8a9c; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer; }
+.rec-hr-del::before { content: '🗑 '; }
+.rec-hr-del:hover { background: var(--rec-lose); color: #fff; }
+.rec-md-del { background: rgba(255, 84, 112, 0.12); border: 1.5px solid var(--rec-lose); color: #ff8a9c; font-weight: bold; }
+.rec-md-del:hover { background: var(--rec-lose); color: #fff; }
+@media (max-width: 640px) {
+  .rec-hr { gap: 7px; padding: 8px; }
+  .rec-hr-date { width: auto; font-size: 11px; }
+  .rec-hr .rec-badge { min-width: 0; padding: 2px 6px; }
+  .rec-hr-opp { font-size: 12px; }
+  .rec-hr-opp img { width: 18px !important; height: 18px !important; }
+  .rec-hr-detail { padding: 6px 10px; }
+  .rec-hr-del { margin-left: 4px; padding: 6px 8px; }
+  .rec-hr-del::before { content: ''; }
+}
+.rec-md-title { color: var(--main-cyan); font-weight: bold; font-size: 14px; margin-bottom: 8px; }

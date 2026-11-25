@@ -3,7 +3,7 @@
 //  - AI: 勝率・AIのレベルごと・勝率の移り変わり・AIのデッキごと・決着の理由 → 対戦の一覧
 //  - デッキごと: 自分のデッキごとの勝率 → 選んだデッキの「相手のデッキごと」「相手のデッキの色ごと」の勝ち負け・先攻/後攻
 // 勝率は「勝ち ÷（勝ち＋負け）」。中断は数に出すが勝率には入れない（「中断を表示」を切ると数にも出さない）。
-//  - 対戦の一覧: オンライン・AI の全対戦（表・スマホはカード）。「📝 メモ」ボタンで詳しい情報とメモ、🗑 で1試合ずつ削除
+//  - 対戦の一覧: オンライン・AI の全対戦（日付・勝敗・相手の1行）。「詳細」で詳しい情報・メモ・削除。一覧からも削除できる
 // 読み込み: 前回読んだ記録を端末に覚えておき、開いたらすぐ出す → 裏で最新を読み直して差し替える
 // 記録は js/match-record.js が付ける（GAS のシート「戦績」）
 import { gasGet, gasPost } from './firebase-config.js';
@@ -234,38 +234,19 @@ const section = (title, body, extra) => '<div class="rec-sec"><div class="rec-se
 const resultBadge = (r) => '<span class="rec-badge rec-c-' + resKey(r) + '">' + esc(r.result) + '</span>';
 const secText = (r) => (r.mySec == null && r.oppSec == null ? '—' : (r.mySec ?? '?') + ' - ' + (r.oppSec ?? '?'));
 
-// 対戦の一覧: 広い画面は表、スマホ（640px以下）はカード。「📝 メモ」ボタンで詳しい情報とメモ、🗑 で1試合削除
-// （行を押してメモが開くのは分かりにくい、とのことでボタンにした）
+// 対戦の一覧: 1試合1行で「日付・勝敗・相手」だけ（横にスクロールしない）。「詳細」で詳しい情報・メモ・削除。
+// 一覧の「削除」は押し間違えないよう、赤い枠の別のボタンにして「詳細」から離して置く（押すと確認が出る）
 const oppOf = (r) => (r.mode === 'ai' ? '🤖 ' + lvName(r.aiLevel) : '🌐 ' + (r.opp || '相手'));
 const oppHtml = (r) => (r.mode === 'ai' ? aiLabel(r.aiLevel, 20) : esc('🌐 ' + (r.opp || '相手')));
-const delBtn = (r) => '<button class="rec-del" title="この記録を削除" onclick="recDelete(' + jsArg(r.id) + ')">🗑</button>';
-const memoBtn = (r) => '<button class="rec-memo-btn' + (r.memo ? ' has' : '') + '"' + (r.memo ? ' title="' + esc(r.memo) + '"' : '') + ' onclick="recOpen(' + jsArg(r.id) + ')">📝 ' + (r.memo ? 'メモあり' : 'メモ') + '</button>';
 function history(list) {
   if (!list.length) return '<div class="rec-empty-sm">まだ記録がありません</div>';
-  const head = ['日時', '相手', '自分のデッキ', '相手のデッキ', '勝敗', '先/後', '決着の理由', 'ターン', '対戦時間', 'セキュリティ<br><small>自分-相手</small>', 'メモ', ''];
-  const rows = list.map((r) => '<tr>'
-    + '<td class="nw">' + fmtDate(r.startedAt) + '</td>'
-    + '<td class="nw">' + oppHtml(r) + '</td>'
-    + '<td>' + deckLabel('my', r.myDeck, { small: true }) + '</td><td>' + deckLabel('opp', r.oppDeck, { small: true }) + '</td>'
-    + '<td>' + resultBadge(r) + '</td>'
-    + '<td class="nw">' + (r.first ? '先攻' : '後攻') + '</td>'
-    + '<td class="nw">' + esc(r.result === '中断' ? '—' : r.reason) + '</td>'
-    + '<td class="r">' + (r.turns || '—') + '</td>'
-    + '<td class="r nw">' + (r.durationSec ? fmtDur(r.durationSec) : '—') + '</td>'
-    + '<td class="r nw">' + secText(r) + '</td>'
-    + '<td class="c">' + memoBtn(r) + '</td>'
-    + '<td class="c">' + delBtn(r) + '</td></tr>').join('');
-  const table = '<div class="rec-table-wrap rec-hist-table"><table class="rec-table"><thead><tr>' + head.map((h, i) => '<th' + (i >= 7 && i <= 9 ? ' class="r"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
-  const cards = '<div class="rec-hist-cards">' + list.map((r) => {
-    const facts = [r.first ? '先攻' : '後攻', r.turns ? r.turns + 'ターン' : '', r.result === '中断' ? '' : r.reason, r.durationSec ? fmtDur(r.durationSec) : '', (r.mySec != null || r.oppSec != null) ? '🛡 ' + secText(r) : ''].filter(Boolean);
-    return '<div class="rec-hc rec-hc-' + resKey(r) + '">'
-      + '<div class="rec-hc-top">' + resultBadge(r) + '<span class="rec-hc-opp">' + oppHtml(r) + '</span><span class="rec-hc-date">' + fmtShort(r.startedAt) + '</span></div>'
-      + '<div class="rec-hc-decks">' + deckLabel('my', r.myDeck) + '<span class="rec-hc-vs">→</span>' + deckLabel('opp', r.oppDeck) + '</div>'
-      + '<div class="rec-hc-facts">' + facts.map((f) => '<span>' + esc(f) + '</span>').join('') + '</div>'
-      + '<div class="rec-hc-foot"><span class="rec-hc-memo">' + (r.memo ? esc(r.memo) : '') + '</span>' + memoBtn(r) + delBtn(r) + '</div>'
-      + '</div>';
-  }).join('') + '</div>';
-  return table + cards;
+  return '<div class="rec-hist">' + list.map((r) => '<div class="rec-hr rec-hr-' + resKey(r) + '">'
+    + '<span class="rec-hr-date">' + fmtShort(r.startedAt) + '</span>'
+    + resultBadge(r)
+    + '<span class="rec-hr-opp">' + oppHtml(r) + (r.memo ? '<span class="rec-hr-memo" title="メモあり">📝</span>' : '') + '</span>'
+    + '<button class="rec-hr-detail" onclick="recOpen(' + jsArg(r.id) + ')">詳細</button>'
+    + '<button class="rec-hr-del" title="この記録を削除" onclick="recDelete(' + jsArg(r.id) + ')">削除</button>'
+    + '</div>').join('') + '</div>';
 }
 
 function deckSelect(list, cur, fn) {
@@ -410,7 +391,7 @@ function renderList() {
   if (prefs.listDeck) list = list.filter((r) => r.myDeck === prefs.listDeck);
   return '<div class="rec-filter">' + chips([['all', 'すべて'], ['online', '🌐 オンライン'], ['ai', '🤖 AI']], prefs.listMode, 'recListMode')
     + deckSelect(deckPool, prefs.listDeck, 'recListDeck') + '</div>'
-    + section('対戦の一覧（' + list.length + '件）<small>　📝 でメモ／🗑 で削除</small>', history(list));
+    + section('対戦の一覧（' + list.length + '件）<small>　「詳細」で詳しい情報・メモ</small>', history(list));
 }
 
 const emptyTab = (t, sub) => '<div class="rec-empty"><div class="rec-empty-icon">📭</div><div>' + t + '</div><div class="rec-empty-sub">' + sub + '</div></div>';
@@ -443,6 +424,7 @@ window.recOpen = function(id) {
   m.onclick = (e) => { if (e.target === m) closeModal(); };
   const row = (k, v) => '<div class="rec-md-row"><span>' + k + '</span><b>' + v + '</b></div>';
   m.innerHTML = '<div class="rec-md">'
+    + '<div class="rec-md-title">対戦の詳細</div>'
     + '<div class="rec-md-head">' + resultBadge(r) + '<span>' + fmtDate(r.startedAt) + '</span><button class="rec-md-x" onclick="recCloseModal()">✕</button></div>'
     + '<div class="rec-md-decks">' + deckLabel('my', r.myDeck) + '<span class="rec-hc-vs">→</span>' + deckLabel('opp', r.oppDeck) + '</div>'
     + row(r.mode === 'ai' ? 'AIのレベル' : '相手', r.mode === 'ai' ? aiLabel(r.aiLevel, 22) : esc(r.opp))

@@ -19633,8 +19633,12 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     // デジモンの候補を見ず、必ずセキュリティを対象にする（無ければ何もしない）
     const digimonOnly = Array.isArray(step.options) && step.options.includes('digimon_only');
     const playerOnly = Array.isArray(step.options) && step.options.includes('player_only');
+    // 相手のセキュリティが0枚でも、プレイヤーへのアタックはできる（ダイレクトアタック＝勝利。公式ルール 1-2-3-1）。
+    // 以前は効果によるアタック（≪急襲≫等）だけセキュリティ0枚のときにプレイヤーを選べず、矢印をプレイヤーへ向けて離すと
+    // 「対象を選ばずに離しました」になっていた（ルビウスドラモン＋レプリティモンの≪急襲≫）。選べないのは「プレイヤーにアタックできない」ときだけ
+    const _noPlayerAtk = !!(atkCard && Array.isArray(atkCard.buffs) && atkCard.buffs.some(b => b && b.type === 'cant_attack_player'));
     if (playerOnly) {
-      if ((opponent.security || []).length === 0) { finish(false); return; }
+      if (_noPlayerAtk) { finish(false); return; }
       declare('security', -1);
       return;
     }
@@ -19643,7 +19647,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     if (ctx.side === 'player' && typeof window !== 'undefined' && typeof window.startAttackMode === 'function'
         && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
       const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || allowActive) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && _atkTargetOk(c));
-      const _anySec = !digimonOnly && (opponent.security || []).length > 0;
+      const _anySec = !digimonOnly && !_noPlayerAtk;
       if (!_anyDigi && !_anySec) { finish(false); return; }
       window.startAttackMode(slotIdx, {
         allowActive: allowActive, noSecurity: digimonOnly, targetOk: _atf ? _atkTargetOk : undefined,
@@ -19661,7 +19665,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     // ≪エグゼキュート≫は「アクティブ状態の相手のデジモンにもアタックできる」
     const restTargets = [];
     (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || allowActive) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && _atkTargetOk(c)) restTargets.push(i); });
-    const hasSecurity = !digimonOnly && (opponent.security || []).length > 0;
+    const hasSecurity = !digimonOnly && !_noPlayerAtk;
     if (restTargets.length === 0) {
       if (!hasSecurity) { finish(false); return; }
       declare('security', -1);
@@ -19673,12 +19677,12 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
         if (selectedIdx !== null) { declare('digimon', selectedIdx); return; }
         if (hasSecurity) { declare('security', -1); return; }
         finish(false);
-      }, hasSecurity ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝アタックしない');
+      }, hasSecurity ? ((opponent.security || []).length > 0 ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝プレイヤーにアタック（ダイレクトアタック）') : 'キャンセル＝アタックしない');
     }
   };
   if (opts.preTarget) {
     const pt = opts.preTarget;
-    if (pt.type === 'security' && (opponent.security || []).length > 0) { declare('security', -1); return; }
+    if (pt.type === 'security') { declare('security', -1); return; } // セキュリティ0枚ならダイレクトアタック
     // オンラインでは相手のカードは同期（state_sync）のたびに作り直されるので、同じカードが無ければ、選んだ位置の
     // 同じカード番号・名前のカード → 同じカード番号・名前のカード（1枚だけ）の順に探す（以前は作り直されたカードを
     // 「いなくなった」と判定し、ダンテモンのアタックで対象を選び直していた）

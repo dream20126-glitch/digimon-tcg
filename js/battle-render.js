@@ -770,7 +770,8 @@ function startAttackModeUI(slotIdx, opts) {
     }
   });
   const secArea = document.getElementById('ai-sec-area');
-  if (secArea && bs.ai.security.length > 0 && !_noSec) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
+  // セキュリティ0枚でもプレイヤーへのアタック（ダイレクトアタック）は選べる
+  if (secArea && !_noSec) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
   // プレイヤーにアタックできない（cant_attack_player・効果のアタックで「相手のデジモンにアタックできる」）なら、
   // セキュリティに✖を付けてアタックできないことを示す（ジャスティモン：アクセルアーム P-203 台帳）
   if (secArea && _noSec) {
@@ -855,7 +856,8 @@ function startAttackModeUI(slotIdx, opts) {
       }
     });
     // セキュリティ
-    const _secOk = !_noSec && !(_fromEffect && bs.ai.security.length === 0);
+    // 効果によるアタック（≪急襲≫等）も、セキュリティ0枚ならダイレクトアタックとして選べる（公式ルール 1-2-3-1）
+    const _secOk = !_noSec;
     if (!resolved && secArea && _secOk) {
       const r = secArea.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {

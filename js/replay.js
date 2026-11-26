@@ -280,6 +280,8 @@ function enter() {
   if (!scr) throw new Error('バトル画面がありません');
   V.scr = scr;
   window._replayViewing = true;
+  // 前の対戦の表示が残っていれば消す（「相手が手札に加えた（タップで詳細）」の小さい札など）
+  ['_remote-reveal-chip'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
   scr.classList.add('rp-mode');
   const r = V.rec;
   scr.classList.toggle('side-p2', r.mode === 'online' && !r.first);

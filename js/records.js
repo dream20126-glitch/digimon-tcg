@@ -322,16 +322,22 @@ function renderAi() {
   const byLv = AI_ORDER.map((lv) => ({ key: lv, label: lvName(lv), html: aiLabel(lv, 24), list: list.filter((r) => r.aiLevel === lv) })).filter((g) => g.list.length);
   if (prefs.aiLevel) list = list.filter((r) => r.aiLevel === prefs.aiLevel);
   const aiDecks = groupBy(list, (r) => r.oppDeck).map((g) => Object.assign(g, { html: deckLabel('opp', g.key) }));
-  return '<div class="rec-filter">' + chips([['', 'すべて'], ...AI_ORDER.map((lv) => [lv, AI_LV[lv].name, aiIcon(lv, 18)])], prefs.aiLevel, 'recAiLevel') + deckSelect(allRaw, prefs.aiDeck, 'recAiDeck') + '</div>'
+  // 「すべて」は全AIの戦績、レベルを選んだらそのAIとの対戦だけ（下のグラフ・数字もすべてそのAIだけ）
+  const lv = prefs.aiLevel;
+  const head = lv ? '<div class="rec-ai-head">' + aiIcon(lv, 40) + '<div><div class="rec-ai-head-name">' + esc(lvName(lv)) + 'との対戦</div><div class="rec-ai-head-sub">このAIとの対戦だけを表示しています</div></div></div>'
+    : '<div class="rec-ai-head"><span class="rec-ai-head-all">🤖</span><div><div class="rec-ai-head-name">すべてのAIとの対戦</div><div class="rec-ai-head-sub">見習いテイマー・ベテランテイマー・デジモンマスターの合計</div></div></div>';
+  return '<div class="rec-filter">' + chips([['', 'すべて'], ...AI_ORDER.map((l) => [l, AI_LV[l].name, aiIcon(l, 18)])], lv, 'recAiLevelSet') + deckSelect(allRaw, prefs.aiDeck, 'recAiDeck') + '</div>'
+    + head
     + (list.length ? summary(list)
-      + section('AIのレベルごと <small>（押すとそのレベルだけ）</small>', groupRows(byLv, { onclick: 'recAiLevel', sel: prefs.aiLevel }), legend())
+      + (lv ? '' : section('AIのレベルごと <small>（押すとそのAIだけ）</small>', groupRows(byLv, { onclick: 'recAiLevelSet', sel: lv }), legend()))
       + recent(list)
       + trend(list)
       + section('AIのデッキごと', groupRows(aiDecks))
       + section('決着の理由', reasons(list))
       + listLink(list.length, prefs.aiLevel ? 'ai:' + prefs.aiLevel : 'ai')
       : emptyTab('この条件の記録はありません', '期間や絞り込みを変えてみてください。'))
-    + resetBtn('AI対戦の戦績をすべてリセット', 'ai', '', allRaw.length);
+    + (lv ? resetBtn(lvName(lv) + 'との戦績をリセット', 'ai:' + lv, '', allRaw.filter((r) => r.aiLevel === lv).length)
+      : resetBtn('AI対戦の戦績をすべてリセット', 'ai', '', allRaw.length));
 }
 
 function renderDeck() {
@@ -557,6 +563,8 @@ const setPref = (k, v) => { prefs[k] = v; savePrefs(); render(); };
 window.recSetTab = (t) => { mergeOpen = false; setPref('tab', t); };
 window.recOnlineDeck = (v) => setPref('onlineDeck', v);
 window.recAiLevel = (v) => setPref('aiLevel', prefs.aiLevel === v ? '' : v);
+// 絞り込みのボタン: 押したAIに切り替える（「すべて」で全AI）
+window.recAiLevelSet = (v) => setPref('aiLevel', v || '');
 window.recAiDeck = (v) => setPref('aiDeck', v);
 window.recDeckMode = (v) => setPref('deckMode', v);
 window.recDeckSel = (v) => { mergeOpen = false; setPref('deckSel', v); };

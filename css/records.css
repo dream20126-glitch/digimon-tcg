@@ -271,3 +271,11 @@
   .rec-hr-del::before { content: ''; }
 }
 .rec-md-title { color: var(--main-cyan); font-weight: bold; font-size: 14px; margin-bottom: 8px; }
+
+/* AIタブ: いま表示しているAI */
+.rec-ai-head { display: flex; align-items: center; gap: 12px; background: var(--rec-panel); border: 1px solid var(--border-col); border-radius: 14px; padding: 10px 14px; margin-bottom: 10px; }
+.rec-ai-head img { width: 40px; height: 40px; }
+.rec-ai-head > span { font-size: 30px; line-height: 1; }
+.rec-ai-head-all { font-size: 30px; }
+.rec-ai-head-name { font-size: 15px; font-weight: bold; color: var(--rec-ink); }
+.rec-ai-head-sub { font-size: 11px; color: var(--rec-muted); margin-top: 2px; }

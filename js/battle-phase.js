@@ -858,7 +858,7 @@ let _watchIdleSince = 0;
 if (typeof window !== 'undefined' && !window._autoTurnEndWatch) {
   window._autoTurnEndWatch = setInterval(() => {
     try {
-      if (!bs || bs._battleAborted || !bs.isPlayerTurn || bs.phase !== 'main') return;
+      if (!bs || bs._battleAborted || window._replayViewing || !bs.isPlayerTurn || bs.phase !== 'main') return;
       if (window._tutorialRunner && window._tutorialRunner.active) return; // チュートリアルはシナリオがターンを進める
       if (!(bs.memory < 0) || bs._autoTurnEnding || bs._endingTurn || bs._turnPassed || _turnEndWaitTimer) return;
       // 手動の操作（進化・登場等）でメモリーが相手側に移ったときは、その操作の続き（進化ドローの演出 → 【進化時】等）が
@@ -897,6 +897,7 @@ function _hideTurnEndForceButton() {
 }
 
 export function checkAutoTurnEnd() {
+  if (window._replayViewing) return false; // 対戦の振り返りを見ている間は進めない
   if (bs.memory >= 0) return false;
   if (bs._turnPassed) return true; // 既にターンを相手に渡した
   // ターン終了時の効果（エグゼキュート等のアタック）を処理中に、その処理の終わりから再び呼ばれても二重に終了しない
@@ -1039,7 +1040,7 @@ export function checkAutoTurnEnd() {
 export async function aiTurn() {
   // AI対戦（マスター）: あなたのターンを見て、このターンの方針を「AIの考え」に出す
   try { if (window._aiBattleActive && window._aiObserveTurnStart) window._aiObserveTurnStart(); } catch (_) {}
-  if (bs._battleAborted) return;
+  if (bs._battleAborted || window._replayViewing) return;
   if (_onlineMode) return;
 
   // チュートリアル割り込み: 相手ターン開始前

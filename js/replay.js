@@ -259,7 +259,8 @@ async function open(id, record) {
       if (lastPt !== null && cur.pt !== lastPt) turn++;
       lastPt = cur.pt;
       states.push(Object.assign({ _turn: turn }, cur));
-      Object.values(f.d || {}).forEach((v) => collectNos(v, nos));
+      // カードの所だけ見る（メモリー・手番・フェイズの値をカードNoと間違えて読みに行っていた）
+      Object.entries(f.d || {}).forEach(([k, v]) => { if (k.indexOf('.') > 0) collectNos(v, nos); });
       (f.E || []).forEach((e) => collectNos(e, nos));
     });
     await loadCardsByNo([...nos].filter((n) => n && n !== '?'));
@@ -387,6 +388,9 @@ function show(i) {
   V.i = Math.max(0, Math.min(V.states.length - 1, i));
   const st = V.states[V.i], pv = V.i > 0 ? V.states[V.i - 1] : null;
   const B = window.bs;
+  // 振り返り中は対戦の進行を止めておく（メモリーが相手側のコマで「ターン終了の判定」が動き、AIのターンが始まっていた）
+  B._battleAborted = true;
+  B._turnPassed = false; B._autoTurnEnding = false; B._endingTurn = false; B._pendingTurnEnd = false;
   B.memory = st.m || 0; B.isPlayerTurn = !!st.pt; B.phase = st.ph || 'main'; B._oppPhase = st.op || null; B.turn = st._turn;
   B.selHand = null; B.selSlot = null; B.attackingSlot = null;
   B.player = sideOf(st, 'P'); B.ai = sideOf(st, 'A');

@@ -33,6 +33,8 @@ export function setOnlineInfo(online, myKey) {
 // 自分の画面で出したときは、オンラインの相手の画面にも同じ演出を出す（fx_kwGrant。remote=true は受信側）
 let _kwBannerChain = Promise.resolve();
 window._showKeywordGrantBanner = function(card, keywordName, remote) {
+  // 対戦の振り返り: キーワードの付与
+  try { if (window._replayEvent) window._replayEvent({ k: 'kw', nm: (card && card.name) || '', n: (card && card.cardNo) || '', kw: keywordName || '' }); } catch (_) {}
   if (!remote && _onlineMode && typeof window._onlineSendCommand === 'function' && !window._suppressFxSend) {
     try { window._onlineSendCommand({ type: 'fx_kwGrant', cardName: (card && card.name) || '', keyword: keywordName || '' }); } catch (_) {}
   }
@@ -263,6 +265,13 @@ let _syncTimer = null;
 export function renderAll(force) {
   // 対戦の振り返り（js/replay.js）: 盤面が変わったかもしれないので、少し後に1コマ記録する（同じ盤面なら記録しない）
   if (window._replayPoke) { try { window._replayPoke(); } catch (_) {} }
+  // 対戦の振り返り（js/replay.js）を見ている間: 記録した盤面を描くだけ（効果の再計算・同期・演出等はしない）
+  if (window._replayViewing) {
+    renderSecurity(); renderBattleRows(); renderTamerRows(); renderIkusei(); renderHand();
+    updateCounts(); updateMemGauge(); updatePhaseBadge(); applyBackImages();
+    setTimeout(updateScrollArrows, 0);
+    return;
+  }
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
   // 【衝突】で付けたブロッカーは、アタック中だけのもの。どちらのアタックも行われていないのに残っていれば外す

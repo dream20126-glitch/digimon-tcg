@@ -503,6 +503,7 @@ function replayBox(r) {
 }
 window.recReplay = function(id) {
   const r = records.find((x) => x.id === id);
+  closeModal();
   if (window._replay) window._replay.open(id, r);
 };
 window.recFav = async function(id) {

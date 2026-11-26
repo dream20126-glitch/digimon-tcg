@@ -758,6 +758,7 @@ function onRemoteCommand(cmd) {
       // 相手がアタックしたことを記録（cond_opp_no_attack_this_turn 判定用）
       bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
+      try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'atk', w: 'A', i: cmd.atkIdx, t: 'sec' }); } catch (_) {}
       // ロゼモン(BT1-082) 等「相手のデジモンがプレイヤーにアタックしたとき」誘発 →
       // 完了後にブロック確認へ進む
       const _afterOppAtkTrig = () => { checkOnlineBlock(cmd); };
@@ -775,6 +776,7 @@ function onRemoteCommand(cmd) {
       // 相手がアタックしたことを記録（cond_opp_no_attack_this_turn 判定用）
       bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
       addLog('🎮 相手の「' + atkName2 + '」が「' + defName2 + '」にアタック！');
+      try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'atk', w: 'A', i: cmd.atkIdx, t: cmd.defIdx }); } catch (_) {}
       if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => { checkOnlineBlock(cmd); });
       break;
     }
@@ -2527,6 +2529,13 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_effectAnnounce': {
+      // 対戦の振り返り: 相手の効果の発動（名前からカードNoを探す）
+      try {
+        if (typeof window !== 'undefined' && window._replayEvent) {
+          const _c = (window.allCards || []).find((x) => x['名前'] === cmd.cardName);
+          window._replayEvent({ k: 'eff', w: 'A', n: _c ? _c['カードNo'] : '', nm: cmd.cardName || '', x: String(cmd.effectText || '').split('\n').map((t) => t.trim()).filter(Boolean)[0] || '' });
+        }
+      } catch (_) {}
       if (m.fxRemoteEffect) m.fxRemoteEffect(cmd.cardName, cmd.effectText || '', cmd.status);
       break;
     }
@@ -3518,6 +3527,10 @@ function showRemoteDeckOpenOverlay(cmd) {
   // 二重表示防止
   hideRemoteDeckOpenOverlay();
   const cards = Array.isArray(cmd.cards) ? cmd.cards : [];
+  // 対戦の振り返り: 相手のデッキオープン
+  try {
+    if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'open', w: 'A', ns: cards.map((c) => (c && c.cardNo) || (((window.allCards || []).find((x) => c && x['名前'] === c.name) || {})['カードNo']) || '?') });
+  } catch (_) {}
 
   // めくれ用 keyframe（既に効果テスト発動側で挿入済の可能性ありなのでガード）
   if (!document.getElementById('deck-open-flip-style')) {
@@ -3643,6 +3656,7 @@ function handleRemoteDeckOpenAct(cmd) {
   });
   // 手札に加えたカードは、移動演出のあとで大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
   if (cmd.to === 'hand' && !cmd.receiverZone) {
+    try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'rev', w: 'A', ns: [cmd.cardNo || '?'] }); } catch (_) {}
     _playMove(() => _showHandReveal());
     return;
   }

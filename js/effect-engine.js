@@ -8184,6 +8184,8 @@ function _deckOpenAuto(opened, step, ctx, callback) {
 // 新 deck_open UI 関数
 // step: { value, selections, return_to, optional }
 function showDeckOpenUI(opened, step, ctx, callback) {
+  // 対戦の振り返り: デッキオープン（めくったカード。行き先は振り返りの画面がこの後の盤面から出す）
+  try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'open', w: ctx && ctx.side === 'ai' ? 'A' : 'P', ns: (opened || []).map((c) => (c && c.cardNo) || '?') }); } catch (_) {}
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   // AI対戦の CPU: オンラインの相手と同じ処理（下のプレイヤーの処理）を、CPU が選んで進める（_cpu）。CPU 側の選ぶ画面は見せず、
   // 相手に送る表示の知らせ（sendRemote）を、オンラインで相手から受け取ったときと同じ受け取り処理に渡す（window._cpuLoopback）
@@ -12556,6 +12558,13 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
 export function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
+  // 対戦の振り返り: 効果の発動
+  try {
+    if (typeof window !== 'undefined' && window._replayEvent) {
+      const _src = evoSourceCard || card || {};
+      window._replayEvent({ k: 'eff', w: side === 'ai' ? 'A' : 'P', n: _src.cardNo || '', nm: _src.name || '', x: String(effectText || '').split('\n').map((t) => t.trim()).filter(Boolean)[0] || '' });
+    }
+  } catch (_) {}
   // effectTextが空の場合、カードの効果テキスト全文をフォールバック
   let displayText = effectText || card.effect || '';
   // セキュリティ効果が「このカードの【メイン】効果を発揮する」と書かれている場合、

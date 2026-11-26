@@ -3750,6 +3750,8 @@ export function resolveAttackTarget(target, targetIdx) {
   bs._lastAttackTarget = target;
   // アタック対象の具体的なインデックス（cond_attack_target_highest_dp 等で参照）
   bs._lastAttackTargetIdx = (target === 'digimon') ? targetIdx : -1;
+  // 対戦の振り返り: アタック（矢印）
+  try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'atk', w: 'P', i: atkSlotIdx, t: target === 'digimon' ? targetIdx : 'sec' }); } catch (_) {}
 
   // チュートリアル通知: 対象選択完了
   const _isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;
@@ -6493,6 +6495,7 @@ function _aiAttackPhaseBody(callback) {
   bs._lastAttackTarget = _tgt.mode;
   bs._lastAttackTargetIdx = _tgt.mode === 'digimon' ? _tgt.idx : -1;
   bs._lastAttackIsDirect = _tgt.mode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
+  try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'atk', w: 'A', i: bs.ai.battleArea.indexOf(atk), t: _tgt.mode === 'digimon' ? _tgt.idx : 'sec' }); } catch (_) {}
   addLog('🤖 「' + atk.name + '」でアタック！ → ' + (_tgt.mode === 'digimon' ? '「' + _tgt.def.name + '」' : 'プレイヤー'));
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
@@ -8576,6 +8579,14 @@ export function showOptionEffect(card, onDone) {
 // ----- セキュリティチェック演出 -----
 
 export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
+  // 対戦の振り返り: セキュリティチェック・バトル（VS画面）
+  try {
+    if (typeof window !== 'undefined' && window._replayEvent) {
+      const _bt = [...(bs.player.battleArea || []), ...(bs.ai.battleArea || [])].some((c) => c && secCard && (c === secCard || (c.cardNo && c.cardNo === secCard.cardNo)));
+      window._replayEvent({ k: 'vs', a: (atkCard && atkCard.cardNo) || '', an: (atkCard && atkCard.name) || '', ad: atkCard && typeof atkCard.dp === 'number' ? atkCard.dp : null,
+        d: (secCard && secCard.cardNo) || '', dn: (secCard && secCard.name) || '', dd: secCard && typeof secCard.dp === 'number' && secCard.dp > 0 ? secCard.dp : null, bt: _bt ? 1 : 0, lb: typeof customLabel === 'string' ? customLabel : '' });
+    }
+  } catch (_) {}
   // 相手の端末から届いたVS画面か（battle-online.js fx_securityCheck が立てる。1回分）
   const _vsRemote = typeof window !== 'undefined' && !!window._vsRemoteOpen;
   if (typeof window !== 'undefined') window._vsRemoteOpen = false;
@@ -9098,6 +9109,7 @@ export function showDestroyBatch(cards, callback, opts) {
 // ----- ダイレクトアタック演出 -----
 
 export function showDirectAttack(atkCard, side, callback) {
+  try { if (typeof window !== 'undefined' && window._replayEvent) window._replayEvent({ k: 'direct', w: bs.isPlayerTurn ? 'P' : 'A', n: (atkCard && atkCard.cardNo) || '' }); } catch (_) {}
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_directAttack', atkName: atkCard.name, atkImg: cardImg(atkCard), side });
   hideCombatBackdrop();
   const overlay = document.createElement('div');

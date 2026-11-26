@@ -306,6 +306,8 @@ function enter() {
   document.body.appendChild(arrow);
   const ev = document.createElement('div'); ev.id = 'rp-ev'; document.body.appendChild(ev);
   const bar = document.createElement('div'); bar.id = 'rp-bar'; document.body.appendChild(bar);
+  // そのコマで起きたこと（ログ）は右上に出す（下の操作バーの中だと目で追いにくい）
+  const logbox = document.createElement('div'); logbox.id = 'rp-logbox'; document.body.appendChild(logbox);
   const pop = document.createElement('div'); pop.id = 'rp-pop'; pop.className = 'rp-pop'; pop.onclick = (e) => { if (e.target === pop) pop.style.display = 'none'; }; document.body.appendChild(pop);
   // 盤面を押しても操作は動かさない。カードを押したら詳細だけ出す
   V.guard = (e) => {
@@ -334,7 +336,23 @@ function enter() {
   window.addEventListener('resize', onResize);
   if (typeof window.showScreen === 'function') window.showScreen('battle-screen');
 }
-function onResize() { if (V) drawEvents(); }
+function onResize() { if (V) { fitBoard(); drawEvents(); } }
+// 盤面が画面（操作バーの上まで）に収まるよう縮める（スクロールしないと自分の手札が見えなかった）
+function fitBoard() {
+  if (!V || !V.scr) return;
+  const wrap = V.scr.querySelector('.battle-wrap');
+  const bar = document.getElementById('rp-bar');
+  if (!wrap) return;
+  wrap.style.transform = ''; wrap.style.marginBottom = '';
+  const avail = window.innerHeight - (bar ? bar.offsetHeight : 0) - 4;
+  const natural = wrap.scrollHeight;
+  if (natural > avail && avail > 100) {
+    const k = avail / natural;
+    wrap.style.transformOrigin = 'top center';
+    wrap.style.transform = 'scale(' + k.toFixed(4) + ')';
+    wrap.style.marginBottom = (-(natural - avail)) + 'px';
+  }
+}
 function leave() {
   stopPlay();
   if (V && V.scr) {
@@ -342,7 +360,9 @@ function leave() {
     V.scr.classList.remove('rp-mode');
   }
   window.removeEventListener('resize', onResize);
-  ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
+  const _wrap = V && V.scr && V.scr.querySelector('.battle-wrap');
+  if (_wrap) { _wrap.style.transform = ''; _wrap.style.transformOrigin = ''; _wrap.style.marginBottom = ''; }
+  ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop', 'rp-logbox'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
   window._replayViewing = false;
   if (window.bs) window.bs._battleAborted = true;
   V = null;
@@ -398,6 +418,8 @@ function show(i) {
   markChanges(st, pv);
   renderOppHand(st, pv);
   renderBar();
+  renderLog();
+  fitBoard();
   drawEvents();
 }
 
@@ -550,10 +572,8 @@ function renderBar() {
   const st = V.states[V.i], f = V.frames[V.i], r = V.rec;
   const oppName = r.mode === 'ai' ? (r.opp || 'AI') : (r.opp || '相手');
   const ph = st.pt ? PHASE[st.ph] || st.ph : PHASE[st.op] || st.op || '';
-  const logs = f.L || [];
   bar.innerHTML = '<div class="rp-bar-top"><span class="rp-turn ' + (st.pt ? 'me' : 'opp') + '">ターン' + st._turn + '・' + (st.pt ? 'あなた' : esc(oppName)) + 'のターン' + (ph ? '・' + esc(ph) : '') + '</span>'
     + '<span class="rp-cnt">' + (V.i + 1) + ' / ' + V.states.length + '</span><button class="rp-close" onclick="replayClose()">✕ 閉じる</button></div>'
-    + '<div class="rp-log">' + (logs.length ? logs.slice(-4).map((l) => '<div>' + esc(l) + '</div>').join('') : '<div class="rp-none">（このコマの記録はありません）</div>') + '</div>'
     + '<div class="rp-ctrl">'
     + '<button class="rp-btn" onclick="replayGo(0)" title="最初">⏮</button>'
     + '<button class="rp-btn" onclick="replayTurn(-1)" title="前のターン">⏪</button>'
@@ -565,6 +585,13 @@ function renderBar() {
     + '<button class="rp-speed" onclick="replaySpeed()">×' + V.speed + '</button>'
     + '</div>'
     + '<input class="rp-range" type="range" min="0" max="' + (V.states.length - 1) + '" value="' + V.i + '" oninput="replayGo(+this.value)">';
+}
+function renderLog() {
+  const box = document.getElementById('rp-logbox');
+  if (!box || !V) return;
+  const logs = V.frames[V.i].L || [];
+  box.innerHTML = '<div class="rp-logbox-t">📜 このコマで起きたこと</div>'
+    + (logs.length ? logs.slice(-6).map((l) => '<div class="rp-logbox-l">' + esc(l) + '</div>').join('') : '<div class="rp-none">（記録なし）</div>');
 }
 function stopPlay() { if (V && V.timer) { clearInterval(V.timer); V.timer = null; } }
 window.replayClose = () => leave();

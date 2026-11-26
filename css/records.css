@@ -415,3 +415,14 @@
 #rp-myhand { padding: 3px 6px; background: rgba(0, 251, 255, 0.06); border-top: 1px solid #00fbff33; display: flex; flex-direction: column; align-items: flex-end; }
 #rp-myhand .rp-oh-t { color: #8ff; }
 #rp-myhand .rp-oh-row { justify-content: flex-end; max-width: 100%; }
+
+/* 振り返り: ログは右上・操作バーは細く・盤面は縮めて画面に収める（js/replay.js fitBoard） */
+#rp-bar { height: auto; gap: 5px; padding: 6px 10px 8px; }
+#battle-screen.rp-mode { height: 100vh; overflow: hidden; }
+#battle-screen.rp-mode .battle-wrap { height: auto; min-height: 0; }
+#rp-logbox { position: fixed; top: 8px; right: 8px; z-index: 31500; width: min(300px, 46vw); max-height: 34vh; overflow-y: auto; background: rgba(0, 12, 20, 0.88); border: 1px solid #00fbff66; border-radius: 10px; padding: 6px 8px; font-size: 11px; line-height: 1.5; color: #e8f6ff; box-shadow: 0 0 12px rgba(0, 0, 0, 0.6); }
+.rp-logbox-t { color: #00fbff; font-weight: bold; font-size: 10px; margin-bottom: 3px; }
+.rp-logbox-l { border-top: 1px solid #0f3a4a; padding: 2px 0; }
+@media (max-width: 640px) {
+  #rp-logbox { width: 52vw; font-size: 10px; max-height: 28vh; }
+}

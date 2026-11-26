@@ -309,12 +309,19 @@ function enter() {
   // 盤面を押しても操作は動かさない。カードを押したら詳細だけ出す
   V.guard = (e) => {
     if (!window._replayViewing) return;
+    const t0 = e.target;
+    // 振り返り用に足した手札の並び（相手・自分）は、そのまま押せるようにする（ここで止めると画像の onclick に届かず、
+    // 押しても大きい画像が出なかった）
+    if (t0 && t0.closest && t0.closest('#rp-opphand, #rp-myhand')) return;
     e.stopPropagation();
     if (e.type !== 'click') return;
     e.preventDefault();
     const t = e.target;
     const hand = t.closest && t.closest('.h-card');
     if (hand) { const i = [...hand.parentNode.children].filter((x) => x.classList.contains('h-card')).indexOf(hand); const n = (V.states[V.i]['P.h'] || [])[i]; if (n) popCard({ n }); return; }
+    // 育成エリア（カードNoの印が無いことがある）
+    const iku = t.closest && t.closest('#pl-iku-slot, #ai-iku-slot');
+    if (iku) { const c = V.states[V.i][iku.id === 'ai-iku-slot' ? 'A.ik' : 'P.ik']; if (c) popCard(c); return; }
     const el = t.closest && t.closest('[data-card-no]');
     if (!el || !el.dataset.cardNo) return;
     const S = el.closest('#ai-battle-row, #ai-tamer-row, #ai-iku-slot') ? 'A' : 'P';

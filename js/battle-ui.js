@@ -95,6 +95,8 @@ let logEntries = [];
 export function addLog(text) {
   logEntries.push({ text, time: Date.now() });
   if (logEntries.length > LOG_MAX) logEntries.shift();
+  // 対戦の振り返り（js/replay.js）: ログが出たら盤面を1コマ記録する
+  if (typeof window !== 'undefined' && window._replayOnLog) { try { window._replayOnLog(text); } catch (_) {} }
   console.log('[BATTLE]', text);
 }
 

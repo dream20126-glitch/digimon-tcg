@@ -1,6 +1,6 @@
 // Firebase 初期化（Realtime Database のみ）+ GAS API ヘルパー
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, set, update, remove, onValue, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, set, update, remove, onValue, onDisconnect, get } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCdb4gErcaGQy8xmWKPUpHF5gU60VVRTZA",
@@ -17,7 +17,7 @@ const app = initializeApp(firebaseConfig);
 
 // Realtime Database（オンライン対戦用）
 export const rtdb = getDatabase(app);
-export { ref, set, update, remove, onValue, onDisconnect };
+export { ref, set, update, remove, onValue, onDisconnect, get };
 
 // ===== GAS REST API ヘルパー =====
 // デプロイ後にここのURLを更新してください

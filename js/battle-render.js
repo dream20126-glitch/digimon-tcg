@@ -261,6 +261,8 @@ function _purgeTokens() {
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
+  // 対戦の振り返り（js/replay.js）: 盤面が変わったかもしれないので、少し後に1コマ記録する（同じ盤面なら記録しない）
+  if (window._replayPoke) { try { window._replayPoke(); } catch (_) {} }
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
   // 【衝突】で付けたブロッカーは、アタック中だけのもの。どちらのアタックも行われていないのに残っていれば外す

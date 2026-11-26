@@ -93,6 +93,8 @@ function start(info) {
   };
   saveLocal();
   post(cur);
+  // 対戦の振り返り（js/replay.js）の記録も始める
+  try { if (window._replay) window._replay.start(cur.id); } catch (_) {}
 }
 
 // ターンが変わったとき（bs.isPlayerTurn が切り替わった所から呼ばれる）。同じ側が続けて呼ばれても数えない
@@ -121,6 +123,8 @@ function end(result, reason) {
   cur.durationSec = Math.round((Date.now() - cur.startedAt) / 1000);
   Object.assign(cur, secNow());
   post(cur);
+  // 対戦の振り返りを保存（Firebase）
+  try { if (window._replay) window._replay.finish(); } catch (_) {}
   cur = null;
   saveLocal();
   api.justRecorded = true; // 勝敗の画面に「戦績に記録しました」を出す
@@ -133,6 +137,8 @@ function abort() {
   cur.durationSec = Math.round((Date.now() - cur.startedAt) / 1000);
   Object.assign(cur, secNow());
   post(cur);
+  // 中断した対戦の振り返りは残さない（2026-11-26 ユーザー決定）
+  try { if (window._replay) window._replay.discard(); } catch (_) {}
   cur = null;
   saveLocal();
 }
@@ -141,7 +147,8 @@ function abort() {
 function resume(roomId) {
   try {
     const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (s && s.mode === 'online' && s.roomId && s.roomId === roomId) { cur = s; return true; }
+    // 振り返りは読み込み直す前の分が消えているので、ここから記録し直す
+    if (s && s.mode === 'online' && s.roomId && s.roomId === roomId) { cur = s; try { if (window._replay) window._replay.start(cur.id); } catch (_) {} return true; }
   } catch (_) {}
   return false;
 }

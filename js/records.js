@@ -22,6 +22,11 @@ let loading = false;
 let refreshing = false;
 let mergeOpen = false;
 let resetting = false;
+// 対戦の振り返り（js/replay.js）がある試合: { 記録ID: { at, fav, n } }（Firebase の replayMeta）
+let rpMeta = {};
+async function loadReplayMeta() {
+  try { if (window._replay) { rpMeta = await window._replay.listMeta(); if (loaded) render(); } } catch (e) { console.warn('[戦績] 振り返りの一覧を読めませんでした', e); }
+}
 
 // 開いていたタブ・絞り込み（この端末に覚える）
 const PREF_KEY = 'recPrefs';
@@ -243,7 +248,8 @@ function history(list) {
   return '<div class="rec-hist">' + list.map((r) => '<div class="rec-hr rec-hr-' + resKey(r) + '">'
     + '<span class="rec-hr-date">' + fmtShort(r.startedAt) + '</span>'
     + resultBadge(r)
-    + '<span class="rec-hr-opp">' + oppHtml(r) + (r.memo ? '<span class="rec-hr-memo" title="メモあり">📝</span>' : '') + '</span>'
+    + '<span class="rec-hr-opp">' + oppHtml(r) + (r.memo ? '<span class="rec-hr-memo" title="メモあり">📝</span>' : '')
+    + (rpMeta[r.id] ? '<span class="rec-hr-memo" title="' + (rpMeta[r.id].fav ? 'お気に入り（振り返りを残す）' : '振り返りあり') + '">' + (rpMeta[r.id].fav ? '⭐' : '🎬') + '</span>' : '') + '</span>'
     + '<button class="rec-hr-detail" onclick="recOpen(' + jsArg(r.id) + ')">詳細</button>'
     + '<button class="rec-hr-del" title="この記録を削除" onclick="recDelete(' + jsArg(r.id) + ')">削除</button>'
     + '</div>').join('') + '</div>';
@@ -285,7 +291,10 @@ window.recReset = async function(i) {
   try {
     const r = await gasPost('deleteMatchRecords', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', mode: a.mode, myDeck: a.myDeck, aiLevel: a.aiLevel });
     if (!r || r.status !== 'OK') throw new Error((r && r.message) || '不明なエラー');
-    records = records.filter((x) => !((!a.mode || x.mode === a.mode) && (!a.aiLevel || x.aiLevel === a.aiLevel) && (!a.myDeck || x.myDeck === a.myDeck)));
+    const _hit = (x) => (!a.mode || x.mode === a.mode) && (!a.aiLevel || x.aiLevel === a.aiLevel) && (!a.myDeck || x.myDeck === a.myDeck);
+    const _ids = records.filter(_hit).map((x) => x.id).filter((id) => rpMeta[id]);
+    if (_ids.length && window._replay) { try { await window._replay.del(_ids); _ids.forEach((id) => delete rpMeta[id]); } catch (e) { console.warn('[戦績] 振り返りを消せませんでした', e); } }
+    records = records.filter((x) => !_hit(x));
     if (a.myDeck && prefs.deckSel === a.myDeck) prefs.deckSel = '';
     saveCache(); savePrefs(); render();
     alert('リセットしました（' + (r.deleted || 0) + '件）');
@@ -450,6 +459,7 @@ window.recOpen = function(id) {
     + row('ターン数', r.turns ? r.turns + 'ターン' : '—')
     + row('対戦時間', r.durationSec ? fmtDur(r.durationSec) : '—')
     + row('決着時のセキュリティ', secText(r) === '—' ? '—' : '自分 ' + (r.mySec ?? '?') + '枚 ／ 相手 ' + (r.oppSec ?? '?') + '枚')
+    + replayBox(r)
     + '<div class="rec-md-memo-t">📝 メモ</div>'
     + '<textarea id="rec-md-memo" maxlength="500" placeholder="例: 序盤に事故った／〇〇が刺さった">' + esc(r.memo || '') + '</textarea>'
     + '<div class="rec-md-btns"><button class="rec-md-del" onclick="recDelete(' + jsArg(r.id) + ')">🗑 この記録を削除</button><button class="rec-chip" onclick="recCloseModal()">閉じる</button><button class="rec-chip sel" id="rec-md-save" onclick="recSaveMemo(' + jsArg(r.id) + ')">メモを保存</button></div>'
@@ -478,6 +488,35 @@ window.recSaveMemo = async function(id) {
   }
 };
 
+// ===== 対戦の振り返り（詳細の中） =====
+function replayBox(r) {
+  const m = rpMeta[r.id];
+  if (!m) {
+    const why = r.result === '中断' ? '中断した対戦は振り返りを残しません' : '振り返りはありません（残るのは最新' + ((window._replay && window._replay.KEEP) || 20) + '試合とお気に入りだけです）';
+    return '<div class="rec-md-rp none">🎬 ' + why + '</div>';
+  }
+  return '<div class="rec-md-rp">'
+    + '<button class="rec-rp-play" onclick="recReplay(' + jsArg(r.id) + ')">▶ 対戦を振り返る</button>'
+    + '<button class="rec-rp-fav' + (m.fav ? ' on' : '') + '" onclick="recFav(' + jsArg(r.id) + ')">' + (m.fav ? '⭐ お気に入り中' : '☆ お気に入り') + '</button>'
+    + '<div class="rec-rp-sub">' + (m.fav ? 'お気に入りの振り返りは消えません（最大' + ((window._replay && window._replay.FAV_MAX) || 30) + '試合）' : '新しい対戦が増えると古いものから消えます。残したいときはお気に入りに') + '</div>'
+    + '</div>';
+}
+window.recReplay = function(id) {
+  const r = records.find((x) => x.id === id);
+  if (window._replay) window._replay.open(id, r);
+};
+window.recFav = async function(id) {
+  const m = rpMeta[id];
+  if (!m || !window._replay) return;
+  try {
+    await window._replay.setFav(id, !m.fav);
+    m.fav = !m.fav;
+    if (!m.fav) await loadReplayMeta(); // 外したら古いものが消えることがある
+    window.recOpen(id);
+    render();
+  } catch (e) { alert(e.message); }
+};
+
 // ===== 1試合ずつ削除 =====
 let deleting = false;
 window.recDelete = async function(id) {
@@ -489,6 +528,7 @@ window.recDelete = async function(id) {
   try {
     const res = await gasPost('deleteMatchRecord', { playerName: window.currentPlayerName || '', password: window.currentSessionPassword || '', id });
     if (!res || res.status !== 'OK') throw new Error((res && res.message) || '不明なエラー');
+    if (rpMeta[id] && window._replay) { try { await window._replay.del([id]); delete rpMeta[id]; } catch (e) { console.warn('[戦績] 振り返りを消せませんでした', e); } }
     records = records.filter((x) => x.id !== id);
     saveCache();
     closeModal();
@@ -557,6 +597,7 @@ window.showRecords = function() {
   mergeOpen = false;
   showScreen('records-screen');
   window.loadRecords(true);
+  loadReplayMeta();
   loadDeckCovers();
 };
 const setPref = (k, v) => { prefs[k] = v; savePrefs(); render(); };

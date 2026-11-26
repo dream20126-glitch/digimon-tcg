@@ -292,6 +292,11 @@ function enter() {
   const strip = document.createElement('div');
   strip.id = 'rp-opphand';
   if (oppInfo && oppInfo.parentNode) oppInfo.parentNode.insertBefore(strip, oppInfo.nextSibling); else scr.prepend(strip);
+  // 自分の手札: 本番の手札の場所は操作バーに隠れるので、相手と同じ小さい並びにしてフェイズの帯の上（右寄せ）に置く
+  const myStrip = document.createElement('div');
+  myStrip.id = 'rp-myhand';
+  const phaseBar = scr.querySelector('.phase-bar');
+  if (phaseBar && phaseBar.parentNode) phaseBar.parentNode.insertBefore(myStrip, phaseBar); else scr.appendChild(myStrip);
   // 矢印・出来事・操作バー・カードの詳細
   const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   arrow.id = 'rp-arrow';
@@ -327,7 +332,7 @@ function leave() {
     V.scr.classList.remove('rp-mode');
   }
   window.removeEventListener('resize', onResize);
-  ['rp-opphand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
+  ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
   window._replayViewing = false;
   if (window.bs) window.bs._battleAborted = true;
   V = null;
@@ -406,12 +411,16 @@ function markChanges(st, pv) {
   });
 }
 function renderOppHand(st, pv) {
-  const el = document.getElementById('rp-opphand');
+  handStrip('rp-opphand', 'A.h', '相手の手札', '・振り返りだけ表向き', st, pv);
+  handStrip('rp-myhand', 'P.h', 'あなたの手札', '', st, pv);
+}
+function handStrip(id, key, title, note, st, pv) {
+  const el = document.getElementById(id);
   if (!el) return;
-  const list = st['A.h'] || [];
+  const list = st[key] || [];
   const prev = {};
-  (pv ? pv['A.h'] || [] : list).forEach((n) => { prev[n] = (prev[n] || 0) + 1; });
-  el.innerHTML = '<span class="rp-oh-t">相手の手札（' + list.length + '枚・振り返りだけ表向き）</span><div class="rp-oh-row">'
+  (pv ? pv[key] || [] : list).forEach((n) => { prev[n] = (prev[n] || 0) + 1; });
+  el.innerHTML = '<span class="rp-oh-t">' + title + '（' + list.length + '枚' + note + '）</span><div class="rp-oh-row">'
     + (list.length ? list.map((n) => { const isNew = !(prev[n] > 0); if (!isNew) prev[n]--; return '<img class="' + (isNew ? 'rp-new' : '') + '" src="' + esc(imgOf(n)) + '" alt="" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')">'; }).join('') : '<span class="rp-none">なし</span>')
     + '</div>';
 }

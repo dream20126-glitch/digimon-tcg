@@ -409,3 +409,9 @@
   #rp-bar .rp-btn { padding: 5px 7px; font-size: 12px; }
   .rp-ev-c { width: 46px; }
 }
+
+/* 振り返り: 自分の手札は本番の手札の場所を隠し、小さい並びをフェイズの帯の上（右寄せ）に */
+#battle-screen.rp-mode .scroll-wrap[data-scroll-target="hand-wrap"] { display: none !important; }
+#rp-myhand { padding: 3px 6px; background: rgba(0, 251, 255, 0.06); border-top: 1px solid #00fbff33; display: flex; flex-direction: column; align-items: flex-end; }
+#rp-myhand .rp-oh-t { color: #8ff; }
+#rp-myhand .rp-oh-row { justify-content: flex-end; max-width: 100%; }

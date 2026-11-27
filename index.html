@@ -129,6 +129,7 @@
 <div id="page-records"></div>
 
 <!-- JS モジュール -->
+<!-- 戦績・振り返り（replay / match-record / records）は他のファイルから import されないので ?v= を付けられる。変えたら値を更新する（ブラウザの古いキャッシュ対策） -->
 <script type="module" src="js/app.js"></script>
 <script type="module" src="js/deck-builder.js"></script>
 <script type="module" src="js/deck-list.js"></script>
@@ -142,9 +143,9 @@
 <script type="module" src="js/admin-scenario.js"></script>
 <script type="module" src="js/ai-battle.js"></script>
 <script type="module" src="js/online-resume.js"></script>
-<script type="module" src="js/replay.js"></script>
-<script type="module" src="js/match-record.js"></script>
-<script type="module" src="js/records.js"></script>
+<script type="module" src="js/replay.js?v=20261127-1"></script>
+<script type="module" src="js/match-record.js?v=20261127-1"></script>
+<script type="module" src="js/records.js?v=20261127-1"></script>
 
 <!-- 各画面のHTMLを動的に読み込み -->
 <script type="module">

@@ -467,3 +467,5 @@ body.rp-wide #rp-bar { right: auto; }
 .rec-search-hit { font-size: 12px; color: var(--rec-ink2); margin: -4px 0 10px 2px; }
 .rec-search-hit b { color: var(--main-cyan); }
 .rec-search-hit.none b { color: var(--rec-lose); }
+.rec-search-btn { background: var(--main-cyan); color: #00161d; border: none; border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+.rec-search-btn:hover { filter: brightness(1.1); }

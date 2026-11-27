@@ -25,7 +25,6 @@ let resetting = false;
 let deckQuery = '';      // デッキごと: デッキ名の検索
 // 検索のための正規化: 全角/半角（NFKC）・大文字/小文字・ひらがな→カタカナ をそろえる
 const normQ = (v) => String(v || '').normalize('NFKC').toLowerCase().trim().replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
-let _dqTimer = null;
 // 対戦の振り返り（js/replay.js）がある試合: { 記録ID: { at, fav, n } }（Firebase の replayMeta）
 let rpMeta = {};
 async function loadReplayMeta() {
@@ -364,7 +363,8 @@ function renderDeck() {
   const q = normQ(deckQuery);
   const decks = q ? allDecks.filter((d) => normQ(d.key).includes(q)) : allDecks;
   const searchBox = '<div class="rec-search"><input id="rec-deck-q" type="search" placeholder="🔍 デッキ名で検索（キーワードを含むデッキ）" value="' + esc(deckQuery) + '"'
-    + ' oninput="recDeckQuery(this.value, event)" oncompositionend="recDeckQuery(this.value)">'
+    + ' onkeydown="recDeckKey(event)">'
+    + '<button class="rec-search-btn" onclick="recDeckSearch()">🔍 検索</button>'
     + (q ? '<button class="rec-chip" onclick="recDeckQuery(&quot;&quot;)">✕ クリア</button>' : '') + '</div>'
     + (q ? '<div class="rec-search-hit' + (decks.length ? '' : ' none') + '">「' + esc(deckQuery.trim()) + '」の検索結果：<b>' + decks.length + '件</b></div>' : '');
   if (!decks.length) return '<div class="rec-filter">' + modeChips + '</div>' + searchBox + emptyTab('検索結果はありません', '別のキーワードで検索するか、「✕ クリア」で全部のデッキに戻してください。');
@@ -626,15 +626,15 @@ window.recAiLevelSet = (v) => setPref('aiLevel', v || '');
 window.recAiDeck = (v) => setPref('aiDeck', v);
 window.recDeckMode = (v) => setPref('deckMode', v);
 // デッキ名の検索: 打ち終わってから描き直し、入力欄に戻る（日本語の変換中は描き直さない）
-window.recDeckQuery = (v, ev) => {
-  if (ev && ev.isComposing) return;
-  deckQuery = String(v || '');
-  clearTimeout(_dqTimer);
-  _dqTimer = setTimeout(() => {
-    render();
-    const el = document.getElementById('rec-deck-q');
-    if (el && deckQuery) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {} }
-  }, 250);
+// 検索は「🔍 検索」ボタンかエンターキーで行う（打っている途中では絞らない。2026-11-27 ユーザー要望）
+window.recDeckQuery = (v) => { deckQuery = String(v || ''); render(); };
+window.recDeckSearch = () => {
+  const el = document.getElementById('rec-deck-q');
+  window.recDeckQuery(el ? el.value : '');
+};
+window.recDeckKey = (ev) => {
+  // 日本語の変換を確定するエンターでは検索しない
+  if (ev.key === 'Enter' && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); window.recDeckSearch(); }
 };
 window.recDeckSel = (v) => { mergeOpen = false; setPref('deckSel', v); };
 window.recPeriod = (v) => setPref('period', v);

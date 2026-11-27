@@ -464,3 +464,6 @@ body.rp-wide #rp-bar { right: auto; }
 .rec-search input:focus { outline: none; border-color: var(--main-cyan); box-shadow: 0 0 8px rgba(0, 251, 255, 0.3); }
 .rec-search-n { font-size: 11px; color: var(--rec-muted); white-space: nowrap; }
 .rec-deck-headbox { background: var(--rec-panel); border: 1px solid var(--border-col); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+.rec-search-hit { font-size: 12px; color: var(--rec-ink2); margin: -4px 0 10px 2px; }
+.rec-search-hit b { color: var(--main-cyan); }
+.rec-search-hit.none b { color: var(--rec-lose); }

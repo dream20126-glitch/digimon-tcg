@@ -23,6 +23,8 @@ let refreshing = false;
 let mergeOpen = false;
 let resetting = false;
 let deckQuery = '';      // デッキごと: デッキ名の検索
+// 検索のための正規化: 全角/半角（NFKC）・大文字/小文字・ひらがな→カタカナ をそろえる
+const normQ = (v) => String(v || '').normalize('NFKC').toLowerCase().trim().replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 let _dqTimer = null;
 // 対戦の振り返り（js/replay.js）がある試合: { 記録ID: { at, fav, n } }（Firebase の replayMeta）
 let rpMeta = {};
@@ -357,13 +359,15 @@ function renderDeck() {
   const modeChips = chips(modeChipItems(), prefs.deckMode, 'recDeckMode');
   if (!all.length) return '<div class="rec-filter">' + modeChips + '</div>' + emptyTab('この条件の記録はありません', '対戦をすると、デッキごとの成績がここに出ます。');
   const allDecks = groupBy(all, (r) => r.myDeck).map((g) => Object.assign(g, { html: deckLabel('my', g.key) }));
-  // デッキ名で検索（入っている文字で絞る。1つに絞れたら、そのデッキの詳細だけを出す）
-  const q = deckQuery.trim().toLowerCase();
-  const decks = q ? allDecks.filter((d) => String(d.key || '').toLowerCase().includes(q)) : allDecks;
-  const searchBox = '<div class="rec-search"><input id="rec-deck-q" type="search" placeholder="🔍 デッキ名で検索" value="' + esc(deckQuery) + '"'
+  // デッキ名で検索: キーワードを「含む」デッキがヒット（前方一致ではない）。全角/半角・大文字/小文字・ひらがな/カタカナの違いは区別しない。
+  // 1つに絞れたら、そのデッキの詳細だけを出す
+  const q = normQ(deckQuery);
+  const decks = q ? allDecks.filter((d) => normQ(d.key).includes(q)) : allDecks;
+  const searchBox = '<div class="rec-search"><input id="rec-deck-q" type="search" placeholder="🔍 デッキ名で検索（キーワードを含むデッキ）" value="' + esc(deckQuery) + '"'
     + ' oninput="recDeckQuery(this.value, event)" oncompositionend="recDeckQuery(this.value)">'
-    + (q ? '<button class="rec-chip" onclick="recDeckQuery(&quot;&quot;)">✕ クリア</button><span class="rec-search-n">' + decks.length + '件</span>' : '') + '</div>';
-  if (!decks.length) return '<div class="rec-filter">' + modeChips + '</div>' + searchBox + emptyTab('「' + esc(deckQuery) + '」に合うデッキはありません', '別の文字で検索するか、「✕ クリア」で全部のデッキに戻してください。');
+    + (q ? '<button class="rec-chip" onclick="recDeckQuery(&quot;&quot;)">✕ クリア</button>' : '') + '</div>'
+    + (q ? '<div class="rec-search-hit' + (decks.length ? '' : ' none') + '">「' + esc(deckQuery.trim()) + '」の検索結果：<b>' + decks.length + '件</b></div>' : '');
+  if (!decks.length) return '<div class="rec-filter">' + modeChips + '</div>' + searchBox + emptyTab('検索結果はありません', '別のキーワードで検索するか、「✕ クリア」で全部のデッキに戻してください。');
   if (!prefs.deckSel || !decks.some((d) => d.key === prefs.deckSel)) prefs.deckSel = decks[0].key;
   const sel = prefs.deckSel;
   const mine = all.filter((r) => r.myDeck === sel);

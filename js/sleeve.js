@@ -30,9 +30,37 @@ export function sleeveHtml(sl, opts = {}) {
   if (!sl) return '';
   const url = getGoogleDriveDirectLink(sl.img) || sl.img;
   const r = opts.radius != null ? opts.radius : 4;
-  return '<div class="slv" style="--slv:' + esc(sl.c) + ';border-radius:' + r + 'px;' + (opts.style || '') + '">'
+  return '<div class="slv' + (opts.thin ? ' slv-thin' : '') + '" style="--slv:' + esc(sl.c) + ';border-radius:' + r + 'px;' + (opts.style || '') + '">'
     + '<div class="slv-art" style="background-image:url(\'' + esc(url) + '\');background-size:' + sl.z + '% auto;background-position:50% ' + sl.y + '%;"></div>'
     + '<div class="slv-gloss"></div><div class="slv-emb">◆</div></div>';
+}
+
+// 対戦での見え方（デッキの山・セキュリティ・手札の裏）のプレビュー
+export function sleeveSceneHtml(sl) {
+  if (!sl) return '';
+  const card = (st, thin) => '<div style="' + st + '">' + sleeveHtml(sl, { radius: 3, thin }) + '</div>';
+  let pile = '';
+  for (let i = 4; i >= 0; i--) pile += card('left:' + (i * 1.5) + 'px;top:' + (-i * 2) + 'px;', true);
+  let secs = '';
+  for (let i = 0; i < 5; i++) secs += card('top:' + (i * 10) + 'px;', true);
+  let hand = '';
+  for (let i = 0; i < 5; i++) hand += card('left:' + (i * 13) + 'px;transform:rotate(' + ((i - 2) * 9) + 'deg);', true);
+  return '<div class="slv-scene"><span class="slv-scene-t">対戦での見え方</span>'
+    + '<div><div class="slv-pile">' + pile + '</div><div class="slv-scene-lbl">デッキ</div></div>'
+    + '<div><div class="slv-secs">' + secs + '</div><div class="slv-scene-lbl">セキュリティ</div></div>'
+    + '<div><div class="slv-hand">' + hand + '</div><div class="slv-scene-lbl">手札（裏）</div></div></div>';
+}
+// スリーブを大きく見る（マイデッキ・保存の画面の見本を押したとき）
+export function showSleevePreview(v, title) {
+  const sl = parseSleeve(v);
+  if (!sl) return;
+  const ov = document.createElement('div');
+  ov.className = 'slv-big-ov';
+  ov.innerHTML = '<div class="slv-big"><b style="color:#00fbff;">🎴 ' + esc(title || 'スリーブ') + '</b>'
+    + '<div class="slv-big-card">' + sleeveHtml(sl, { radius: 10 }) + '</div>' + sleeveSceneHtml(sl)
+    + '<button class="slvp-cancel" style="margin-top:12px;">閉じる</button></div>';
+  ov.onclick = (e) => { if (e.target === ov || e.target.tagName === 'BUTTON') ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 // ===== 対戦 =====
@@ -71,6 +99,7 @@ export function openSleevePicker(opts = {}) {
       + '<div class="slvp-hint"></div><div class="slvp-grid"></div></div>'
       + '<div class="slvp-right">'
       + '<div class="slvp-prev-wrap"><div class="slvp-prev"></div><div class="slvp-prev-sm"></div></div>'
+      + '<div class="slvp-scene"></div>'
       + '<label class="slvp-l">上下の位置<input type="range" class="slvp-y" min="0" max="100" step="1"></label>'
       + '<label class="slvp-l">拡大<input type="range" class="slvp-z" min="100" max="300" step="5"></label>'
       + '<div class="slvp-l">縁の色</div><div class="slvp-colors">'
@@ -87,7 +116,8 @@ export function openSleevePicker(opts = {}) {
 
     const refresh = () => {
       $('.slvp-prev').innerHTML = cur ? sleeveHtml(cur, { radius: 10 }) : '<div class="slvp-empty">左の一覧からカードを選んでください<br><small>（いまは「スリーブなし」）</small></div>';
-      $('.slvp-prev-sm').innerHTML = cur ? sleeveHtml(cur, { radius: 3 }) : '';
+      $('.slvp-prev-sm').innerHTML = cur ? sleeveHtml(cur, { radius: 3, thin: true }) : '';
+      $('.slvp-scene').innerHTML = cur ? sleeveSceneHtml(cur) : '';
       $('.slvp-y').value = cur ? cur.y : DEF.y; $('.slvp-z').value = cur ? cur.z : DEF.z;
       $('.slvp-y').disabled = $('.slvp-z').disabled = !cur;
       ov.querySelectorAll('.slvp-c[data-c]').forEach((b) => b.classList.toggle('sel', !!cur && b.dataset.c.toLowerCase() === String(cur.c).toLowerCase()));
@@ -144,7 +174,7 @@ export function openSleevePicker(opts = {}) {
 // デッキの保存・マイデッキ・管理画面の「スリーブ」の欄（いまのスリーブの見本＋選ぶボタン）
 export function sleeveFieldHtml(sl, onclickJs) {
   const prev = sl ? sleeveHtml(sl, { radius: 3 }) : '<div class="slv-field-def" style="background-image:url(\'' + esc(DEFAULT_BACK) + '\')"></div>';
-  return '<div class="slv-field"><div class="slv-field-prev">' + prev + '</div>'
+  return '<div class="slv-field"><div class="slv-field-prev"' + (sl ? ' style="cursor:pointer" title="押すと大きく見られます" onclick="window._showSleevePreview(' + esc(JSON.stringify(sleeveStr(sl))) + ')"' : '') + '>' + prev + '</div>'
     + '<div class="slv-field-txt"><b>🎴 スリーブ</b>' + (sl ? '対戦でこのデッキの裏面になります' : 'スリーブなし（いつもの裏面）') + '</div>'
     + '<button type="button" class="slv-field-btn" onclick="' + onclickJs + '">' + (sl ? '変える' : '選ぶ') + '</button></div>';
 }
@@ -153,6 +183,8 @@ const DEFAULT_BACK = 'https://drive.google.com/thumbnail?id=1NKWqHuWnKpBbfMY9OPP
 export const deckNosOf = (list) => [...String(list || '').matchAll(/\(([^()]+)\)x\d+/g)].map((m) => m[1]);
 if (typeof window !== 'undefined') {
   window._sleeveFieldHtml = sleeveFieldHtml;
+  window._showSleevePreview = showSleevePreview;
+  window._sleeveSceneHtml = sleeveSceneHtml;
   window._deckNosOf = deckNosOf;
   window._openSleevePicker = openSleevePicker;
   window._sleeveHtml = sleeveHtml;

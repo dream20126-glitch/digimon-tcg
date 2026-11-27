@@ -1,10 +1,29 @@
 /* ===== スリーブ（デッキの裏面。js/sleeve.js） ===== */
-.slv { position: relative; width: 100%; height: 100%; overflow: hidden; box-sizing: border-box;
-  border: 3px solid var(--slv, #00fbff); background: #0a0a0a;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 0 4px rgba(0, 0, 0, 0.6); }
-.slv-art { position: absolute; inset: 0; background-repeat: no-repeat; background-color: #111; }
+/* 縁: 明るい所・本来の色・暗い所を斜めに重ねて、光が当たった立体の枠に見せる（上と左が明るく、下と右が暗い） */
+.slv { position: relative; width: 100%; height: 100%; overflow: hidden; box-sizing: border-box; border: none;
+  --slv-w: 4px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--slv, #00fbff) 35%, #fff) 0%,
+      var(--slv, #00fbff) 18%,
+      color-mix(in srgb, var(--slv, #00fbff) 55%, #000) 42%,
+      var(--slv, #00fbff) 58%,
+      color-mix(in srgb, var(--slv, #00fbff) 45%, #fff) 74%,
+      color-mix(in srgb, var(--slv, #00fbff) 60%, #000) 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.8), inset 0 -1px 1px rgba(0, 0, 0, 0.6),
+    inset 1px 0 1px rgba(255, 255, 255, 0.4), inset -1px 0 1px rgba(0, 0, 0, 0.45); }
+/* 小さい裏面（セキュリティ・デッキの山）は枠を細く */
+.slv.slv-thin { --slv-w: 2px; }
+/* 枠の上を流れる光の筋 */
+.slv::before { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; padding: var(--slv-w);
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.6) 42%, transparent 52%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+/* 絵は枠の内側に一段沈める（内側の影で段差を出す） */
+.slv-art { position: absolute; inset: var(--slv-w); border-radius: 2px; background-repeat: no-repeat; background-color: #111;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 2px 4px rgba(0, 0, 0, 0.55); }
 /* ビニールのつや（斜めの反射）と縁の内側の明るさ */
-.slv-gloss { position: absolute; inset: 0; pointer-events: none;
+.slv-gloss { position: absolute; inset: var(--slv-w); border-radius: 2px; pointer-events: none;
   background:
     linear-gradient(125deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.08) 22%, transparent 40%, transparent 62%, rgba(255, 255, 255, 0.12) 78%, transparent 92%),
     radial-gradient(ellipse at 50% 120%, rgba(0, 0, 0, 0.35), transparent 60%);
@@ -60,3 +79,18 @@
 .slv-field-txt { flex: 1; min-width: 0; font-size: 12px; color: #aaa; }
 .slv-field-txt b { display: block; color: var(--main-cyan, #00fbff); font-size: 13px; margin-bottom: 2px; }
 .slv-field-btn { background: none; border: 1px solid var(--main-cyan, #00fbff); color: var(--main-cyan, #00fbff); border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; font-size: 12px; }
+
+/* 対戦での見え方のプレビュー（デッキの山・セキュリティ・手札の裏） */
+.slv-scene { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 14px; padding: 16px 8px 8px; border-radius: 10px;
+  background: radial-gradient(ellipse at 50% 30%, #0a2a3a, #02080c 75%); border: 1px solid #0f3a4a; }
+.slv-scene-t { position: absolute; left: 8px; top: 4px; font-size: 9px; color: #6b7a8c; }
+.slv-pile { position: relative; width: 46px; height: 64px; }
+.slv-pile > div { position: absolute; width: 46px; height: 64px; }
+.slv-secs { position: relative; width: 50px; height: 78px; }
+.slv-secs > div { position: absolute; left: 0; width: 48px; height: 36px; }
+.slv-hand { position: relative; width: 96px; height: 70px; }
+.slv-hand > div { position: absolute; bottom: 0; width: 40px; height: 56px; transform-origin: 50% 120%; }
+.slv-scene-lbl { font-size: 9px; color: #9fb3c8; text-align: center; margin-top: 3px; }
+.slv-big-ov { position: fixed; inset: 0; z-index: 80000; background: rgba(0, 0, 0, 0.82); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.slv-big { background: #021520; border: 1px solid #00fbff; border-radius: 14px; padding: 14px; color: #e8f6ff; max-width: 420px; width: 100%; text-align: center; }
+.slv-big-card { width: 170px; aspect-ratio: 63 / 88; margin: 8px auto 12px; }

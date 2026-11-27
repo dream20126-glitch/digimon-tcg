@@ -35,7 +35,7 @@ window.loadSavedDecks = async function() {
         ${isRegistered ? '<div class="reg-badge">✓</div>' : ''}
         <div style="position:relative; margin-right:15px; flex-shrink:0;">
           <img src="${coverUrl}" style="width:60px; height:85px; border-radius:8px; object-fit:cover; background:#333; display:block;" onerror="this.style.visibility='hidden'">
-          ${(() => { const sl = window._parseSleeve ? window._parseSleeve(d.sleeve) : null; return sl ? '<div title="スリーブ" style="position:absolute; right:-8px; bottom:-6px; width:26px; height:36px;">' + window._sleeveHtml(sl, { radius: 2 }) + '</div>' : ''; })()}
+          ${(() => { const sl = window._parseSleeve ? window._parseSleeve(d.sleeve) : null; return sl ? '<div title="スリーブ（押すと大きく見られます）" onclick="window._showSleevePreview(window.latestDecks[' + i + '].sleeve, window.latestDecks[' + i + '].name)" style="position:absolute; right:-8px; bottom:-6px; width:26px; height:36px; cursor:pointer;">' + window._sleeveHtml(sl, { radius: 2, thin: true }) + '</div>' : ''; })()}
         </div>
         <div style="flex:1; text-align:left; min-width:0;">
           <div style="color:#fff; font-weight:bold; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${d.name}</div>

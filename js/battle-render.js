@@ -318,7 +318,7 @@ function renderSecurity() {
   ['ai', 'pl'].forEach(side => {
     const sec = side === 'ai' ? bs.ai.security : bs.player.security;
     // スリーブ（js/sleeve.js）があればその裏面
-    const _slv = window._sleeveBackHtml ? window._sleeveBackHtml(side === 'ai' ? 'ai' : 'player', { radius: 2 }) : '';
+    const _slv = window._sleeveBackHtml ? window._sleeveBackHtml(side === 'ai' ? 'ai' : 'player', { radius: 2, thin: true }) : '';
     const backHtml = _slv || backHtml0;
     const el = document.getElementById(side + '-sec-area');
     const cnt = document.getElementById(side + '-sec-count');
@@ -1692,7 +1692,7 @@ function applyBackImages() {
   [['pl-deck-img', plBack, 'player'], ['ai-deck-img', aiBack, 'ai']].forEach(([boxId, img, side]) => {
     const box = document.getElementById(boxId);
     if (!box) return;
-    const html = window._sleeveBackHtml ? window._sleeveBackHtml(side, { radius: 3 }) : '';
+    const html = window._sleeveBackHtml ? window._sleeveBackHtml(side, { radius: 3, thin: true }) : '';
     let el = box.querySelector('.slv-deck');
     if (!html) { if (el) el.remove(); if (img) img.style.visibility = ''; return; }
     if (!el) { el = document.createElement('div'); el.className = 'slv-deck'; el.style.cssText = 'position:absolute;inset:0;'; box.insertBefore(el, box.firstChild); }

@@ -319,38 +319,105 @@ function enter() {
     e.stopPropagation();
     if (e.type !== 'click') return;
     e.preventDefault();
-    const t = e.target;
-    const hand = t.closest && t.closest('.h-card');
-    if (hand) { const i = [...hand.parentNode.children].filter((x) => x.classList.contains('h-card')).indexOf(hand); const n = (V.states[V.i]['P.h'] || [])[i]; if (n) popCard({ n }); return; }
-    // 育成エリア（カードNoの印が無いことがある）
-    const iku = t.closest && t.closest('#pl-iku-slot, #ai-iku-slot');
-    if (iku) { const c = V.states[V.i][iku.id === 'ai-iku-slot' ? 'A.ik' : 'P.ik']; if (c) popCard(c); return; }
-    const el = t.closest && t.closest('[data-card-no]');
-    if (!el || !el.dataset.cardNo) return;
-    const S = el.closest('#ai-battle-row, #ai-tamer-row, #ai-iku-slot') ? 'A' : 'P';
-    const st = V.states[V.i];
-    const found = [...(st[S + '.b'] || []), ...(st[S + '.tm'] || []), st[S + '.ik']].find((c) => c && c.n === el.dataset.cardNo);
-    popCard(found || { n: el.dataset.cardNo });
+    const c = cardFromEl(e.target);
+    if (c) cardDetail(c);
   };
   ['click', 'pointerdown', 'mousedown', 'touchstart', 'contextmenu', 'dblclick'].forEach((tp) => scr.addEventListener(tp, V.guard, true));
+  // カーソルを当てたカードを横のパネルに大きく出す（広い画面だけ）
+  V.hover = (e) => {
+    if (!V || !isWide()) return;
+    if (e.target && e.target.closest && e.target.closest('#rp-side')) return; // パネルの中（読んでいる途中）では切り替えない
+    const c = cardFromEl(e.target);
+    if (c && JSON.stringify(c) !== V.sideKey) { V.sideKey = JSON.stringify(c); renderSide(c); }
+  };
+  document.addEventListener('mouseover', V.hover);
+  // 横のパネル（広い画面）
+  const side = document.createElement('div'); side.id = 'rp-side'; document.body.appendChild(side);
+  // パネルの中の進化元を押したら、そのカードの詳細へ
+  side.onclick = (e) => { const t = e.target.closest && e.target.closest('[data-rp-no]'); if (t) renderSide({ n: t.dataset.rpNo }); };
+  renderSide(null);
   window.addEventListener('resize', onResize);
   if (typeof window.showScreen === 'function') window.showScreen('battle-screen');
+  document.body.classList.toggle('rp-wide', isWide());
 }
-function onResize() { if (V) { fitBoard(); drawEvents(); } }
+function onResize() { if (V) { document.body.classList.toggle('rp-wide', isWide()); fitBoard(); drawEvents(); } }
+// 広い画面（横にカードの詳細のパネルを置ける幅）
+const isWide = () => window.innerWidth >= 900;
+// 要素 → そのカードの記録（盤面・手札の並び・出来事の表示）
+function cardFromEl(t) {
+  if (!V || !t || !t.closest) return null;
+  const st = V.states[V.i];
+  const tagged = t.closest('[data-rp-no]');
+  if (tagged) return { n: tagged.dataset.rpNo };
+  const hand = t.closest('#battle-screen .h-card');
+  if (hand) { const i = [...hand.parentNode.children].filter((x) => x.classList.contains('h-card')).indexOf(hand); const n = (st['P.h'] || [])[i]; return n ? { n } : null; }
+  // 育成エリア（カードNoの印が無いことがある）
+  const iku = t.closest('#pl-iku-slot, #ai-iku-slot');
+  if (iku) { const c = st[iku.id === 'ai-iku-slot' ? 'A.ik' : 'P.ik']; return c || null; }
+  const el = t.closest('#battle-screen [data-card-no]');
+  if (!el || !el.dataset.cardNo) return null;
+  const S = el.closest('#ai-battle-row, #ai-tamer-row, #ai-iku-slot') ? 'A' : 'P';
+  // 並びの何番目か（同じカードが2体いても、それぞれの進化元・DPを出す）
+  const row = el.closest('#ai-battle-row, #pl-battle-row, #ai-tamer-row, #pl-tamer-row');
+  if (row) {
+    const idx = [...row.children].indexOf(el.closest('#' + row.id + ' > *'));
+    const list = st[S + (row.id.indexOf('tamer') >= 0 ? '.tm' : '.b')] || [];
+    if (list[idx] && list[idx].n === el.dataset.cardNo) return list[idx];
+  }
+  const found = [...(st[S + '.b'] || []), ...(st[S + '.tm'] || []), st[S + '.ik']].find((c) => c && c.n === el.dataset.cardNo);
+  return found || { n: el.dataset.cardNo };
+}
+// 押したカードの詳細: 広い画面は横のパネル、狭い画面は大きい画像
+function cardDetail(c) { if (isWide()) { V.sideKey = JSON.stringify(c); renderSide(c); } else popCard(c); }
+// 横のパネル: 大きい画像・DP・付与・進化元・効果の文
+function renderSide(c) {
+  const el = document.getElementById('rp-side');
+  if (!el) return;
+  if (!c || !c.n || c.n === '?') { el.innerHTML = '<div class="rp-side-empty">盤面や手札のカードに<br>カーソルを当てる（タップする）と<br>ここに大きく表示されます</div>'; return; }
+  const cd = cardOf(c.n) || {};
+  const txt = (k) => String(cd[k] || '').trim();
+  const kws = [...(c.k || []), ...(c.g || [])];
+  const buffs = (c.b || []).map((b) => (b.type === 'dp_plus' ? 'DP+' + b.value : b.type === 'dp_minus' ? 'DP-' + b.value : b.type || '')).filter(Boolean);
+  const meta = [cd['タイプ'], cd['色'], cd['レベル'] || cd['Lv'] ? 'Lv.' + (cd['レベル'] || cd['Lv']) : '', cd['特徴']].filter(Boolean).join('・');
+  const sec = (title, body) => (body ? '<div class="rp-side-h">' + title + '</div><div class="rp-side-txt">' + esc(body) + '</div>' : '');
+  el.innerHTML = '<img class="rp-side-img" src="' + esc(imgOf(c.n)) + '" alt="">'
+    + '<div class="rp-side-name">' + esc(nameOf(c.n)) + '<small>' + esc(c.n) + '</small></div>'
+    + (meta ? '<div class="rp-side-meta">' + esc(meta) + '</div>' : '')
+    + (typeof c.d === 'number' && c.d > 0 ? '<div class="rp-side-dp">DP ' + c.d + (c.r ? '　（レスト）' : '') + '</div>' : (c.r ? '<div class="rp-side-dp">（レスト）</div>' : ''))
+    + (buffs.length || kws.length ? '<div class="rp-pop-buffs">' + [...buffs, ...kws].map((x) => '<span>' + esc(x) + '</span>').join('') + '</div>' : '')
+    + (c.s && c.s.length ? '<div class="rp-side-h">進化元（' + c.s.length + '枚）</div><div class="rp-side-src">' + c.s.map((n) => '<img data-rp-no="' + esc(n) + '" src="' + esc(imgOf(n)) + '" alt="" title="' + esc(nameOf(n)) + '">').join('') + '</div>' : '')
+    + sec('効果', txt('効果テキスト'))
+    + sec('進化元効果', txt('進化元テキスト'))
+    + sec('セキュリティ効果', txt('セキュリティテキスト'));
+}
 // 盤面が画面（操作バーの上まで）に収まるよう縮める（スクロールしないと自分の手札が見えなかった）
 function fitBoard() {
   if (!V || !V.scr) return;
   const wrap = V.scr.querySelector('.battle-wrap');
   const bar = document.getElementById('rp-bar');
   if (!wrap) return;
-  wrap.style.transform = ''; wrap.style.marginBottom = '';
-  const avail = window.innerHeight - (bar ? bar.offsetHeight : 0) - 4;
+  wrap.style.transform = ''; wrap.style.marginBottom = ''; wrap.style.position = ''; wrap.style.left = ''; wrap.style.top = '';
+  const availH = window.innerHeight - (bar ? bar.offsetHeight : 0) - 6;
+  if (isWide()) {
+    // 盤面（幅を詰めたもの）を、横のパネルを除いた所いっぱいに拡大して映す（カードが大きく、動きが分かりやすいように）
+    const sideW = (document.getElementById('rp-side') || {}).offsetWidth || 0;
+    const availW = window.innerWidth - sideW - 24;
+    const natW = wrap.offsetWidth, natH = wrap.scrollHeight;
+    if (!natW || !natH) return;
+    const k = Math.min(availW / natW, availH / natH, 2.2);
+    wrap.style.position = 'absolute';
+    wrap.style.top = '0';
+    wrap.style.left = Math.max(8, (availW - natW * k) / 2 + 8) + 'px';
+    wrap.style.transformOrigin = 'top left';
+    wrap.style.transform = 'scale(' + k.toFixed(4) + ')';
+    return;
+  }
   const natural = wrap.scrollHeight;
-  if (natural > avail && avail > 100) {
-    const k = avail / natural;
+  if (natural > availH && availH > 100) {
+    const k = availH / natural;
     wrap.style.transformOrigin = 'top center';
     wrap.style.transform = 'scale(' + k.toFixed(4) + ')';
-    wrap.style.marginBottom = (-(natural - avail)) + 'px';
+    wrap.style.marginBottom = (-(natural - availH)) + 'px';
   }
 }
 function leave() {
@@ -360,9 +427,11 @@ function leave() {
     V.scr.classList.remove('rp-mode');
   }
   window.removeEventListener('resize', onResize);
+  if (V && V.hover) document.removeEventListener('mouseover', V.hover);
+  document.body.classList.remove('rp-wide');
   const _wrap = V && V.scr && V.scr.querySelector('.battle-wrap');
-  if (_wrap) { _wrap.style.transform = ''; _wrap.style.transformOrigin = ''; _wrap.style.marginBottom = ''; }
-  ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop', 'rp-logbox'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
+  if (_wrap) { _wrap.style.transform = ''; _wrap.style.transformOrigin = ''; _wrap.style.marginBottom = ''; _wrap.style.position = ''; _wrap.style.left = ''; _wrap.style.top = ''; }
+  ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop', 'rp-logbox', 'rp-side'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
   window._replayViewing = false;
   if (window.bs) window.bs._battleAborted = true;
   V = null;
@@ -456,7 +525,7 @@ function handStrip(id, key, title, note, st, pv) {
   const prev = {};
   (pv ? pv[key] || [] : list).forEach((n) => { prev[n] = (prev[n] || 0) + 1; });
   el.innerHTML = '<span class="rp-oh-t">' + title + '（' + list.length + '枚' + note + '）</span><div class="rp-oh-row">'
-    + (list.length ? list.map((n) => { const isNew = !(prev[n] > 0); if (!isNew) prev[n]--; return '<img class="' + (isNew ? 'rp-new' : '') + '" src="' + esc(imgOf(n)) + '" alt="" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')">'; }).join('') : '<span class="rp-none">なし</span>')
+    + (list.length ? list.map((n) => { const isNew = !(prev[n] > 0); if (!isNew) prev[n]--; return '<img class="' + (isNew ? 'rp-new' : '') + '" data-rp-no="' + esc(n) + '" src="' + esc(imgOf(n)) + '" alt="" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')">'; }).join('') : '<span class="rp-none">なし</span>')
     + '</div>';
 }
 
@@ -541,7 +610,7 @@ function drawEvents() {
     } else if (e.k === 'open') {
       const dest = openDest(V.i, e);
       panels.push('<div class="rp-ev-open"><div class="rp-ev-t">📖 ' + esc(who(e.w)) + 'のデッキオープン（' + (e.ns || []).length + '枚）</div><div class="rp-ev-cards">'
-        + (e.ns || []).map((n, k) => '<div class="rp-ev-c" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')"><img src="' + esc(imgOf(n)) + '" alt=""><span class="rp-dest ' + (/手札|登場|進化元|育成/.test(dest[k]) ? 'go' : 'out') + '">' + esc(dest[k]) + '</span></div>').join('') + '</div></div>');
+        + (e.ns || []).map((n, k) => '<div class="rp-ev-c" data-rp-no="' + esc(n) + '" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')"><img src="' + esc(imgOf(n)) + '" alt=""><span class="rp-dest ' + (/手札|登場|進化元|育成/.test(dest[k]) ? 'go' : 'out') + '">' + esc(dest[k]) + '</span></div>').join('') + '</div></div>');
     } else if (e.k === 'vs') {
       panels.push('<div class="rp-ev-vs"><div class="rp-ev-t">' + esc(e.lb || (e.bt ? '⚔ バトル' : '🛡 セキュリティチェック')) + '</div><div class="rp-ev-vsrow">'
         + '<div class="rp-ev-c"><img src="' + esc(imgOf(e.a || noByName(e.an))) + '" alt=""><span>' + esc(e.an || nameOf(e.a)) + (e.ad != null ? '<br>DP ' + e.ad : '') + '</span></div>'
@@ -636,7 +705,7 @@ function popCard(c) {
     + small(c.s, '進化元') + small(c.l, 'リンク') + '<button class="rp-btn" onclick="document.getElementById(\'rp-pop\').style.display=\'none\'">閉じる</button></div>';
   pop.style.display = 'flex';
 }
-window.replayPopNo = (no) => popCard({ n: no });
+window.replayPopNo = (no) => cardDetail({ n: no });
 
 window._replay = { start, finish, discard, listMeta, setFav, del, open, FAV_MAX, KEEP, isRecording: () => !!rec };
 window._replayOnLog = onLog;

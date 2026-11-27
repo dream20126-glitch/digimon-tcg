@@ -46,7 +46,6 @@ window.loadSavedDecks = async function() {
             <button class="deck-action-btn deck-action-btn-check" onclick="viewDeckDetail(${i})">確認</button>
             <button class="deck-action-btn deck-action-btn-edit" onclick="editDeckByIndex(${i})">編集</button>
             <button class="deck-action-btn deck-action-btn-edit" onclick="duplicateDeckByIndex(${i})">複製</button>
-            <button class="deck-action-btn deck-action-btn-edit" onclick="editSleeveByIndex(${i})">🎴 スリーブ</button>
             <button class="deck-action-btn" style="background:linear-gradient(135deg,#1a0000,#0d0000); border-color:#ff4444; color:#ff4444;" onclick="deleteDeckByIndex(${i})">削除</button>
           </div>
         </div>
@@ -68,9 +67,19 @@ window.editSleeveByIndex = async function(idx) {
     const res = await gasPost('updateDeckSleeve', { name: d.name, password: currentSessionPassword, sleeve });
     if (!res || !res.success) throw new Error('デッキが見つかりません');
     d.sleeve = sleeve;
+    renderViewSleeveField(idx);
     loadSavedDecks();
   } catch (e) { alert('スリーブを保存できませんでした: ' + e.message); }
 };
+
+// 確認の画面のスリーブの欄（「変える」でスリーブだけを変えて保存）
+function renderViewSleeveField(idx) {
+  const box = document.getElementById('view-sleeve-field');
+  const d = window.latestDecks[idx];
+  if (!box || !d || !window._sleeveFieldHtml) return;
+  const sl = window._parseSleeve ? window._parseSleeve(d.sleeve) : null;
+  box.innerHTML = window._sleeveFieldHtml(sl, 'editSleeveByIndex(' + idx + ')');
+}
 
 window.goToDeckListDirect = function() {
   showScreen('deck-list-screen');
@@ -109,11 +118,13 @@ window.viewDeckDetail = async function(idx) {
   document.getElementById('view-lvbar').innerHTML = renderLevelBarHtml(lvEntries);
 
   const actionArea = document.getElementById('modal-action-area');
+  const _slvBox = '<div id="view-sleeve-field" style="max-width:520px; margin:12px auto 0;"></div>';
   if (String(d.status).trim() === '登録済み') {
-    actionArea.innerHTML = `<button class="menu-btn" style="border-color:#ff4444; color:#ff4444; background:#1a0000;" onclick="toggleRegistration('${d.name}', false)">対戦デッキの登録解除</button>`;
+    actionArea.innerHTML = _slvBox + `<button class="menu-btn" style="border-color:#ff4444; color:#ff4444; background:#1a0000;" onclick="toggleRegistration('${d.name}', false)">対戦デッキの登録解除</button>`;
   } else {
-    actionArea.innerHTML = `<button class="menu-btn primary" onclick="toggleRegistration('${d.name}', true, ${mainDeckCount})">対戦デッキに登録する</button>`;
+    actionArea.innerHTML = _slvBox + `<button class="menu-btn primary" onclick="toggleRegistration('${d.name}', true, ${mainDeckCount})">対戦デッキに登録する</button>`;
   }
+  renderViewSleeveField(idx);
 };
 
 window.toggleRegistration = async function(name, isRegister, mainCount = 50) {

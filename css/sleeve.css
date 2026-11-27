@@ -94,3 +94,16 @@
 .slv-big-ov { position: fixed; inset: 0; z-index: 80000; background: rgba(0, 0, 0, 0.82); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .slv-big { background: #021520; border: 1px solid #00fbff; border-radius: 14px; padding: 14px; color: #e8f6ff; max-width: 420px; width: 100%; text-align: center; }
 .slv-big-card { width: 170px; aspect-ratio: 63 / 88; margin: 8px auto 12px; }
+
+/* デジタマデッキのスリーブ（選ぶ画面のタブ・見え方） */
+.slvp-tabs { display: flex; gap: 6px; padding: 8px 12px 0; }
+.slvp-tab { flex: 1; background: #05121a; border: 1px solid #1d4552; color: #9fb3c8; border-radius: 10px 10px 0 0; padding: 8px; font-size: 13px; font-weight: bold; cursor: pointer; }
+.slvp-tab.sel { background: rgba(0, 251, 255, 0.14); border-color: #00fbff; color: #00fbff; }
+.slvp-tama-modes { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 14px 0; font-size: 12px; color: #c8d6e4; }
+.slvp-tama-modes label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.slvp-tama-modes input { accent-color: #00fbff; }
+.slv-def-back { width: 100%; height: 100%; border-radius: 3px; background: #1a2a44 url('https://drive.google.com/thumbnail?id=1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9&sz=w200') center / cover no-repeat; }
+.slv-def-back.tama, .tama-def .slv-def-back { background-image: url('https://drive.google.com/thumbnail?id=1-Os-ZfmgLlQeYGkTU1uUXrt7iowy0FLD&sz=w200'); }
+.slv-big-cards { display: flex; gap: 14px; justify-content: center; align-items: flex-end; margin: 8px 0 12px; }
+.slv-big-cards .slv-big-card { margin: 0; }
+.slv-big-card.sm { width: 110px; }

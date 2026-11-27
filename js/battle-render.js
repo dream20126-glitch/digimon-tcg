@@ -1251,7 +1251,7 @@ function renderIkusei() {
         ? (bs.player.tamaDeck && bs.player.tamaDeck.length > 0)
         : (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0);
       if (hasTamaDeck) {
-        const _slvT = window._sleeveBackHtml ? window._sleeveBackHtml(isPlayer ? 'player' : 'ai', { radius: 3, thin: true }) : '';
+        const _slvT = window._tamaSleeveBackHtml ? window._tamaSleeveBackHtml(isPlayer ? 'player' : 'ai', { radius: 3, thin: true }) : '';
         iku.innerHTML = _slvT || (tamaBackUrl
           ? `<img src="${tamaBackUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`
           : '');
@@ -1698,11 +1698,12 @@ function applyBackImages() {
   if (plBack && cardBackUrl) plBack.src = cardBackUrl;
   if (aiBack && cardBackUrl) aiBack.src = cardBackUrl;
   // スリーブ（js/sleeve.js）: デッキの山の上に重ねる（無ければ外して、いつもの裏面）
-  [['pl-deck-img', plBack, 'player'], ['ai-deck-img', aiBack, 'ai'], [null, plTama, 'player'], [null, aiTama, 'ai']].forEach(([boxId, img, side]) => {
+  [['pl-deck-img', plBack, 'player'], ['ai-deck-img', aiBack, 'ai'], [null, plTama, 'player', 1], [null, aiTama, 'ai', 1]].forEach(([boxId, img, side, isTama]) => {
     const box = boxId ? document.getElementById(boxId) : (img && img.parentNode);
     if (!box) return;
     if (!boxId && getComputedStyle(box).position === 'static') box.style.position = 'relative';
-    const html = window._sleeveBackHtml ? window._sleeveBackHtml(side, { radius: 3, thin: true }) : '';
+    const html = isTama ? (window._tamaSleeveBackHtml ? window._tamaSleeveBackHtml(side, { radius: 3, thin: true }) : '')
+      : (window._sleeveBackHtml ? window._sleeveBackHtml(side, { radius: 3, thin: true }) : '');
     let el = box.querySelector('.slv-deck');
     if (!html) { if (el) el.remove(); if (img) img.style.visibility = ''; return; }
     if (!el) { el = document.createElement('div'); el.className = 'slv-deck'; el.style.cssText = 'position:absolute;inset:0;'; box.insertBefore(el, box.firstChild); }

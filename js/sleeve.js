@@ -61,9 +61,9 @@ export function sleeveSceneHtml(sl) {
   const card = (x, st) => '<div style="' + st + '">' + (sleeveHtml(x, { radius: 3, thin: true }) || '<div class="slv-def-back"></div>') + '</div>';
   const pileOf = (x) => { let h = ''; for (let i = 4; i >= 0; i--) h += card(x, 'left:' + (i * 1.5) + 'px;top:' + (-i * 2) + 'px;'); return h; };
   let secs = '';
-  for (let i = 0; i < 5; i++) secs += card(sl, 'top:' + (i * 10) + 'px;');
+  for (let i = 0; i < 5; i++) secs += card(sl, 'top:' + (i * 9) + 'px;');
   let hand = '';
-  for (let i = 0; i < 5; i++) hand += card(sl, 'left:' + (i * 13) + 'px;transform:rotate(' + ((i - 2) * 9) + 'deg);');
+  for (let i = 0; i < 5; i++) hand += card(sl, 'left:' + (i * 9) + 'px;transform:rotate(' + ((i - 2) * 9) + 'deg);');
   return '<div class="slv-scene"><span class="slv-scene-t">対戦での見え方</span>'
     + '<div><div class="slv-pile">' + pileOf(sl) + '</div><div class="slv-scene-lbl">デッキ</div></div>'
     + '<div><div class="slv-pile' + (tama ? '' : ' tama-def') + '">' + (tama ? pileOf(tama) : pileOf(null)) + '</div><div class="slv-scene-lbl">デジタマ</div></div>'

@@ -39,7 +39,7 @@
 .slvp-x { margin-left: auto; background: none; border: none; color: #9fb3c8; font-size: 18px; cursor: pointer; }
 .slvp-body { display: flex; gap: 12px; padding: 12px; min-height: 0; flex: 1; overflow: hidden; }
 .slvp-left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.slvp-right { width: 230px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.slvp-right { width: 230px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overflow-x: hidden; }
 .slvp-search { display: flex; gap: 6px; }
 .slvp-q { flex: 1; min-width: 0; background: #05121a; color: #e8f6ff; border: 1px solid #1d4552; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
 .slvp-go { background: #00fbff; color: #00161d; border: none; border-radius: 8px; padding: 8px 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
@@ -81,15 +81,16 @@
 .slv-field-btn { background: none; border: 1px solid var(--main-cyan, #00fbff); color: var(--main-cyan, #00fbff); border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; font-size: 12px; }
 
 /* 対戦での見え方のプレビュー（デッキの山・セキュリティ・手札の裏） */
-.slv-scene { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 14px; padding: 16px 8px 8px; border-radius: 10px;
+.slv-scene { position: relative; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-evenly; gap: 10px 6px; padding: 18px 6px 6px; border-radius: 10px; box-sizing: border-box; max-width: 100%;
   background: radial-gradient(ellipse at 50% 30%, #0a2a3a, #02080c 75%); border: 1px solid #0f3a4a; }
 .slv-scene-t { position: absolute; left: 8px; top: 4px; font-size: 9px; color: #6b7a8c; }
-.slv-pile { position: relative; width: 46px; height: 64px; }
-.slv-pile > div { position: absolute; width: 46px; height: 64px; }
-.slv-secs { position: relative; width: 50px; height: 78px; }
-.slv-secs > div { position: absolute; left: 0; width: 48px; height: 36px; }
-.slv-hand { position: relative; width: 96px; height: 70px; }
-.slv-hand > div { position: absolute; bottom: 0; width: 40px; height: 56px; transform-origin: 50% 120%; }
+/* 4つ（デッキ・デジタマ・セキュリティ・手札）が選ぶ画面の右の欄（230px）に横一列で収まる大きさ */
+.slv-pile { position: relative; width: 38px; height: 45px; }
+.slv-pile > div { position: absolute; width: 32px; height: 45px; }
+.slv-secs { position: relative; width: 34px; height: 60px; }
+.slv-secs > div { position: absolute; left: 0; width: 32px; height: 24px; }
+.slv-hand { position: relative; width: 68px; height: 52px; }
+.slv-hand > div { position: absolute; bottom: 0; width: 32px; height: 45px; transform-origin: 50% 120%; }
 .slv-scene-lbl { font-size: 9px; color: #9fb3c8; text-align: center; margin-top: 3px; }
 .slv-big-ov { position: fixed; inset: 0; z-index: 80000; background: rgba(0, 0, 0, 0.82); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .slv-big { background: #021520; border: 1px solid #00fbff; border-radius: 14px; padding: 14px; color: #e8f6ff; max-width: 420px; width: 100%; text-align: center; }

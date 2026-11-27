@@ -33,7 +33,10 @@ window.loadSavedDecks = async function() {
       return `
       <div class="deck-row">
         ${isRegistered ? '<div class="reg-badge">✓</div>' : ''}
-        <img src="${coverUrl}" style="width:60px; height:85px; border-radius:8px; margin-right:15px; object-fit:cover; background:#333;" onerror="this.style.display='none'">
+        <div style="position:relative; margin-right:15px; flex-shrink:0;">
+          <img src="${coverUrl}" style="width:60px; height:85px; border-radius:8px; object-fit:cover; background:#333; display:block;" onerror="this.style.visibility='hidden'">
+          ${(() => { const sl = window._parseSleeve ? window._parseSleeve(d.sleeve) : null; return sl ? '<div title="スリーブ" style="position:absolute; right:-8px; bottom:-6px; width:26px; height:36px;">' + window._sleeveHtml(sl, { radius: 2 }) + '</div>' : ''; })()}
+        </div>
         <div style="flex:1; text-align:left; min-width:0;">
           <div style="color:#fff; font-weight:bold; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${d.name}</div>
           <div style="font-size:10px; color:${isRegistered ? '#00ff88' : '#666'}; margin-bottom:10px;">
@@ -43,6 +46,7 @@ window.loadSavedDecks = async function() {
             <button class="deck-action-btn deck-action-btn-check" onclick="viewDeckDetail(${i})">確認</button>
             <button class="deck-action-btn deck-action-btn-edit" onclick="editDeckByIndex(${i})">編集</button>
             <button class="deck-action-btn deck-action-btn-edit" onclick="duplicateDeckByIndex(${i})">複製</button>
+            <button class="deck-action-btn deck-action-btn-edit" onclick="editSleeveByIndex(${i})">🎴 スリーブ</button>
             <button class="deck-action-btn" style="background:linear-gradient(135deg,#1a0000,#0d0000); border-color:#ff4444; color:#ff4444;" onclick="deleteDeckByIndex(${i})">削除</button>
           </div>
         </div>
@@ -51,6 +55,21 @@ window.loadSavedDecks = async function() {
   } catch (e) {
     container.innerHTML = `<div style="color:#ff4444; padding:20px;">エラー: ${e.message}</div>`;
   }
+};
+
+// マイデッキからスリーブだけを付ける・変える・外す
+window.editSleeveByIndex = async function(idx) {
+  const d = window.latestDecks[idx];
+  if (!d || !window._openSleevePicker) return;
+  const r = await window._openSleevePicker({ current: d.sleeve || null, deckNos: window._deckNosOf ? window._deckNosOf(d.list) : [], title: '「' + d.name + '」のスリーブ' });
+  if (!r) return;
+  const sleeve = window._sleeveStr(r.sleeve || null);
+  try {
+    const res = await gasPost('updateDeckSleeve', { name: d.name, password: currentSessionPassword, sleeve });
+    if (!res || !res.success) throw new Error('デッキが見つかりません');
+    d.sleeve = sleeve;
+    loadSavedDecks();
+  } catch (e) { alert('スリーブを保存できませんでした: ' + e.message); }
 };
 
 window.goToDeckListDirect = function() {
@@ -128,7 +147,7 @@ window.duplicateDeckByIndex = async function(idx) {
   try {
     const check = await gasPost('checkExistingDeck', { name, password: currentSessionPassword });
     if (check.exists) return alert(`「${name}」は既にあります。別の名前にしてください。`);
-    const r = await gasPost('saveDeck', { name, cover: d.cover || '', list: d.list, password: currentSessionPassword, isUpdate: false });
+    const r = await gasPost('saveDeck', { name, cover: d.cover || '', list: d.list, password: currentSessionPassword, isUpdate: false, sleeve: d.sleeve || '' });
     if (r && String(r.status || '').startsWith('SUCCESS')) { alert('複製しました'); loadSavedDecks(); }
     else alert('複製に失敗しました: ' + ((r && r.status) || ''));
   } catch (e) {

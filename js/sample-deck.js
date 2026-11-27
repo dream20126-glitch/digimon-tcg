@@ -10,6 +10,7 @@ let sampleDecks = [];        // ユーザー向け（公開のみ）
 let adminSampleDecks = [];   // 管理画面向け（非公開も）
 let sdEditData = null;       // 管理画面で編集中のサンプルデッキ（新規は null）
 let sdSaveCover = '';
+let sdSaveSleeve = null; // スリーブ（js/sleeve.js）
 
 // サンプルデッキのカテゴリ（シートの「カテゴリ」列にこの文字をそのまま保存）
 const SAMPLE_CATEGORIES = [
@@ -251,11 +252,24 @@ window.showSampleSaveScreen = function() {
   const cnt = countDeck(tempDeck);
   document.getElementById('ssave-count').innerText = `メイン ${cnt.main}/50枚・デジタマ ${cnt.tama}/5枚` + (cnt.main !== 50 ? '（メインが50枚ではありません）' : '');
   sdSaveCover = d ? (d.cover || '') : '';
+  sdSaveSleeve = d && window._parseSleeve ? window._parseSleeve(d.sleeve) : null;
+  renderSampleSleeveField();
   document.getElementById('ssave-cover-area').innerHTML = tempDeck.map((e) => {
     const imgUrl = e.card['ImageURL'] || '';
     return `<div onclick="ssaveSelectCover(this,'${esc(imgUrl)}')" style="border:2px solid ${sdSaveCover === imgUrl ? 'var(--main-cyan)' : 'transparent'}; cursor:pointer; border-radius:4px; overflow:hidden;"><img src="${esc(getCardImageUrl(e.card))}" style="width:100%; display:block;"></div>`;
   }).join('');
   showScreen('sample-save-screen');
+};
+function renderSampleSleeveField() {
+  const el = document.getElementById('ssave-sleeve-field');
+  if (el && window._sleeveFieldHtml) el.innerHTML = window._sleeveFieldHtml(sdSaveSleeve, 'pickSampleSleeve()');
+}
+window.pickSampleSleeve = async function() {
+  if (!window._openSleevePicker) return;
+  const r = await window._openSleevePicker({ current: sdSaveSleeve, deckNos: tempDeck.map((e) => e.card['カードNo']), title: 'このデッキのスリーブを選ぶ' });
+  if (!r) return;
+  sdSaveSleeve = r.sleeve || null;
+  renderSampleSleeveField();
 };
 window.ssaveSelectCover = function(el, url) {
   sdSaveCover = url;
@@ -279,6 +293,7 @@ window.executeSampleSave = async function() {
     order: parseInt(document.getElementById('ssave-order').value, 10) || 0,
     published: document.getElementById('ssave-published').checked,
     forAi: document.getElementById('ssave-for-ai').checked,
+    sleeve: window._sleeveStr ? window._sleeveStr(sdSaveSleeve) : '',
   };
   const btn = document.getElementById('ssave-confirm-btn');
   btn.disabled = true; btn.innerText = '保存中...';

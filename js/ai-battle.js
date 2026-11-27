@@ -261,6 +261,8 @@ async function beginBattle(playerFirst) {
       window._onGameEnd = null;
       showAiBattleSetup();
     };
+    // スリーブ（自分のデッキ・AIのデッキ）
+    window._nextSleeves = { player: window._parseSleeve ? window._parseSleeve(my.sleeve) : null, ai: window._parseSleeve ? window._parseSleeve(ai.sleeve) : null };
     await window.startBattleGame({ list: my.list }, { list: ai.list }, playerFirst);
     // 戦績の記録を始める
     try {

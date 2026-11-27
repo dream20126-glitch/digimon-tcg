@@ -17,6 +17,7 @@ window.initBuilder = async function() {
   selectedTypes = [];
   window._editDeckName = '';
   window._editPassword = '';
+  window._deckSleeve = null; // スリーブ（js/sleeve.js）
   tempDeck = [];
   updateDeckUI();
   const label = document.getElementById('back-btn-label');
@@ -37,6 +38,7 @@ window.editDeckByIndex = async function(idx) {
   const d = window.latestDecks[idx];
   window._editDeckName = d.name;
   window._editPassword = currentSessionPassword;
+  window._deckSleeve = window._parseSleeve ? window._parseSleeve(d.sleeve) : null;
   tempDeck = [];
   showScreen('deck-make-screen');
 
@@ -478,6 +480,19 @@ window.showSaveScreen = function() {
     const src = getCardImageUrl(i.card);
     return `<div onclick="selectCover(this, '${imgUrl}')" style="border:2px solid transparent; cursor:pointer;"><img src="${src}" style="width:100%"></div>`;
   }).join('');
+  renderDeckSleeveField();
+};
+// スリーブ（デッキの裏面）の欄と、選ぶ画面
+function renderDeckSleeveField() {
+  const el = document.getElementById('deck-sleeve-field');
+  if (el && window._sleeveFieldHtml) el.innerHTML = window._sleeveFieldHtml(window._deckSleeve || null, 'pickDeckSleeve()');
+}
+window.pickDeckSleeve = async function() {
+  if (!window._openSleevePicker) return;
+  const r = await window._openSleevePicker({ current: window._deckSleeve || null, deckNos: tempDeck.map((i) => i.card['カードNo']), title: 'このデッキのスリーブを選ぶ' });
+  if (!r) return;
+  window._deckSleeve = r.sleeve || null;
+  renderDeckSleeveField();
 };
 
 window.selectCover = function(el, url) {
@@ -510,7 +525,8 @@ window.handleSaveRequest = async function() {
     const list = tempDeck.map(i => `${i.card["名前"]}(${i.card["カードNo"]})x${i.count}`).join(',');
 
     const saveResult = await gasPost('saveDeck', {
-      name, cover: selectedCoverUrl, list, password: pw, isUpdate: exists
+      name, cover: selectedCoverUrl, list, password: pw, isUpdate: exists,
+      sleeve: window._sleeveStr ? window._sleeveStr(window._deckSleeve || null) : ''
     });
 
     // 保存できなかった（GAS のエラー）なら「保存が完了しました」を出さない

@@ -1,0 +1,62 @@
+/* ===== スリーブ（デッキの裏面。js/sleeve.js） ===== */
+.slv { position: relative; width: 100%; height: 100%; overflow: hidden; box-sizing: border-box;
+  border: 3px solid var(--slv, #00fbff); background: #0a0a0a;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 0 4px rgba(0, 0, 0, 0.6); }
+.slv-art { position: absolute; inset: 0; background-repeat: no-repeat; background-color: #111; }
+/* ビニールのつや（斜めの反射）と縁の内側の明るさ */
+.slv-gloss { position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(125deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.08) 22%, transparent 40%, transparent 62%, rgba(255, 255, 255, 0.12) 78%, transparent 92%),
+    radial-gradient(ellipse at 50% 120%, rgba(0, 0, 0, 0.35), transparent 60%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15), inset 0 0 10px rgba(0, 0, 0, 0.5); }
+/* 裏面だと分かる小さな印 */
+.slv-emb { position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); font-size: 9px; line-height: 1; color: var(--slv, #00fbff);
+  text-shadow: 0 0 3px #000, 0 0 6px var(--slv, #00fbff); opacity: 0.9; pointer-events: none; }
+
+/* 選ぶ画面 */
+.slvp-ov { position: fixed; inset: 0; z-index: 80000; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
+.slvp { width: 100%; max-width: 860px; max-height: 94vh; display: flex; flex-direction: column; background: #021520; border: 1px solid #00fbff; border-radius: 14px; color: #e8f6ff; box-shadow: 0 0 30px rgba(0, 251, 255, 0.25); overflow: hidden; }
+.slvp-head { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #0f3a4a; color: #00fbff; }
+.slvp-x { margin-left: auto; background: none; border: none; color: #9fb3c8; font-size: 18px; cursor: pointer; }
+.slvp-body { display: flex; gap: 12px; padding: 12px; min-height: 0; flex: 1; overflow: hidden; }
+.slvp-left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.slvp-right { width: 230px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.slvp-search { display: flex; gap: 6px; }
+.slvp-q { flex: 1; min-width: 0; background: #05121a; color: #e8f6ff; border: 1px solid #1d4552; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.slvp-go { background: #00fbff; color: #00161d; border: none; border-radius: 8px; padding: 8px 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+.slvp-hint { font-size: 11px; color: #9fb3c8; margin: 6px 0; }
+.slvp-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; align-content: start; padding-right: 2px; }
+.slvp-card { cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: 2px; text-align: center; font-size: 9px; color: #9fb3c8; }
+.slvp-card img { width: 100%; border-radius: 4px; display: block; }
+.slvp-card span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.slvp-card.sel { border-color: #00fbff; box-shadow: 0 0 8px #00fbff; }
+.slvp-prev-wrap { display: flex; align-items: flex-end; gap: 10px; justify-content: center; }
+.slvp-prev { width: 150px; aspect-ratio: 63 / 88; }
+.slvp-prev-sm { width: 44px; aspect-ratio: 63 / 88; }
+.slvp-empty { width: 100%; height: 100%; border: 2px dashed #1d4552; border-radius: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; color: #6b7a8c; line-height: 1.6; padding: 6px; box-sizing: border-box; }
+.slvp-l { font-size: 11px; color: #9fb3c8; display: flex; flex-direction: column; gap: 3px; }
+.slvp-l input[type=range] { accent-color: #00fbff; }
+.slvp-colors { display: flex; flex-wrap: wrap; gap: 6px; }
+.slvp-c { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #ffffff44; cursor: pointer; padding: 0; position: relative; overflow: hidden; }
+.slvp-c.sel { border-color: #fff; box-shadow: 0 0 0 2px #00fbff; }
+.slvp-c-custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+.slvp-c-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.slvp-note { font-size: 10px; color: #6b7a8c; }
+.slvp-foot { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid #0f3a4a; flex-wrap: wrap; }
+.slvp-none { background: none; border: 1px solid #1d4552; color: #9fb3c8; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; }
+.slvp-cancel { background: none; border: 1px solid #555; color: #aaa; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.slvp-ok { background: #00fbff; color: #00161d; border: none; border-radius: 8px; padding: 8px 20px; font-weight: bold; cursor: pointer; }
+@media (max-width: 640px) {
+  .slvp-body { flex-direction: column; overflow-y: auto; }
+  .slvp-right { width: 100%; }
+  .slvp-grid { max-height: 38vh; }
+  .slvp-prev { width: 120px; }
+}
+
+/* デッキの保存・マイデッキ・管理画面の「スリーブ」の欄 */
+.slv-field { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid #333; border-radius: 8px; background: #050505; margin-bottom: 15px; text-align: left; }
+.slv-field-prev { width: 46px; aspect-ratio: 63 / 88; flex-shrink: 0; }
+.slv-field-def { width: 100%; height: 100%; border-radius: 4px; background: #111 center / cover no-repeat; border: 1px dashed #444; box-sizing: border-box; }
+.slv-field-txt { flex: 1; min-width: 0; font-size: 12px; color: #aaa; }
+.slv-field-txt b { display: block; color: var(--main-cyan, #00fbff); font-size: 13px; margin-bottom: 2px; }
+.slv-field-btn { background: none; border: 1px solid var(--main-cyan, #00fbff); color: var(--main-cyan, #00fbff); border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; font-size: 12px; }

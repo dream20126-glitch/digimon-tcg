@@ -257,6 +257,8 @@ function showMulliganOverlay() {
 function renderMulliganPreview(animate) {
   const area = document.getElementById('mulligan-hand-preview'); if (!area) return;
   const backUrl = 'https://drive.google.com/thumbnail?id=1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9&sz=w200';
+  // 引き直しの画面の裏面もスリーブに（js/sleeve.js）
+  const _slvBack = window._sleeveBackHtml ? window._sleeveBackHtml('player', { radius: 4 }) : '';
   area.innerHTML = '';
   const cards = [];
   bs.player.hand.forEach((c, i) => {
@@ -266,7 +268,7 @@ function renderMulliganPreview(animate) {
     div.dataset.cardNo = c.cardNo || '';
     div.style.perspective = '200px';
     div.innerHTML = `<div class="mulligan-card-inner" style="width:100%;height:100%;position:relative;transition:transform 0.5s;transform-style:preserve-3d;">
-      <div style="position:absolute;inset:0;backface-visibility:hidden;">${backUrl ? `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;background:#1a1a3a;border-radius:4px;"></div>'}</div>
+      <div style="position:absolute;inset:0;backface-visibility:hidden;">${_slvBack || (backUrl ? `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;background:#1a1a3a;border-radius:4px;"></div>')}</div>
       <div style="position:absolute;inset:0;backface-visibility:hidden;transform:rotateY(180deg);">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="font-size:7px;color:#aaa;padding:3px;">${c.name}</div>`}</div>
     </div>`;
     // タップでカード詳細
@@ -661,6 +663,9 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 状態リセット
   resetBattleState(playerFirst);
   bs.phase = 'standby';
+  // スリーブ（js/sleeve.js）: AI対戦・オンライン対戦が始める前に置いたもの。チュートリアル等は無し（いつもの裏面）
+  window._sleeves = window._nextSleeves || {};
+  window._nextSleeves = null;
 
   // 盤面の色: オンライン対戦は P1（先攻）＝シアン、P2（後攻）＝ピンクで固定。
   // 自分が後攻なら自分側（下）をピンクにする（css/theme-battle.css の .side-p2）
@@ -805,7 +810,7 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
   // 読み込み直しても対戦に戻れるよう、ルームと自分の情報を端末に覚える（online-resume.js）
   try {
     if (window._onlineResume) window._onlineResume.onBattleStarted({
-      roomId, myKey, playerFirst, oppName: oppName || '',
+      roomId, myKey, playerFirst, oppName: oppName || '', sleeves: window._sleeves || {},
       myName: window.currentPlayerName || '', password: window.currentSessionPassword || '',
       myList: playerDeckData && playerDeckData.list, oppList: oppDeckData && oppDeckData.list,
       // 読み込み直したとき、Firebase のルームに戻す自分の参加情報（onDisconnect で消えるため）
@@ -820,6 +825,7 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
 window.resumeOnlineBattle = async function(info, snap, applySnapshot) {
   const { roomId, myKey, playerFirst, oppName, myList, oppList } = info;
   await resumeOnline(roomId, myKey);
+  window._sleeves = info.sleeves || {};
   // 戦績: 端末に残した記録の続きから
   try { if (window._matchRecord) window._matchRecord.resume(roomId); } catch (_) {}
   setFirstPlayer(playerFirst);

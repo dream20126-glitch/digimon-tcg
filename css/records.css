@@ -447,3 +447,13 @@ body.rp-wide #rp-logbox { width: 330px; max-height: min(34vh, 240px); }
 body.rp-wide .rp-pop-buffs { justify-content: flex-start; margin-top: 6px; }
 body.rp-wide #rp-bar { left: 8px; right: 346px; margin: 0; max-width: none; }
 body.rp-wide #rp-ev { left: calc((100vw - 346px) / 2); }
+
+/* ===== 振り返り（2026-11-27）: カードの詳細は盤面のすぐ右・上から。ログは真ん中の表示に ===== */
+#rp-logbox { display: none !important; }
+body.rp-wide #rp-side { right: auto; bottom: auto; display: flex; flex-direction: column; overflow: hidden; padding: 10px; }
+body.rp-wide #rp-side > * { flex-shrink: 0; }
+body.rp-wide .rp-side-img { width: auto; max-width: 100%; max-height: 46vh; object-fit: contain; }
+body.rp-wide #rp-side .rp-side-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+body.rp-wide #rp-bar { right: auto; }
+#rp-ev .rp-ev-log { font-size: 12px; line-height: 1.6; max-width: min(520px, 90vw); border-color: #9fb3c8aa !important; }
+#rp-ev .rp-ev-log > div + div { border-top: 1px solid #0f3a4a; }

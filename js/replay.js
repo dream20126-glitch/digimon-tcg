@@ -306,8 +306,7 @@ function enter() {
   document.body.appendChild(arrow);
   const ev = document.createElement('div'); ev.id = 'rp-ev'; document.body.appendChild(ev);
   const bar = document.createElement('div'); bar.id = 'rp-bar'; document.body.appendChild(bar);
-  // そのコマで起きたこと（ログ）は右上に出す（下の操作バーの中だと目で追いにくい）
-  const logbox = document.createElement('div'); logbox.id = 'rp-logbox'; document.body.appendChild(logbox);
+  // そのコマで起きたこと（ログ）は、盤面の真ん中の表示（効果の発動・デッキオープン等と同じ所）に出す
   const pop = document.createElement('div'); pop.id = 'rp-pop'; pop.className = 'rp-pop'; pop.onclick = (e) => { if (e.target === pop) pop.style.display = 'none'; }; document.body.appendChild(pop);
   // 盤面を押しても操作は動かさない。カードを押したら詳細だけ出す
   V.guard = (e) => {
@@ -385,10 +384,12 @@ function renderSide(c) {
     + (meta ? '<div class="rp-side-meta">' + esc(meta) + '</div>' : '')
     + (typeof c.d === 'number' && c.d > 0 ? '<div class="rp-side-dp">DP ' + c.d + (c.r ? '　（レスト）' : '') + '</div>' : (c.r ? '<div class="rp-side-dp">（レスト）</div>' : ''))
     + (buffs.length || kws.length ? '<div class="rp-pop-buffs">' + [...buffs, ...kws].map((x) => '<span>' + esc(x) + '</span>').join('') + '</div>' : '')
+    + '<div class="rp-side-body">'
     + (c.s && c.s.length ? '<div class="rp-side-h">進化元（' + c.s.length + '枚）</div><div class="rp-side-src">' + c.s.map((n) => '<img data-rp-no="' + esc(n) + '" src="' + esc(imgOf(n)) + '" alt="" title="' + esc(nameOf(n)) + '">').join('') + '</div>' : '')
     + sec('効果', txt('効果テキスト'))
     + sec('進化元効果', txt('進化元テキスト'))
-    + sec('セキュリティ効果', txt('セキュリティテキスト'));
+    + sec('セキュリティ効果', txt('セキュリティテキスト'))
+    + '</div>';
 }
 // 盤面が画面（操作バーの上まで）に収まるよう縮める（スクロールしないと自分の手札が見えなかった）
 function fitBoard() {
@@ -398,20 +399,27 @@ function fitBoard() {
   if (!wrap) return;
   wrap.style.transform = ''; wrap.style.marginBottom = ''; wrap.style.position = ''; wrap.style.left = ''; wrap.style.top = '';
   const availH = window.innerHeight - (bar ? bar.offsetHeight : 0) - 6;
+  const side = document.getElementById('rp-side'), ev = document.getElementById('rp-ev');
   if (isWide()) {
-    // 盤面（幅を詰めたもの）を、横のパネルを除いた所いっぱいに拡大して映す（カードが大きく、動きが分かりやすいように）
-    const sideW = (document.getElementById('rp-side') || {}).offsetWidth || 0;
-    const availW = window.innerWidth - sideW - 24;
+    // 盤面（幅を詰めたもの）を拡大し、そのすぐ右にカードの詳細のパネルを上から並べる。2つを1組にして画面の真ん中に置く
+    const SIDE_W = 340, GAP = 12;
     const natW = wrap.offsetWidth, natH = wrap.scrollHeight;
     if (!natW || !natH) return;
-    const k = Math.min(availW / natW, availH / natH, 2.2);
+    const k = Math.min((window.innerWidth - SIDE_W - GAP - 24) / natW, availH / natH, 2.2);
+    const boardW = natW * k, total = boardW + GAP + SIDE_W;
+    const left = Math.max(8, (window.innerWidth - total) / 2);
     wrap.style.position = 'absolute';
     wrap.style.top = '0';
-    wrap.style.left = Math.max(8, (availW - natW * k) / 2 + 8) + 'px';
+    wrap.style.left = left + 'px';
     wrap.style.transformOrigin = 'top left';
     wrap.style.transform = 'scale(' + k.toFixed(4) + ')';
+    if (side) { side.style.left = (left + boardW + GAP) + 'px'; side.style.top = '8px'; side.style.width = SIDE_W + 'px'; side.style.height = (Math.min(natH * k, availH) - 8) + 'px'; }
+    if (ev) ev.style.left = (left + boardW / 2) + 'px';
+    if (bar) { bar.style.left = left + 'px'; bar.style.width = total + 'px'; }
     return;
   }
+  if (ev) ev.style.left = '';
+  if (bar) { bar.style.left = ''; bar.style.width = ''; }
   const natural = wrap.scrollHeight;
   if (natural > availH && availH > 100) {
     const k = availH / natural;
@@ -487,7 +495,6 @@ function show(i) {
   markChanges(st, pv);
   renderOppHand(st, pv);
   renderBar();
-  renderLog();
   fitBoard();
   drawEvents();
 }
@@ -630,6 +637,9 @@ function drawEvents() {
     }
   });
   if (blkLog) panels.push('<div class="rp-ev-atk">' + esc(blkLog.replace(/^[^「]*/, '🛡 ')) + '</div>');
+  // このコマで起きたこと（ログ）: 出来事の表示の下に。アタック・進化・登場・効果の解決など、何が起きたかを1か所で見せる
+  const logs = (f.L || []).filter((l) => l && !/描画完了|^\[|^🧠|^🃏 手札:/.test(l));
+  if (logs.length) panels.push('<div class="rp-ev-log">' + logs.slice(-5).map((l) => '<div>' + esc(l) + '</div>').join('') + '</div>');
   box.innerHTML = panels.join('');
   box.style.display = panels.length ? 'flex' : 'none';
 }
@@ -654,13 +664,6 @@ function renderBar() {
     + '<button class="rp-speed" onclick="replaySpeed()">×' + V.speed + '</button>'
     + '</div>'
     + '<input class="rp-range" type="range" min="0" max="' + (V.states.length - 1) + '" value="' + V.i + '" oninput="replayGo(+this.value)">';
-}
-function renderLog() {
-  const box = document.getElementById('rp-logbox');
-  if (!box || !V) return;
-  const logs = V.frames[V.i].L || [];
-  box.innerHTML = '<div class="rp-logbox-t">📜 このコマで起きたこと</div>'
-    + (logs.length ? logs.slice(-6).map((l) => '<div class="rp-logbox-l">' + esc(l) + '</div>').join('') : '<div class="rp-none">（記録なし）</div>');
 }
 function stopPlay() { if (V && V.timer) { clearInterval(V.timer); V.timer = null; } }
 window.replayClose = () => leave();

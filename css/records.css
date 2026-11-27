@@ -457,3 +457,10 @@ body.rp-wide #rp-side .rp-side-body { flex: 1 1 auto; min-height: 0; overflow-y:
 body.rp-wide #rp-bar { right: auto; }
 #rp-ev .rp-ev-log { font-size: 12px; line-height: 1.6; max-width: min(520px, 90vw); border-color: #9fb3c8aa !important; }
 #rp-ev .rp-ev-log > div + div { border-top: 1px solid #0f3a4a; }
+
+/* デッキごと: 検索・選んでいるデッキの見出し */
+.rec-search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.rec-search input { flex: 1; min-width: 0; background: #05121a; color: var(--rec-ink); border: 1px solid #1d4552; border-radius: 10px; padding: 9px 12px; font-size: 14px; box-sizing: border-box; }
+.rec-search input:focus { outline: none; border-color: var(--main-cyan); box-shadow: 0 0 8px rgba(0, 251, 255, 0.3); }
+.rec-search-n { font-size: 11px; color: var(--rec-muted); white-space: nowrap; }
+.rec-deck-headbox { background: var(--rec-panel); border: 1px solid var(--border-col); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }

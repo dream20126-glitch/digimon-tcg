@@ -22,6 +22,8 @@ let loading = false;
 let refreshing = false;
 let mergeOpen = false;
 let resetting = false;
+let deckQuery = '';      // デッキごと: デッキ名の検索
+let _dqTimer = null;
 // 対戦の振り返り（js/replay.js）がある試合: { 記録ID: { at, fav, n } }（Firebase の replayMeta）
 let rpMeta = {};
 async function loadReplayMeta() {
@@ -354,7 +356,14 @@ function renderDeck() {
   const all = base(allRaw);
   const modeChips = chips(modeChipItems(), prefs.deckMode, 'recDeckMode');
   if (!all.length) return '<div class="rec-filter">' + modeChips + '</div>' + emptyTab('この条件の記録はありません', '対戦をすると、デッキごとの成績がここに出ます。');
-  const decks = groupBy(all, (r) => r.myDeck).map((g) => Object.assign(g, { html: deckLabel('my', g.key) }));
+  const allDecks = groupBy(all, (r) => r.myDeck).map((g) => Object.assign(g, { html: deckLabel('my', g.key) }));
+  // デッキ名で検索（入っている文字で絞る。1つに絞れたら、そのデッキの詳細だけを出す）
+  const q = deckQuery.trim().toLowerCase();
+  const decks = q ? allDecks.filter((d) => String(d.key || '').toLowerCase().includes(q)) : allDecks;
+  const searchBox = '<div class="rec-search"><input id="rec-deck-q" type="search" placeholder="🔍 デッキ名で検索" value="' + esc(deckQuery) + '"'
+    + ' oninput="recDeckQuery(this.value, event)" oncompositionend="recDeckQuery(this.value)">'
+    + (q ? '<button class="rec-chip" onclick="recDeckQuery(&quot;&quot;)">✕ クリア</button><span class="rec-search-n">' + decks.length + '件</span>' : '') + '</div>';
+  if (!decks.length) return '<div class="rec-filter">' + modeChips + '</div>' + searchBox + emptyTab('「' + esc(deckQuery) + '」に合うデッキはありません', '別の文字で検索するか、「✕ クリア」で全部のデッキに戻してください。');
   if (!prefs.deckSel || !decks.some((d) => d.key === prefs.deckSel)) prefs.deckSel = decks[0].key;
   const sel = prefs.deckSel;
   const mine = all.filter((r) => r.myDeck === sel);
@@ -384,15 +393,18 @@ function renderDeck() {
       + '<div class="rec-merge-row"><select id="rec-merge-to" class="rec-select">' + others.map((n) => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') + '<option value="__new__">（新しい名前を入力する）</option></select>'
       + '<button class="rec-chip sel" onclick="recMergeDo()">まとめる</button><button class="rec-chip" onclick="recMergeToggle()">やめる</button></div></div>'
     : '';
+  // いちばん上: 選んでいるデッキの見出しと勝率のグラフ（AIタブと同じまとめ）→ ほかのデッキの一覧（検索で1つなら出さない）→ 相手のデッキごと
   return '<div class="rec-filter">' + modeChips + '</div>'
-    + section('自分のデッキごと <small>（押すと相手のデッキごとの成績を表示）</small>', groupRows(decks, { onclick: 'recDeckSel', sel }), legend())
-    + '<div class="rec-sec rec-deck-detail">'
+    + searchBox
+    + '<div class="rec-deck-headbox">'
     + '<div class="rec-deck-head">' + thumb(inf.cover) + '<div class="rec-deck-head-txt"><div class="rec-deck-title">' + esc(sel || '（名前なし）') + ' ' + colorDots(inf.colors) + '</div>'
-    + '<div class="rec-deck-sum">' + s.n + '戦 ' + wl(s) + '　勝率 <b>' + pct(s.rate) + '</b></div>'
-    + '<div class="rec-deck-sum2">先攻 ' + fs.n + '回（' + pct(fs.rate) + '）・後攻 ' + bs2.n + '回（' + pct(bs2.rate) + '）</div></div>'
+    + '<div class="rec-deck-sum2">' + s.n + '戦 ' + wl(s) + '　先攻 ' + fs.n + '回（勝率' + pct(fs.rate) + '）・後攻 ' + bs2.n + '回（勝率' + pct(bs2.rate) + '）</div></div>'
     + '<button class="rec-mini-btn" onclick="recMergeToggle()">✏ 名前をまとめる</button></div>'
-    + merge
-    + '<div class="rec-sec-title" style="margin-top:14px;">相手のデッキごと</div>'
+    + merge + '</div>'
+    + summary(mine)
+    + (decks.length > 1 ? section((q ? '検索に合うデッキ' : '自分のデッキごと') + ' <small>（押すとそのデッキの成績を表示）</small>', groupRows(decks, { onclick: 'recDeckSel', sel }), legend()) : '')
+    + '<div class="rec-sec rec-deck-detail">'
+    + '<div class="rec-sec-title">相手のデッキごと</div>'
     + '<div class="rec-table-wrap rec-hist-table"><table class="rec-table rec-mu"><thead><tr><th>相手のデッキ</th><th class="r">対戦</th><th class="r">勝</th><th class="r">敗</th><th>勝率</th><th>先攻</th><th>後攻</th></tr></thead><tbody>' + matchRows + '</tbody></table></div>'
     + '<div class="rec-hist-cards">' + matchCards + '</div>'
     + '<div class="rec-sec-title" style="margin-top:14px;">相手のデッキの色ごと</div>'
@@ -609,6 +621,17 @@ window.recAiLevel = (v) => setPref('aiLevel', prefs.aiLevel === v ? '' : v);
 window.recAiLevelSet = (v) => setPref('aiLevel', v || '');
 window.recAiDeck = (v) => setPref('aiDeck', v);
 window.recDeckMode = (v) => setPref('deckMode', v);
+// デッキ名の検索: 打ち終わってから描き直し、入力欄に戻る（日本語の変換中は描き直さない）
+window.recDeckQuery = (v, ev) => {
+  if (ev && ev.isComposing) return;
+  deckQuery = String(v || '');
+  clearTimeout(_dqTimer);
+  _dqTimer = setTimeout(() => {
+    render();
+    const el = document.getElementById('rec-deck-q');
+    if (el && deckQuery) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {} }
+  }, 250);
+};
 window.recDeckSel = (v) => { mergeOpen = false; setPref('deckSel', v); };
 window.recPeriod = (v) => setPref('period', v);
 window.recListMode = (v) => { prefs.listDeck = ''; setPref('listMode', v); };

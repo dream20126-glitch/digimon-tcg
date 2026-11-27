@@ -71,7 +71,9 @@ function flatState(bs) {
 // ===== 記録 =====
 let rec = null; // { id, frames, last, logs, timer, firstAt, t0 }
 function start(id) {
-  rec = { id, frames: [], last: {}, logs: [], timer: null, firstAt: 0, t0: Date.now() };
+  rec = { id, frames: [], last: {}, logs: [], timer: null, firstAt: 0, t0: Date.now(), slv: null };
+  // その対戦のスリーブ（振り返りの裏面に使う）。start は対戦の画面の準備の後に呼ばれる
+  setTimeout(() => { if (rec && rec.id === id) rec.slv = window._sleeves || null; }, 0);
   setTimeout(() => capture(['対戦開始']), 0);
 }
 function schedule() {
@@ -150,7 +152,7 @@ async function finish() {
   try {
     const k = await ukey();
     if (!k) return;
-    const data = await pack({ v: 1, f: r.frames });
+    const data = await pack({ v: 1, f: r.frames, slv: r.slv || null });
     await saveData(k, r.id, data, r.frames.length);
   } catch (e) {
     console.warn('[振り返り] 保存できませんでした', e);
@@ -281,6 +283,7 @@ async function open(id, record) {
     await loadCardsByNo([...nos].filter((n) => n && n !== '?'));
     // 名前しか届いていない出来事（オンラインの相手の効果）のカードも読む
     V = { states, frames: data.f, i: 0, timer: null, speed: 1, rec: record || {} };
+    window._sleeves = data.slv || {}; // 記録した対戦のスリーブで裏面を描く
     enter();
     show(0);
   } catch (e) {
@@ -472,6 +475,7 @@ function leave() {
   if (_wrap) { _wrap.style.transform = ''; _wrap.style.transformOrigin = ''; _wrap.style.marginBottom = ''; _wrap.style.position = ''; _wrap.style.left = ''; _wrap.style.top = ''; }
   ['rp-opphand', 'rp-myhand', 'rp-arrow', 'rp-ev', 'rp-bar', 'rp-pop', 'rp-logbox', 'rp-side'].forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
   window._replayViewing = false;
+  window._sleeves = {};
   if (window.bs) window.bs._battleAborted = true;
   V = null;
   if (typeof window.showScreen === 'function') window.showScreen('records-screen');

@@ -13,6 +13,14 @@ import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, mainEffectButton
 // ===== カード画像ヘルパー =====
 export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
 if (typeof window !== 'undefined') window._cardBackUrl = cardBackUrl; // effect-engine.js の選択UIで裏向きのカードを表示する用
+// 裏面のHTML（入れ物いっぱい）。その側のデッキにスリーブ（js/sleeve.js）があればスリーブ、無ければいつもの裏面
+export function backFaceHtml(side, opts) {
+  const s = (typeof window !== 'undefined' && window._sleeveBackHtml) ? window._sleeveBackHtml(side === 'ai' ? 'ai' : 'player', opts || { radius: 4 }) : '';
+  return s || (cardBackUrl ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">' : '');
+}
+// 演出のラベル（「相手のセキュリティ」等）から、そのカードの持ち主を決める（ラベルはこちらの画面から見た言い方）
+export const sideFromLabels = (...ls) => (ls.some((l) => /相手/.test(String(l || ''))) ? 'ai' : 'player');
+if (typeof window !== 'undefined') { window._backFaceHtml = backFaceHtml; window._sideFromLabels = sideFromLabels; }
 const tamaBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1-Os-ZfmgLlQeYGkTU1uUXrt7iowy0FLD/view');
 
 export function cardImg(card) {
@@ -1243,9 +1251,10 @@ function renderIkusei() {
         ? (bs.player.tamaDeck && bs.player.tamaDeck.length > 0)
         : (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0);
       if (hasTamaDeck) {
-        iku.innerHTML = tamaBackUrl
+        const _slvT = window._sleeveBackHtml ? window._sleeveBackHtml(isPlayer ? 'player' : 'ai', { radius: 3, thin: true }) : '';
+        iku.innerHTML = _slvT || (tamaBackUrl
           ? `<img src="${tamaBackUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`
-          : '';
+          : '');
       } else {
         iku.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:8px;color:#333;">空</div>';
       }
@@ -1689,9 +1698,10 @@ function applyBackImages() {
   if (plBack && cardBackUrl) plBack.src = cardBackUrl;
   if (aiBack && cardBackUrl) aiBack.src = cardBackUrl;
   // スリーブ（js/sleeve.js）: デッキの山の上に重ねる（無ければ外して、いつもの裏面）
-  [['pl-deck-img', plBack, 'player'], ['ai-deck-img', aiBack, 'ai']].forEach(([boxId, img, side]) => {
-    const box = document.getElementById(boxId);
+  [['pl-deck-img', plBack, 'player'], ['ai-deck-img', aiBack, 'ai'], [null, plTama, 'player'], [null, aiTama, 'ai']].forEach(([boxId, img, side]) => {
+    const box = boxId ? document.getElementById(boxId) : (img && img.parentNode);
     if (!box) return;
+    if (!boxId && getComputedStyle(box).position === 'static') box.style.position = 'relative';
     const html = window._sleeveBackHtml ? window._sleeveBackHtml(side, { radius: 3, thin: true }) : '';
     let el = box.querySelector('.slv-deck');
     if (!html) { if (el) el.remove(); if (img) img.style.visibility = ''; return; }
@@ -1950,7 +1960,7 @@ export function showBCD(idxOrCard, source) {
         // 裏向きのカードは裏面で表示し、持ち主（自分）だけタップで中身を確認できる
         + '<div id="bcd-evo-source-stack" style="text-align:left;">' + card.stack.map((s, i) => {
           const idForDom = card.stack.length - 1 - i;
-          const _back = cardBackUrl ? '<img src="' + cardBackUrl + '" style="width:22px;height:30px;object-fit:cover;border-radius:2px;flex:none;">' : '<span style="flex:none;">🂠</span>';
+          const _back = '<span style="display:inline-block;width:22px;height:30px;flex:none;">' + backFaceHtml(_ownCard ? 'player' : 'ai', { radius: 2, thin: true }) + '</span>';
           if (s._faceDown && !_ownCard) return '<div id="bcd-evo-source-stack-' + idForDom + '" style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + _back + (i + 1) + '. 裏向きのカード</div>';
           const sImg = cardImg(s);
           const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';

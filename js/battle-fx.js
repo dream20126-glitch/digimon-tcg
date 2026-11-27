@@ -7,7 +7,7 @@
 
 import { bs } from './battle-state.js';
 import { addLog } from './battle-ui.js';
-import { renderAll, updateMemGauge, cardImg, cardBackUrl } from './battle-render.js';
+import { renderAll, updateMemGauge, cardImg, cardBackUrl, backFaceHtml, sideFromLabels } from './battle-render.js';
 
 // ===== 効果確認ダイアログのwindow公開 =====
 window.confirmEffect = function(yes) {
@@ -236,7 +236,7 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   // _fd=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
   const src = (card && !_fd) ? cardImg(card) : '';
   cardDiv.innerHTML = (_fd && cardBackUrl)
-    ? `<img src="${cardBackUrl}" style="width:100%;height:100%;object-fit:cover;">`
+    ? backFaceHtml(sideFromLabels(fromLabel, toLabel))
     : _fd
     ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>`
     : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${esc((card && card.name) || '?')}</div>`);
@@ -323,7 +323,7 @@ export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
   const cardFace = (card) => {
     const src = (card && !_fd) ? cardImg(card) : '';
     return (_fd && cardBackUrl)
-      ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">'
+      ? backFaceHtml(sideFromLabels(fromLabel, toLabel))
       : _fd
       ? '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>'
       : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;padding:8px;font-size:10px;">' + esc((card && card.name) || '?') + '</div>');
@@ -559,7 +559,7 @@ export function fxCardMoveBatch(cards, fromLabel, toLabel, callback, faceDown) {
     d.style.position = 'relative';
     d.innerHTML = (toDeck && list.length > 1 ? '<div style="position:absolute;top:-6px;left:-6px;z-index:1;min-width:20px;height:20px;padding:0 3px;border-radius:10px;background:#ffcc00;color:#000;font-size:11px;font-weight:bold;line-height:20px;text-align:center;box-shadow:0 0 6px #ffcc00;">' + (i + 1) + '</div>' : '')
       + '<div style="width:' + w + 'px;height:' + Math.round(w * 1.4) + 'px;border-radius:5px;border:1px solid #00fbff;overflow:hidden;box-shadow:0 0 8px #00fbff44;">'
-      + (_fd ? (cardBackUrl ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);"></div>')
+      + (_fd ? (cardBackUrl ? backFaceHtml(sideFromLabels(fromLabel, toLabel), { radius: 3, thin: true }) : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);"></div>')
         : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;font-size:9px;padding:4px;">' + esc(c && c.name || '?') + '</div>'))
       + '</div>' + (_fd ? '' : '<div style="color:#ddd;font-size:8px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c && c.name || '') + '</div>');
     row.appendChild(d);
@@ -758,7 +758,8 @@ export function fxDeckOpen(cards, callback) {
       + `<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);padding:2px;font-size:7px;text-align:center;color:#fff;">${card.name || '?'}</div>`;
     const back = document.createElement('div');
     back.style.cssText = 'position:absolute;inset:0;border-radius:6px;border:2px solid #666;overflow:hidden;backface-visibility:hidden;transform:rotateY(180deg);background:#1a1a2e;';
-    back.innerHTML = `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentNode.innerHTML='<div style=\\'color:#666;font-size:20px;display:flex;align-items:center;justify-content:center;height:100%\\'>🂠</div>'">`;
+    const _slvD = window._sleeveBackHtml ? window._sleeveBackHtml((window.bs && window.bs.isPlayerTurn === false) ? 'ai' : 'player', { radius: 5 }) : '';
+    back.innerHTML = _slvD || `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentNode.innerHTML='<div style=\\'color:#666;font-size:20px;display:flex;align-items:center;justify-content:center;height:100%\\'>🂠</div>'">`;
     flipper.appendChild(front);
     flipper.appendChild(back);
     slot.appendChild(flipper);
@@ -2475,9 +2476,10 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
           const gx = rr.left + rr.width / 2 - dir * (34 + i * 10), gy = rr.top + rr.height / 2 + i * 8;
           // 'name:〇〇' は画像の無いカード（テスト画面のダミーカード等）: 名前を書いた表向きのカードにする
           const nameOnly = typeof im === 'string' && im.indexOf('name:') === 0 ? im.slice(5) : null;
-          const src = nameOnly != null ? '' : (im || backUrl);
-          const inner = nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:12px;font-weight:bold;color:#fff;background:linear-gradient(160deg,#3a3a48,#16161e);">' + nameOnly + '</div>'
-            : (!im && (kind === 'scapegoat' || kind === 'substitute')) ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '';
+          const _slvG = (!im && nameOnly == null && window._sleeveBackHtml) ? window._sleeveBackHtml(dir < 0 ? 'player' : 'ai', { radius: 9 }) : '';
+          const src = nameOnly != null ? '' : (im || (_slvG ? '' : backUrl));
+          const inner = (_slvG ? '<div style="position:absolute;inset:0;">' + _slvG + '</div>' : '') + (nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:12px;font-weight:bold;color:#fff;background:linear-gradient(160deg,#3a3a48,#16161e);">' + nameOnly + '</div>'
+            : (!im && (kind === 'scapegoat' || kind === 'substitute')) ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#ffd0f0;text-shadow:0 0 4px #000;">身代わり</div>' : '');
           const gEl = el('position:absolute;left:' + (gx - GW / 2) + 'px;top:' + (gy - GH / 2) + 'px;width:' + GW + 'px;height:' + GH + 'px;border-radius:10px;overflow:hidden;border:2px solid ' + bc + ';box-shadow:0 0 22px ' + bc + ',0 0 44px ' + bc + '66;background:' + (src ? 'url(' + src + ') center/cover' : 'linear-gradient(135deg,#1b2a4a,#0b1020)') + ';z-index:3;will-change:transform,opacity;opacity:0;transform:translate(' + (dir * 40) + 'px,60px) scale(0.5);transition:transform 0.35s cubic-bezier(.2,.9,.3,1.2),opacity 0.25s;',
             inner);
           setTimeout(() => { gEl.style.opacity = '1'; gEl.style.transform = 'translate(0,0) scale(1.04)'; }, 40 + i * 120);
@@ -2799,7 +2801,7 @@ export function fxSecurityMove(card, mode, opts, callback) {
   const back = (window._cardBackUrl || '');
   const img = card ? (card.imgSrc || cardImg(card)) : '';
   const faceHtml = (img ? '<img src="' + img + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:10px;padding:6px;">' + esc(card && card.name) + '</div>');
-  const backHtml = back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#2a3c66,#0b1020);"></div>';
+  const backHtml = back ? backFaceHtml(opts.opp ? 'ai' : 'player') : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#2a3c66,#0b1020);"></div>';
   const zoneLabel = (x, text, color) => {
     const l = document.createElement('div');
     l.style.cssText = 'position:absolute;left:' + (x + CW / 2) + 'px;top:' + (topY + CH + 34) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:bold;color:' + color + ';';
@@ -3622,7 +3624,7 @@ export function fxEffectHit(kind, p, callback) {
       if (!p.faceUp) c.style.transform = 'rotateY(90deg)';
       setTimeout(() => {
         const back = (window._cardBackUrl || '');
-        if (!p.faceUp) c.innerHTML = back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '';
+        if (!p.faceUp) c.innerHTML = back ? backFaceHtml(p.remote ? 'ai' : 'player') : '';
         c.style.transform = 'rotateY(0deg)';
         setTimeout(() => {
           c.style.transition = 'transform 0.7s cubic-bezier(.6,0,.9,.6),opacity 0.7s';
@@ -4149,7 +4151,7 @@ export function fxMagicAbsorb(card, opts, callback) {
   let tOrb = 1600;
   if (opts.cost) {
     const back = window._cardBackUrl || '';
-    const cs = opts.cost.faceDown ? (back ? '<img src="' + back + '" style="width:100%;height:100%;object-fit:cover;">' : '') : (opts.cost.imgSrc ? '<img src="' + opts.cost.imgSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:10px;padding:4px;">' + (opts.cost.name || '') + '</div>');
+    const cs = opts.cost.faceDown ? (back ? backFaceHtml(opts.remote ? 'ai' : 'player') : '') : (opts.cost.imgSrc ? '<img src="' + opts.cost.imgSrc + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;font-size:10px;padding:4px;">' + (opts.cost.name || '') + '</div>');
     const sy = opts.remote ? -CH : H + CH * 0.3;
     const cc = add('position:absolute;left:' + (cx - CW * 0.35) + 'px;top:' + (sy - CH * 0.35) + 'px;width:' + CW * 0.7 + 'px;height:' + CH * 0.7 + 'px;border-radius:6px;overflow:hidden;border:2px solid #ffd86a;box-shadow:0 0 16px #ffc83a;background:#111;transition:transform 0.8s cubic-bezier(.3,.7,.3,1),opacity 0.4s;', cs);
     setTimeout(() => { cc.style.transform = 'translateY(' + (cy - sy) + 'px)'; }, 1000);

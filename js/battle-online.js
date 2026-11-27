@@ -3624,6 +3624,7 @@ function showRemoteDeckOpenOverlay(cmd) {
 
 function handleRemoteDeckOpenAct(cmd) {
   console.log('[fx_remoteDeckOpenAct] received', cmd);
+  try { if (!window._aiBattleActive && window._replayOpenDest) window._replayOpenDest(cmd.cardNo, cmd.to); } catch (_) {}
   if (!_remoteDeckOpenState) return;
   const ent = _remoteDeckOpenState.entries.find(e => !e._removed && e.cardNo === cmd.cardNo);
   if (!ent) return;

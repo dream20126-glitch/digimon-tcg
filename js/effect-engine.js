@@ -8207,6 +8207,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // 「オープン」効果は両プレイヤーに公開されるため、自分側プレイヤー操作時は相手画面にも観戦UIを送る
   const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
   const sendRemote = (cmd) => {
+    // 対戦の振り返り: めくったカードの実際の行き先
+    try { if (cmd && cmd.type === 'fx_remoteDeckOpenAct' && window._replayOpenDest) window._replayOpenDest(cmd.cardNo, cmd.to); } catch (_) {}
     // private: セキュリティ非公開確認（高石タケル等）→ 中身を相手に送らない。
     // 公開はオプション側（security_open）が選択カードのみ個別に行う。
     if (step.private) return;

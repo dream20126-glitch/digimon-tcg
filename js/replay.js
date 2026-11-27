@@ -122,6 +122,21 @@ function capture(extra) {
   if (logs.length) f.L = logs.slice(-24);
   rec.frames.push(f);
 }
+// デッキオープンしたカードの実際の行き先（effect-engine.js のデッキオープンの処理・相手のデッキオープンの受け取りから）。
+// 直前のデッキオープンの出来事に書き込む（以前は後の盤面から推測していて、同じターンに同じカードで育成エリアのデジモンを
+// 進化させると「育成エリアへ」と出ていた。レッド・メモリーブースト!! P-035）
+const DEST_LABEL = { hand: '手札へ', trash: 'トラッシュへ', deck_top: 'デッキの上へ', deck_bottom: 'デッキの下へ', play: '登場', evolve: '進化' };
+function onOpenDest(cardNo, to) {
+  if (!rec || !cardNo) return;
+  for (let j = rec.frames.length - 1; j >= Math.max(0, rec.frames.length - 80); j--) {
+    const ev = (rec.frames[j].E || []).find((x) => x.k === 'open');
+    if (!ev) continue;
+    ev.dest = ev.dest || [];
+    const k = (ev.ns || []).findIndex((n, i) => n === cardNo && !ev.dest[i]);
+    if (k >= 0) ev.dest[k] = DEST_LABEL[to] || String(to || '');
+    return;
+  }
+}
 function discard() { if (rec && rec.timer) clearTimeout(rec.timer); rec = null; }
 
 // 決着した: 最後のコマを記録して保存
@@ -369,6 +384,22 @@ function cardFromEl(t) {
 // 押したカードの詳細: 広い画面は横のパネル、狭い画面は大きい画像
 function cardDetail(c) { if (isWide()) { V.sideKey = JSON.stringify(c); renderSide(c); } else popCard(c); }
 // 横のパネル: 大きい画像・DP・付与・進化元・効果の文
+// 真ん中の表示（出来事・ログ）を盤面の中に収める（はみ出していた）。大きすぎるときは中をスクロール
+function fitEvBox(box) {
+  const wrap = V && V.scr && V.scr.querySelector('.battle-wrap');
+  const bar = document.getElementById('rp-bar');
+  const wr = wrap ? wrap.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+  const minX = Math.max(4, wr.left + 4), maxX = Math.min(window.innerWidth - 4, wr.right - 4);
+  const minY = Math.max(4, wr.top + 4), maxY = Math.min(window.innerHeight - (bar ? bar.offsetHeight : 0) - 4, wr.bottom - 4);
+  box.style.transform = 'none';
+  box.style.maxWidth = Math.max(160, maxX - minX) + 'px';
+  box.style.maxHeight = Math.max(120, maxY - minY) + 'px';
+  box.style.overflowY = 'auto';
+  const r = box.getBoundingClientRect();
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  box.style.left = Math.min(Math.max(minX, cx - r.width / 2), Math.max(minX, maxX - r.width)) + 'px';
+  box.style.top = Math.min(Math.max(minY, cy - r.height / 2), Math.max(minY, maxY - r.height)) + 'px';
+}
 function renderSide(c) {
   const el = document.getElementById('rp-side');
   if (!el) return;
@@ -560,6 +591,11 @@ function openDest(i, ev) {
   const used = {};
   let end = Math.min(V.states.length - 1, i + 30);
   for (let j = i + 1; j <= end; j++) { if ((V.frames[j].E || []).some((x) => x.k === 'open') || V.states[j]._turn !== base._turn) { end = j - 1; break; } }
+  // （行き先を記録していない古い振り返りだけ）めくったカードが最初に動いてから3秒の間だけを見る（その後の進化などを行き先と取り違えないように）
+  const anyMoved = (j) => (ev.ns || []).some((no) => zones.some(([S, z]) => cnt(V.states[j], S, z, no) > cnt(base, S, z, no)));
+  for (let j = i + 1; j <= end; j++) {
+    if (anyMoved(j)) { const t0 = V.frames[j].t || 0; let e2 = j; while (e2 + 1 <= end && (V.frames[e2 + 1].t || 0) - t0 <= 3000) e2++; end = e2; break; }
+  }
   return (ev.ns || []).map((no) => {
     for (let j = i + 1; j <= end; j++) {
       for (const [S, z, label] of zones) {
@@ -615,9 +651,9 @@ function drawEvents() {
       // 発動したカードを光らせる
       document.querySelectorAll('#battle-screen [data-card-no="' + (no || '').replace(/"/g, '') + '"]').forEach((el) => el.classList.add('rp-eff'));
     } else if (e.k === 'open') {
-      const dest = openDest(V.i, e);
+      const dest = Array.isArray(e.dest) ? (e.ns || []).map((n, k) => e.dest[k] || 'デッキに戻す') : openDest(V.i, e);
       panels.push('<div class="rp-ev-open"><div class="rp-ev-t">📖 ' + esc(who(e.w)) + 'のデッキオープン（' + (e.ns || []).length + '枚）</div><div class="rp-ev-cards">'
-        + (e.ns || []).map((n, k) => '<div class="rp-ev-c" data-rp-no="' + esc(n) + '" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')"><img src="' + esc(imgOf(n)) + '" alt=""><span class="rp-dest ' + (/手札|登場|進化元|育成/.test(dest[k]) ? 'go' : 'out') + '">' + esc(dest[k]) + '</span></div>').join('') + '</div></div>');
+        + (e.ns || []).map((n, k) => '<div class="rp-ev-c" data-rp-no="' + esc(n) + '" onclick="replayPopNo(' + esc(JSON.stringify(n)) + ')"><img src="' + esc(imgOf(n)) + '" alt=""><span class="rp-dest ' + (/手札|登場|進化|育成/.test(dest[k]) ? 'go' : 'out') + '">' + esc(dest[k]) + '</span></div>').join('') + '</div></div>');
     } else if (e.k === 'vs') {
       panels.push('<div class="rp-ev-vs"><div class="rp-ev-t">' + esc(e.lb || (e.bt ? '⚔ バトル' : '🛡 セキュリティチェック')) + '</div><div class="rp-ev-vsrow">'
         + '<div class="rp-ev-c"><img src="' + esc(imgOf(e.a || noByName(e.an))) + '" alt=""><span>' + esc(e.an || nameOf(e.a)) + (e.ad != null ? '<br>DP ' + e.ad : '') + '</span></div>'
@@ -642,6 +678,7 @@ function drawEvents() {
   if (logs.length) panels.push('<div class="rp-ev-log">' + logs.slice(-5).map((l) => '<div>' + esc(l) + '</div>').join('') + '</div>');
   box.innerHTML = panels.join('');
   box.style.display = panels.length ? 'flex' : 'none';
+  if (panels.length) fitEvBox(box);
 }
 
 // ----- 操作バー -----
@@ -713,4 +750,5 @@ window.replayPopNo = (no) => cardDetail({ n: no });
 window._replay = { start, finish, discard, listMeta, setFav, del, open, FAV_MAX, KEEP, isRecording: () => !!rec };
 window._replayOnLog = onLog;
 window._replayPoke = poke;
+window._replayOpenDest = (cardNo, to) => { try { onOpenDest(cardNo, to); } catch (_) {} };
 window._replayEvent = (ev) => { try { onEvent(ev); } catch (e) { console.warn('[振り返り] 出来事を記録できませんでした', e); } };

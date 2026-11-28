@@ -10207,6 +10207,17 @@ function _applyPermanentEffectsImpl(bs, side, context) {
                   _appliedDuringOwnTurn: false,
                 });
               }
+            } else if (step.action === 'dp_minus' && /^(opp|opponent|own)_security:all$/.test(String(step.target || ''))) {
+              // テイルモン P-120 / パタモン P-122 の進化元「【自分のターン】相手のセキュリティデジモン全てをDP-2000」:
+              // 進化元として持つ間、セキュリティのデジモン全体に DP-（以前は処理が無く、何も起きていなかった）
+              if (!bs._securityBuffs) bs._securityBuffs = [];
+              const _smBuff = {
+                type: 'dp_minus', value: value, duration: 'permanent',
+                source: 'evo_recipe_perm_security', owner: side,
+                _appliedDuringOwnTurn: false,
+              };
+              if (!/^own_/.test(String(step.target))) _smBuff.secSide = side === 'player' ? 'ai' : 'player';
+              bs._securityBuffs.push(_smBuff);
             } else if (step.action === 'security_attack_plus') {
               if (!card._permEffects) card._permEffects = {};
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
@@ -16120,7 +16131,12 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
 function _discardToLegacyStep(step) {
   if (!step || step.action !== 'discard') return null;
   const f = (step.filter && typeof step.filter === 'object') ? step.filter : null;
-  const tgt = String(step.target || '');
+  let tgt = String(step.target || '');
+  // 対象なし＋取得元「デッキ」（from:'deck'・from_owner・deck_source_position。「自分のデッキの上から3枚破棄することで」
+  // ブイドラモン ゼロ P-011）は「自分のデッキ（own_deck）」と同じ。以前は読めずに破棄しないままコストを払ったことになっていた
+  if (!tgt && (step.from === 'deck' || (Array.isArray(step.from) && step.from.includes('deck')))) {
+    tgt = step.from_owner === 'both' ? 'both_deck' : 'own_deck';
+  }
   const tm = /^([a-z_]+?)(?::(all|up_to_\d+|until_\d+|\d+))?$/.exec(tgt);
   const zone = tm ? tm[1] : '';
   const suf = tm ? (tm[2] || '') : '';
@@ -18996,7 +19012,11 @@ function _securityOpenPick(step, ctx, callback) {
     const _cb0 = callback;
     callback = (...a) => _cpuView.end(() => _cb0 && _cb0(...a));
   }
+  // 自分のセキュリティを「確認する」（自分だけが見る。パタモン P-122「自分のセキュリティを全て確認する」）: 中身を相手に送らない
+  // （以前は公開のオープンと同じく、相手の画面にセキュリティの一覧が出ていた）。手札に加えたカードだけ相手に見せる
+  const _private = !isOpp && (!!step.private || /セキュリティ[^。]*確認/.test(String(step.display_text || '')));
   const send = (cmd) => {
+    if (_private && cmd && /^fx_remoteDeckOpen/.test(cmd.type)) return;
     if (online) { try { window._onlineSendCommand(cmd); } catch (e) { console.error('[securityOpenPick]', e); } return; }
     if (!_cpuView || !cmd) return;
     // 受け手（プレイヤー）から見た向き: CPU のセキュリティは「相手の」、プレイヤーのセキュリティは自分の領域
@@ -19067,6 +19087,17 @@ function _securityOpenPick(step, ctx, callback) {
       return;
     }
     const cands = _pickFilter ? opened.filter((c) => cardMatchesFilter(c, _pickFilter, bs, ownerSide, ctx.card)) : opened.slice();
+    // 確認（自分だけ）: デッキのオープンと同じく、確認したカードを全部並べて条件に合うカードだけ選べる（「使わない」も選べる）
+    if (_private && ctx.side === 'player' && typeof document !== 'undefined') {
+      if (cands.length === 0) {
+        ctx.addLog && ctx.addLog('💨 ' + destLbl + 'に加えられるカードがありません');
+        _showOpenedSecurity(opened, lbl, getImg, () => cb(null));
+        return;
+      }
+      const _ttl = '🛡 セキュリティを確認：' + destLbl + 'に' + (dest === 'hand' ? '加える' : '置く') + 'カードを選んでください';
+      showTrashCardPicker(cands.slice(), 1, _pickOptional, _ttl, (picked) => cb((picked && picked[0]) || (_pickOptional ? null : cands[0])), opened.slice(), { noZoneSplit: true });
+      return;
+    }
     if (cands.length === 0) { ctx.addLog && ctx.addLog('💨 ' + destLbl + 'に置けるカードがありません'); cb(null); return; }
     if (ctx.side === 'ai') {
       // CPU: 相手のセキュリティからはDPが一番高いデジモン（セキュリティチェックで一番困るカード）、自分のなら登場コストが一番高いカード
@@ -19095,9 +19126,15 @@ function _securityOpenPick(step, ctx, callback) {
       ctx.addLog && ctx.addLog('🛡 「' + pick.name + '」を' + lbl + destLbl + 'に置く');
       if (ownerSide === 'ai') _sendOppSecurityMovesNow(ctx, [{ card: pick, idx: opened.indexOf(pick), to: dest }]);
       send({ type: 'fx_remoteDeckOpenAct', cardNo: pick.cardNo, name: pick.name, to: dest, receiverZone: ownerSide === 'ai' });
+      // 確認（自分だけ）で手札に加えたカードは相手に見せる（選んでいる間の相手の「効果を発動中」表示は先に閉じる）
+      if (_private && online) {
+        send({ type: 'fx_effectClose' });
+        send({ type: 'fx_securityReveal', cardName: pick.name, cardNo: pick.cardNo || '', cardImg: getImg(pick) });
+      }
       bs._lastPickedCard = pick;
     }
     // 「加えたなら」（cond_last_action_ge:1。P-122）用に、移した枚数を残す
+    if (_private && online && !pick) send({ type: 'fx_effectClose' });
     bs._lastActionCount = pick ? 1 : 0;
     bs._lastActionCards = pick ? [pick] : [];
     const rest = opened.filter(c => c !== pick);
@@ -22469,6 +22506,40 @@ function executeRecipeStep(step, ctx, store, callback) {
         doBounce(player, _rsIdx, ctx, () => callback());
         break;
       }
+      // 「自分の『太刀川ミミ』1体を手札に戻す」（target: own_tamer:N・from 無し。新たな世界 P-021）: 場の自分のテイマーを戻す
+      // （以前は own で始まる対象を「トラッシュから手札に戻す」として扱い、「対象がありません」になっていた）
+      if (!step.from && /^own_tamer(:|$)/.test(String(step.target || ''))) {
+        const _rtF = _srcCardFilterOf(step) || step.filter || null;
+        const _rtFr = _rtF ? resolveDpFilterMarkers(_rtF, ctx.card, ctx.bs, ctx.side) : null;
+        const _rtN = parseInt(String(step.target).split(':')[1], 10) || 1;
+        const _rtEntries = [];
+        (player.tamerArea || []).forEach((c, idx) => {
+          if (!c || (_rtFr && !cardMatchesFilter(c, _rtFr, ctx.bs, ctx.side, ctx.card))) return;
+          if (c.buffs && c.buffs.some(b => b && b.type === 'cant_return_hand')) return;
+          _rtEntries.push({ card: c, own: true, zone: 'tamerArea', idx });
+        });
+        if (_rtEntries.length === 0) {
+          ctx.addLog && ctx.addLog('⚠ 手札に戻せるテイマーがいません');
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback());
+          break;
+        }
+        const _rtDo = (picked) => {
+          const list = (picked || []).filter(Boolean);
+          let k = 0;
+          const next = () => {
+            if (k >= list.length) {
+              ctx.renderAll && ctx.renderAll();
+              if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+              callback(); return;
+            }
+            _doBounceTamer(player, list[k++].card, ctx, next);
+          };
+          next();
+        };
+        if (_rtEntries.length <= _rtN) { _rtDo(_rtEntries); break; }
+        _pickSideTargets(_rtEntries, _rtN, ctx, effectiveSide, true, '🎯 手札に戻すテイマーを選んでください', _rtDo);
+        break;
+      }
       const _rhFromTrash = step.from === 'trash'
         || (Array.isArray(step.from) && step.from.indexOf('trash') >= 0)
         || (!step.from && String(step.target || '').startsWith('own'));
@@ -24318,6 +24389,12 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === デッキの上からN枚破棄（自分側）1枚ずつ表示+カード移動演出 ===
     case 'deck_trash_top': {
       const n = step.value || 1;
+      // コスト（「デッキの上から3枚破棄することで」）はデッキが足りなければ支払えない
+      if (_COST_STEP_SET.has(step) && (player.deck || []).length < n) {
+        ctx.addLog && ctx.addLog('💨 デッキのカードが足りず、破棄できない');
+        callback && callback(false);
+        break;
+      }
       // 「お互いのデッキの上からN枚破棄する」（target が both 系）: 相手のデッキも同じ枚数破棄する。
       // オンラインでは相手の端末に依頼を先に送り、両方の画面で同時に破棄演出する（デッキの中身は持ち主の端末にしかない）
       const _dtMutual = /^both/.test(String(step.target || ''));

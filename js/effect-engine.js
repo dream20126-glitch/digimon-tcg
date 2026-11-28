@@ -4403,12 +4403,42 @@ function _ddDodgeFx(ctx, card, ownerSide, opts, cb) {
   window._fxEffectDodge(card, Object.assign({}, opts || {}, { remote: ownerSide === 'ai' }), done);
 }
 
+// 【デコイ】（公式ルール 16-18）: 相手の効果で他の自分のデジモンが消滅するとき、このデジモンを消滅させることで（任意）、
+// そのデジモンは消滅しない。持ち主の端末で行う（オンラインで相手のデジモンなら持ち主に依頼＝fx_whenDestroyDelegate）。
+// 身代わりになれるデジモンが複数なら選ぶ（「使わない」も選べる）。CPU は1体目を使う。cb(使ったか)
+// （以前は相手の画面だけで先頭のデコイを勝手に消していて、持ち主の盤面からは消えていなかった）
+function _runDecoy(destroyed, ownerKey, bs, baseCtx, cb) {
+  const done = (v) => { try { cb && cb(!!v); } catch (e) { console.error('[decoy]', e); } };
+  const side = bs && bs[ownerKey];
+  const cands = (side && typeof window !== 'undefined' && window._decoyCandidates) ? window._decoyCandidates(destroyed, side) : [];
+  if (!destroyed || cands.length === 0) { done(false); return; }
+  const useIdx = (idx) => {
+    const dc = idx == null ? null : side.battleArea[idx];
+    if (!dc || !side.battleArea.includes(destroyed)) { done(false); return; }
+    baseCtx.addLog && baseCtx.addLog('🛡 【デコイ】「' + dc.name + '」が「' + destroyed.name + '」の身代わりに消滅');
+    // 消滅させるのは【デコイ】を持つデジモン自身の効果（任意処理条件。持ち主の効果）
+    const dctx = { bs, addLog: baseCtx.addLog, renderAll: baseCtx.renderAll, updateMemGauge: baseCtx.updateMemGauge, side: ownerKey, card: dc };
+    doDestroy(side, idx, dctx, (removed) => {
+      if (!removed) { done(false); return; }
+      _ddDodgeFx(dctx, destroyed, ownerKey, { label: '【デコイ】', sub: '身代わりで消滅しない', substitute: dc, subColor: '#ff8adf' }, () => done(true));
+    }, 'effect');
+  };
+  if (ownerKey !== 'player') { useIdx(cands[0]); return; }
+  showTargetSelection('player', cands, '【デコイ】「' + destroyed.name + '」の代わりに消滅させるデジモンを選んでください', '#ff8adf', useIdx, null, { stopLabel: '使わない' });
+}
+
 // 相手の効果で自分のデジモンが消滅するとき（オンラインで相手の端末から依頼された）: こちらの端末で「消滅するとき」を発揮し、
 // 消滅しないなら稲妻の演出（両方の画面）を出して cb(true)。cause: { type, causerSide }（こちら視点に直してある）
 export function runWhenDestroyLocal(card, cause, cb) {
   const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
   const done = (v) => { try { cb && cb(!!v); } catch (e) { console.error('[runWhenDestroyLocal]', e); } };
-  if (!bs || !card || !whenDestroyApplies(card, 'when_destroy', 'effect', { causerSide: (cause && cause.causerSide) || 'ai', carrierSide: 'player' })) { done(false); return; }
+  if (!bs || !card) { done(false); return; }
+  const _opp = !cause || cause.causerSide !== 'player';
+  const _decoyThen = () => {
+    if (!_opp || (cause && cause.type === 'battle')) { done(false); return; }
+    _runDecoy(card, 'player', bs, Object.assign({}, _buildBaseCtx(null, bs), { side: 'player', card }), done);
+  };
+  if (!whenDestroyApplies(card, 'when_destroy', 'effect', { causerSide: (cause && cause.causerSide) || 'ai', carrierSide: 'player' })) { _decoyThen(); return; }
   const ctx = Object.assign({}, _buildBaseCtx(null, bs), { side: 'player', card });
   const prevCause = bs._lastDestroyCause;
   bs._lastDestroyCause = { type: (cause && cause.type) || 'effect', causerSide: (cause && cause.causerSide) || 'ai', causerCard: null };
@@ -4426,7 +4456,7 @@ export function runWhenDestroyLocal(card, cause, cb) {
     const cur = card._armorPurgedTo || card;
     const prevented = !!(cur.buffs && cur.buffs.some((b) => b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')));
     if (Array.isArray(cur.buffs)) cur.buffs = cur.buffs.filter(b => before.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_nonbattle_destroy')));
-    if (!prevented) { done(false); return; }
+    if (!prevented) { _decoyThen(); return; }
     if (plan.shown) { done(true); return; }
     _ddPlayDodge(plan, cur, () => done(true)); return;
     const byEvade = wasActive && cur.suspended && !!(card._permEffects && card._permEffects.evade);
@@ -4492,6 +4522,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // （プルートモンの効果で消滅させようとしたホーリーモードが離れなかったのに、消滅演出が出ていた）
   const _ddCb0 = callback;
   let _ddRemoved = false;
+  let _ddDecoyChecked = false;
   callback = () => { if (_ddCb0) _ddCb0(_ddRemoved); };
   causeType = causeType || 'effect';
   const destroyed = targetSide.battleArea[slotIdx];
@@ -4524,7 +4555,9 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // 確認・コストの支払い・演出をしてもらう（以前はこちらの端末で処理していて、確認がこちらの画面に出ていた）
   const _wdInfo = { causerSide: ctx.side, carrierSide: _ddSide };
   if (_ddSide === 'ai' && causeType !== 'battle' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()
-      && typeof window._requestWhenDestroyDelegate === 'function' && whenDestroyApplies(destroyed, 'when_destroy', 'effect', _wdInfo)) {
+      && typeof window._requestWhenDestroyDelegate === 'function'
+      && (whenDestroyApplies(destroyed, 'when_destroy', 'effect', _wdInfo)
+        || (ctx.side !== _ddSide && window._decoyCandidates && window._decoyCandidates(destroyed, targetSide).length > 0))) {
     window._requestWhenDestroyDelegate(slotIdx, { type: causeType, causerSide: ctx.side }, (canceled) => {
       if (canceled) { ctx.addLog('🛡 相手の「' + destroyed.name + '」は消滅を回避！'); ctx.renderAll && ctx.renderAll(); callback && callback(); return; }
       _doDestroyProceed();
@@ -4587,10 +4620,16 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   _doDestroyProceed();
 
   function _doDestroyProceed() {
-  // ≪デコイ≫ - 同 side の他デジモンが身代わりに消滅
-  // ≪スケープゴート≫ - 消滅対象が他デジモンを身代わりに消滅させて回避
-  // どちらも window 経由で battle-combat.js のヘルパーを呼ぶ
-  if (window._tryDecoyRedirect) {
+  // ≪デコイ≫: 相手の効果での消滅のとき、持ち主が身代わりを選ぶ（_runDecoy）。オンラインの相手のデジモンは
+  // 上の依頼（fx_whenDestroyDelegate）で持ち主の端末が確認済み
+  const _ddOnlineRemote = _ddSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+  if (!_ddDecoyChecked && causeType === 'effect' && ctx.side !== _ddSide && !_ddOnlineRemote) {
+    _ddDecoyChecked = true;
+    _runDecoy(destroyed, _ddSide, ctx.bs, ctx, (used) => { if (used) { callback && callback(); return; } _doDestroyProceed(); });
+    return;
+  }
+  // （以前の≪デコイ≫の処理。先頭のデコイを確認なしで消していた。_runDecoy に置き換え）
+  if (false && window._tryDecoyRedirect) {
     var decoyRes = window._tryDecoyRedirect(destroyed, targetSide);
     if (decoyRes && decoyRes.decoyCard != null && decoyRes.decoySlotIdx != null) {
       // デコイ持ちを消滅させ、対象 (destroyed) はそのまま残す

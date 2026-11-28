@@ -66,6 +66,13 @@ export function setCombatHooks(hooks) {
 // ===== effect-engine 等から呼び出すための window 公開（循環依存回避） =====
 if (typeof window !== 'undefined') {
   window._tryDecoyRedirect = function(target, ownerSide) { return _tryDecoyRedirect(target, ownerSide); };
+  // 【デコイ】で身代わりになれる、持ち主の他のデジモンの位置（色の指定も見る）
+  window._decoyCandidates = function(target, ownerSide) {
+    const out = [];
+    const ba = (ownerSide && ownerSide.battleArea) || [];
+    ba.forEach((c, i) => { if (c && c !== target && hasDecoy(c) && _decoyColorOk(c, target)) out.push(i); });
+    return out;
+  };
   window._tryScapegoat = function(target, ownerSide) { return _tryScapegoat(target, ownerSide); };
   window._tryFragment = function(target, ownerSide) { return _tryFragment(target, ownerSide); };
 }

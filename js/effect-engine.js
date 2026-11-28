@@ -6074,6 +6074,9 @@ function _showCardConfirmDialog(card, onConfirm) {
 // 手札が見えない（バトル画面の外・手札欄が無い）ときは false を返す（呼び出し側は今までの一覧で選ぶ）
 function _handInPlacePick(candidates, opts) {
   if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+  // 「はい」で確認済みの効果（・確認済みのコストの支払い中）は「使わない」を出さない（一覧の選択 showTrashCardPicker と同じ。
+  // 手札からの進化 P-127 で、「はい」の後の手札の選択に「使わない」が出ていた）
+  if (opts && opts.optional && (_confirmedCostDepth > 0 || _curStepConfirmed)) opts = Object.assign({}, opts, { optional: false });
   // バトルのVS画面が出ている間は手札が隠れているので、一覧の画面で選ぶ
   { const _vs = document.getElementById('security-check-overlay'); if (_vs && _vs.style.display !== 'none') return false; }
   const b = window._lastBattleState;
@@ -12791,11 +12794,22 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
 // 「使わない」を出さない（_confirmedCostDepth の間は showTrashCardPicker / 手札の選択の optional を外す）
 function _markConfirmedHead(ctx, recipe) {
   if (!ctx) return;
-  const head = Array.isArray(recipe) ? recipe.find(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))) : null;
+  const head = Array.isArray(recipe) ? recipe.find(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)
+    // 「以下から1つを発揮する」で選択肢が「〜できる」（P-127）: 選ぶ効果そのものを確認済みにする
+    || (s.action === 'choose_effect' && Array.isArray(s.choices) && s.choices.some(c => c && (c.optional === true || (Array.isArray(c.cost) && c.cost.length > 0)))))) : null;
   ctx._confirmedHead = head ? { action: head.action, text: head.display_text || '' } : null;
 }
 function _markConfirmedStep(ctx, step) {
   if (ctx && step) ctx._confirmedHead = { action: step.action, text: step.display_text || '' };
+}
+// 確認済み（「はい」を選んだ）の効果の中から選んだ1つ（「以下から1つを発揮する」choose_effect の選択肢・「Aするか、Bする」の B）を
+// 実行するとき、その選択肢も確認済みにする（選んだ効果の手札等の選択画面に「使わない」を出さない。P-127 プロットモン等の
+// 「手札から〜を登場できる」で、「はい」の後の手札の選択に「使わない」が出ていた）。終わったら元の確認済みの印に戻す
+function _execInheritConfirm(parentConfirmed, child, ctx, store, cb) {
+  if (!parentConfirmed || !child || _isConfirmedStep(ctx, child)) { executeRecipeStep(child, ctx, store, cb); return; }
+  const prev = ctx._confirmedHead;
+  _markConfirmedStep(ctx, child);
+  executeRecipeStep(child, ctx, store, (...a) => { ctx._confirmedHead = prev; cb && cb(...a); });
 }
 function _isConfirmedStep(ctx, step) {
   const h = ctx && ctx._confirmedHead;
@@ -18676,8 +18690,9 @@ function runWithAltActions(step, ctx, store, callback) {
     return true;
   };
   const _feasibleChoices = choices.filter((c, idx) => _altFeasible(c, idx === 0));
+  const _orConf = _curStepConfirmed || _isConfirmedStep(ctx, step);
   if (_feasibleChoices.length === 1) {
-    executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
+    _execInheritConfirm(_orConf, _feasibleChoices[0], ctx, store, callback);
     return;
   }
   // コストでどの選択肢も払えない → コスト不成立
@@ -18686,11 +18701,11 @@ function runWithAltActions(step, ctx, store, callback) {
   // AI / 自動選択: 最初の有効な選択肢（コストの場合は払える選択肢の先頭）
   if (ctx.side === 'ai' || ctx._forceAltChoice !== undefined) {
     if (ctx._forceAltChoice === undefined && _isCostAlt && _feasibleChoices.length > 0) {
-      executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
+      _execInheritConfirm(_orConf, _feasibleChoices[0], ctx, store, callback);
       return;
     }
     const idx = (ctx._forceAltChoice !== undefined) ? ctx._forceAltChoice : 0;
-    executeRecipeStep(choices[idx] || choices[0], ctx, store, callback);
+    _execInheritConfirm(_orConf, choices[idx] || choices[0], ctx, store, callback);
     return;
   }
 
@@ -18700,7 +18715,7 @@ function runWithAltActions(step, ctx, store, callback) {
     if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
       try { window._onlineSendCommand({ type: 'fx_remoteAltChoice', choice: idx, label: labels[idx] }); } catch (_) {}
     }
-    executeRecipeStep(choices[idx], ctx, store, callback);
+    _execInheritConfirm(_orConf, choices[idx], ctx, store, callback);
   });
 }
 
@@ -21861,7 +21876,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 登場の「手札/トラッシュから」と同じ選び方（メルヴァモン BT26-081 等の指摘で全体に揃えた）
         if (_evoZones.includes('hand') && _evoZones.includes('trash')) {
           const _zl = ['✋ 手札から進化（対象' + _inHand.length + '枚）', '🗑 トラッシュから進化（対象' + _inTrash.length + '枚）'];
-          if (_evoOptional || _evoIsCost) _zl.push('使わない');
+          if ((_evoOptional || _evoIsCost) && !(_confirmedCostDepth > 0 || _curStepConfirmed)) _zl.push('使わない');
           const _sameKind = (list) => list.every(c => c.cardNo === list[0].cardNo);
           const _chooseZ = () => showAltActionChoice(_zl, (zi) => {
             if (zi >= 2) { _doEvolveWith(null, slotIdx); return; }
@@ -27468,6 +27483,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_ceChoices.length === 0) { callback && callback(); break; }
       const _ceWant = Math.max(1, Math.min(_ceChoices.length, parseInt(step.value, 10) || 1));
       const _ceRound = ctx._repeatTotal > 1 ? '（' + ctx._repeatIndex + '/' + ctx._repeatTotal + '回目）' : '';
+      const _ceConf = _curStepConfirmed || _isConfirmedStep(ctx, step);
       const _ceRun = (remaining, pool) => {
         if (remaining <= 0 || pool.length === 0) { callback && callback(); return; }
         const _ceDo = (idx) => {
@@ -27476,7 +27492,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const rest = pool.filter((_, i) => i !== idx);
           // 選択肢の期間が無ければ選択の効果自体の期間を引き継ぐ
           const run = (!chosen.duration && step.duration) ? Object.assign({}, chosen, { duration: step.duration }) : chosen;
-          executeRecipeStep(run, ctx, store, () => _ceRun(remaining - 1, rest));
+          _execInheritConfirm(_ceConf, run, ctx, store, () => _ceRun(remaining - 1, rest));
         };
         if (pool.length === 1) { _ceDo(0); return; }
         // CPU は先頭の選択肢を選ぶ

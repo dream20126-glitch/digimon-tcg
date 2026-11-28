@@ -9899,6 +9899,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               else if (kw === 'piercing')      { tgt._permEffects.piercing = true; }
               else if (kw === 'michizure')     { tgt._permEffects.michizure = true; }
               else if (kw === 'barrier')       { tgt._permEffects.barrier = true; }
+              else if (kw === 'decoy')         { _markDecoy(tgt, step); }
               else if (kw === 'evade')         { tgt._permEffects.evade = true; }
               else if (kw === 'armor_break')   { tgt._permEffects.armor_break = true; }
               else if (kw === 'indomitable')   { tgt._permEffects.indomitable = true; }
@@ -10038,7 +10039,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
           // Stage 3 追加（passive flag 認識のみ。完全な game logic は別途）
           else if (flag === 'delay') { card._permEffects.delay = true; }
           else if (flag === 'save') { card._permEffects.save = true; }
-          else if (flag === 'decoy') { card._permEffects.decoy = true; }
+          else if (flag === 'decoy') { _markDecoy(card, p); }
           else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
           else if (flag === 'material_save') { card._permEffects.materialSave = true; }
           else if (flag === 'vortex') { card._permEffects.vortex = true; }
@@ -10156,7 +10157,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               if (!card._permEffects) card._permEffects = {};
               if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
                 card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
-              } else if (kw === 'decoy')        { card._permEffects.decoy = true; }
+              } else if (kw === 'decoy')        { _markDecoy(card, step); }
               else if (kw === 'scapegoat')      { card._permEffects.scapegoat = true; }
               else if (kw === 'jamming')      { card._permEffects.jamming = true; }
               else if (kw === 'reboot')         { card._permEffects.reboot = true; }
@@ -10215,7 +10216,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             else if (flag === 'suppress_opt_security_effect' || flag === 'security_effect') { card._permEffects.suppressOptSecurityEffect = true; }
             else if (flag === 'delay') { card._permEffects.delay = true; }
             else if (flag === 'save') { card._permEffects.save = true; }
-            else if (flag === 'decoy') { card._permEffects.decoy = true; }
+            else if (flag === 'decoy') { _markDecoy(card, p); }
             else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
             else if (flag === 'material_save') { card._permEffects.materialSave = true; }
             else if (flag === 'vortex') { card._permEffects.vortex = true; }
@@ -10338,7 +10339,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               if (!card._permEffects) card._permEffects = {};
               if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
                 card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
-              } else if (kw === 'decoy')        { card._permEffects.decoy = true; }
+              } else if (kw === 'decoy')        { _markDecoy(card, step); }
               else if (kw === 'scapegoat')      { card._permEffects.scapegoat = true; }
               else if (kw === 'jamming')      { card._permEffects.jamming = true; }
               else if (kw === 'reboot')         { card._permEffects.reboot = true; }
@@ -10393,7 +10394,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             else if (flag === 'suppress_opt_security_effect' || flag === 'security_effect') { card._permEffects.suppressOptSecurityEffect = true; }
             else if (flag === 'delay') { card._permEffects.delay = true; }
             else if (flag === 'save') { card._permEffects.save = true; }
-            else if (flag === 'decoy') { card._permEffects.decoy = true; }
+            else if (flag === 'decoy') { _markDecoy(card, p); }
             else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
             else if (flag === 'material_save') { card._permEffects.materialSave = true; }
             else if (flag === 'vortex') { card._permEffects.vortex = true; }
@@ -13975,6 +13976,26 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
 // in_zone:'hand' でも action を持たない設定エントリ（summon_cost / burst_evolve 等。手札にある間の
 // 登場コスト軽減・バースト進化の条件）は従来通り場のスコープで返す（それぞれの専用処理が読む）
 let _triggerZoneScope = null;
+// 【デコイ（黒）（白）】の色の指定（designated.condition の cond_color:黒,白）。src＝そのデコイを与えるステップ／passive。
+// 色の指定が無いデコイが1つでもあれば decoyAny（どの色の身代わりにもなる）。battle-combat.js の _tryDecoyRedirect が読む
+function _decoyColorsOfSrc(src) {
+  const d = src && typeof src === 'object' ? src.designated : null;
+  const cond = String((d && (d.condition || d.when)) || (src && typeof src === 'object' && src.decoy_colors) || '');
+  const m = /cond_color:([^;|&]+)/.exec(cond);
+  if (!m) return null;
+  const cols = m[1].split(/[,\/]/).map(s => s.trim()).filter(Boolean);
+  return cols.length ? cols : null;
+}
+function _markDecoy(card, src) {
+  if (!card) return;
+  if (!card._permEffects) card._permEffects = {};
+  card._permEffects.decoy = true;
+  const cols = _decoyColorsOfSrc(src);
+  if (!cols) { card._permEffects.decoyAny = true; return; }
+  const cur = Array.isArray(card._permEffects.decoyColors) ? card._permEffects.decoyColors : [];
+  card._permEffects.decoyColors = [...new Set(cur.concat(cols))];
+}
+if (typeof window !== 'undefined') window._decoyColorsOfSrc = _decoyColorsOfSrc;
 function _withZoneScope(zone, fn) {
   const prev = _triggerZoneScope;
   _triggerZoneScope = zone || null;

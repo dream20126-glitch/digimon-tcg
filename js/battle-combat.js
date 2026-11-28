@@ -995,12 +995,35 @@ function _tryDecoyRedirect(destroyTarget, ownerSidePlayer) {
   for (var i = 0; i < ba.length; i++) {
     var c = ba[i];
     if (!c || c === destroyTarget) continue;
-    if (hasDecoy(c)) {
+    if (hasDecoy(c) && _decoyColorOk(c, destroyTarget)) {
       addLog('🛡 【デコイ】「' + c.name + '」が「' + destroyTarget.name + '」の身代わりに消滅');
       return { redirected: true, decoyCard: c, decoySlotIdx: i };
     }
   }
   return null;
+}
+
+// 【デコイ（黒）（白）】: 色の指定があれば、消滅するデジモンがその色のどれかを持つときだけ身代わりになれる。
+// 指定はデコイを与えた効果ごと（_permEffects.decoyColors / decoyAny）と、カード・進化元の passive の designated から集める。
+// 色の指定が無いデコイが1つでもあれば、どの色でもよい（クリサリモン P-045 の進化元が黒/白以外の身代わりにもなっていた）
+function _decoyColorOk(decoy, target) {
+  const pe = decoy._permEffects || {};
+  let any = !!pe.decoyAny;
+  const cols = Array.isArray(pe.decoyColors) ? pe.decoyColors.slice() : [];
+  const parse = (rec) => { try { return typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rec; } catch (_) { return null; } };
+  const scan = (arr) => (Array.isArray(arr) ? arr : arr ? [arr] : []).forEach((p) => {
+    if (!p || p.gate || p.gate_chain || (p.flag !== 'decoy' && p !== 'decoy')) return;
+    const cs = window._decoyColorsOfSrc ? window._decoyColorsOfSrc(p) : null;
+    if (cs) cols.push(...cs); else any = true;
+  });
+  const r = parse(decoy.recipe);
+  if (r) scan(r.passive);
+  (decoy.stack || []).forEach((e) => { const er = e && parse(e.recipe); if (er && er.evo_source) scan(er.evo_source.passive); });
+  (decoy._grantedRecipes || []).forEach((g) => { if (g && g.kwFlag === 'decoy') any = true; });
+  if (decoy.buffs && decoy.buffs.some((b) => b && b.type === 'keyword_decoy' && b.source !== 'recipe_perm' && b.source !== 'evo_recipe_perm' && b.source !== 'link_recipe_perm')) any = true;
+  if (any || cols.length === 0) return true;
+  const tc = String((target && target.color) || '');
+  return cols.some((col) => tc.indexOf(col) >= 0);
 }
 
 // ≪スケープゴート≫の処理: 自分の効果以外で消滅するとき、他のデジモン1体を消滅で回避

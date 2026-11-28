@@ -8815,7 +8815,9 @@ function _clashNoteAndSend(card, kind, imgs, swapImg, swapInfo) {
 function _clashKindByDiff(snap, card) {
   if (card && card._armorPurgedTo) return 'armor_break';
   // 場の他の自分のデジモンが減った（身代わりに消滅した）
-  if ((snap.field || []).some(c => c && c !== card && !(bs.player.battleArea || []).includes(c) && !(bs.ai.battleArea || []).includes(c))) return 'scapegoat';
+  // （カードNo・名前の数で比べる。オンラインでは相手の同期で場のカードが作り直されるので、同じカードかどうかで比べると
+  //  場に残っているデジモン（ウォーグレイモン等）まで「身代わりで消えた」と見ていた）
+  if (_fieldGoneByNo(snap.field, card).length > 0) return 'scapegoat';
   // 減った進化元がトラッシュではなくセキュリティへ行った（充填プラグインQ P-146「進化元から…セキュリティの下に置くことで消滅しない」）
   // なら、代わりのカードが弾き飛ぶのではなく光のバリア（消滅しない）
   const _goneStack = _stackGoneByNo(snap.stack, card && card.stack);
@@ -8839,6 +8841,21 @@ function _clashKindByDiff(snap, card) {
 }
 // 回避の前後で減った進化元（カードNo・名前の数で比べる。オンラインでは相手の同期でカードが作り直されるので、同じカードかどうかでは
 // 比べられない。以前は残っているウォーグレイモンまで「破棄した」と見て演出に出していた）
+// 回避の前後で場から減った、このカード以外のデジモン（身代わり）。owner を渡せばその側の場だけ、無ければ両方の場と比べる
+function _fieldGoneByNo(before, card, owner) {
+  const key = (c) => (c && (c.cardNo || '')) + '|' + (c && (c.name || ''));
+  const nowArr = owner ? (owner.battleArea || []) : [...(bs.player.battleArea || []), ...(bs.ai.battleArea || [])];
+  const left = {};
+  nowArr.forEach(c => { if (c) { const k = key(c); left[k] = (left[k] || 0) + 1; } });
+  const out = [];
+  (Array.isArray(before) ? before : []).forEach(c => {
+    if (!c || c === card) return;
+    const k = key(c);
+    if (left[k] > 0) left[k]--; else out.push(c);
+  });
+  // このカード自身（同期で作り直された同じカード）を数え違えないよう、名前が同じものは除く
+  return out.filter(c => !(card && c.cardNo === card.cardNo && c.name === card.name));
+}
 function _stackGoneByNo(before, after) {
   const key = (c) => (c && (c.cardNo || '')) + '|' + (c && (c.name || ''));
   const left = {};
@@ -8862,7 +8879,7 @@ function _clashSubCards(snap, card, owner) {
   const now = (arr) => Array.isArray(arr) ? arr : [];
   _stackGoneByNo(snap.stack, card && card.stack).forEach(c => out.push(c));
   snap.link.forEach(c => { if (c && !now(card && card.linkedCards).includes(c)) out.push(c); });
-  snap.field.forEach(c => { if (c && c !== card && !now(owner && owner.battleArea).includes(c)) out.push(c); });
+  _fieldGoneByNo(snap.field, card, owner).forEach(c => out.push(c));
   if (snap.secTop && !now(owner && owner.security).includes(snap.secTop)) out.push(snap.secTop);
   return out;
 }

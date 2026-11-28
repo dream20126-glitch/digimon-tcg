@@ -2749,7 +2749,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               try {
                 const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
                 const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                const recipe = !(evoCard && evoCard._faceDown) && r.evo_source && r.evo_source.on_active;
+                // キーが「active」のレシピ（P-138）も同じ「アクティブになったとき」
+                const recipe = !(evoCard && evoCard._faceDown) && r.evo_source && (r.evo_source.on_active || r.evo_source.active);
                 if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: evoCard });
               } catch (_) {}
             });
@@ -2760,7 +2761,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             try {
               const raw = typeof carrier.recipe === 'string' ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-              const recipe = r.on_active;
+              const recipe = r.on_active || r.active;
               if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: carrier });
             } catch (_) {}
           }
@@ -4509,9 +4510,36 @@ function _ddPlayDodge(plan, cur, cb) {
   try { isFrag = !purged && !scape.length && gone.length > 0 && !!cardHasActivePassiveFlag(cur, 'fragment', bs, plan.side); } catch (_) {}
   const lbl = byEvade ? '【回避】' : purged ? '【アーマー解除】' : scape.length ? '【スケープゴート】' : isFrag ? '【フラグメント】' : '消滅しない！';
   const sub = byEvade ? 'レストして消滅しない' : purged ? '一番上のカードをはがして消滅しない' : scape.length ? '身代わりで消滅しない' : gone.length ? '代わりに破棄して消滅しない' : '消滅しない';
+  // 「進化元から〜を破棄することで消滅しない」（【フラグメント】以外。メタルグレイモン：アルタウスモード P-072 等）: 身代わりではなく、
+  // 破棄した進化元がトラッシュへ行く演出 → バリアで消滅しない
+  if (!byEvade && !purged && !scape.length && !isFrag && gone.length > 0 && gone.every(c => plan.stack0.includes(c))) {
+    _ddEvoDiscardThenShield(plan, cur, gone, '消滅しない！', '進化元を破棄して消滅しない', cb);
+    return;
+  }
   // 代わりのカードもレストも無い「消滅しない」（充填プラグインQ・離れない効果等）は、バリアが稲妻をはじく
   const shield = !byEvade && !purged && !gone.length;
   _ddDodgeFx(plan.ctx, cur, plan.side, { label: lbl, sub, substitute: gone.length ? gone : null, subColor: scape.length ? '#ff8adf' : '#a8ff4a', peel: purged, shield }, cb);
+}
+
+// 破棄した進化元を1枚ずつトラッシュへ送る演出（両方の画面）→ バリアで守る演出（_ddDodgeFx の shield）
+function _ddEvoDiscardThenShield(plan, cur, gone, label, sub, cb) {
+  const own = plan.side === 'player';
+  const mctx = Object.assign({}, plan.ctx || {}, { side: plan.side });
+  const from = (own ? '' : '相手の') + '「' + (cur.name || '') + '」の進化元';
+  const to = (own ? '' : '相手の') + 'トラッシュ';
+  // 「消滅するとき」の処理中はトラッシュへの移動演出を止めている（_fxMoveHold）ので、この演出の間だけ外す
+  const held = (typeof window !== 'undefined' && window._fxMoveHold) || 0;
+  if (held) window._fxMoveHold = 0;
+  let i = 0;
+  const next = () => {
+    if (i >= gone.length) {
+      if (held) window._fxMoveHold = (window._fxMoveHold || 0) + held;
+      _ddDodgeFx(plan.ctx, cur, plan.side, { label, sub, shield: true }, cb);
+      return;
+    }
+    _fxMoveSync(mctx, gone[i++], from, to, next);
+  };
+  next();
 }
 
 // 「〜することで離れない」で使ったカードを見つけるための、持ち主のカードの位置の控え
@@ -13683,7 +13711,8 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 例: 効果辞書には「破棄されたとき＝discard」で登録されているが、evo_source側の
 // 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
 // カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
-const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', when_hand_discard: 'discard', on_battle_win: 'on_win_battle' };
+// on_active: レシピのキーが「active」のもの（ブイドラモン P-138 の進化元「このデジモンがアクティブになったとき」）も同じトリガー
+const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', when_hand_discard: 'discard', on_battle_win: 'on_win_battle', on_active: 'active' };
 // エイリアスとは別に、そのトリガーで一緒に拾うレシピのキー。
 // on_win_battle_any =「バトルに勝ったとき」（モルフォモン BT26-035 等）。デジモンとのバトルで勝った（on_battle_win）と、
 // セキュリティデジモンとのバトルで勝った（on_battle_win_security）の両方で発動する。
@@ -15062,11 +15091,21 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, returnTo, callb
       const _prevLeave = bs ? bs._leaveCause : null;
       if (bs && !_prevLeave) bs._leaveCause = { type: 'effect', causerSide: null, causerCard: null };
       card._returningTo = returnTo;
+      const _rrStack0 = Array.isArray(card.stack) ? card.stack.slice() : [];
       try {
         _fireSelfDestroyEffects(card, side, bs, ctxBase, () => {
           delete card._returningTo;
           if (bs) bs._leaveCause = _prevLeave;
-          if (_hasCant()) { ctxBase && ctxBase.addLog && ctxBase.addLog('🛡 「' + card.name + '」は' + (returnTo === 'hand' ? '手札' : 'デッキ') + 'に戻らない'); callback(true); return; }
+          if (_hasCant()) {
+            const _rrLbl = (returnTo === 'hand' ? '手札' : 'デッキ') + 'に戻らない';
+            ctxBase && ctxBase.addLog && ctxBase.addLog('🛡 「' + card.name + '」は' + _rrLbl);
+            // 演出: 破棄した進化元がトラッシュへ → バリアで戻らない（メタルグレイモン：アルタウスモード P-072）。進化元を使っていなければバリアだけ
+            const _rrGone = _rrStack0.filter((c) => c && !(Array.isArray(card.stack) && card.stack.includes(c)));
+            const _rrPlan = { side, ctx: Object.assign({}, ctxBase || {}, { side, bs }), stack0: _rrStack0 };
+            if (_rrGone.length > 0) { _ddEvoDiscardThenShield(_rrPlan, card, _rrGone, _rrLbl + '！', '進化元を破棄して' + _rrLbl, () => callback(true)); return; }
+            _ddDodgeFx(_rrPlan.ctx, card, side, { label: _rrLbl + '！', sub: _rrLbl, shield: true }, () => callback(true));
+            return;
+          }
           tryCancelViaLeaveBattle(card, side, bs, ctxBase, null, callback);
         }, 'when_deck_bounce');
         return;

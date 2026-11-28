@@ -8822,7 +8822,13 @@ function _clashKindByDiff(snap, card) {
   if (_goneStack.length && _goneStack.every(c => (bs.player.security || []).includes(c) || (bs.ai.security || []).includes(c))) return 'shield';
   const ln = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
   const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
-  return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? 'fragment' : 'shield');
+  // 進化元が減った: 【フラグメント】なら進化元が庇う演出、それ以外（「進化元からLvの同じカード2枚を破棄することで消滅しない」
+  // ワーガルルモン：サジタリウスモード P-073 等）は、進化元を破棄してからバリアで消滅しない（身代わりではない）
+  let _isFrag = false;
+  if (sn < snap.stack.length) {
+    try { const _sd = (bs.player.battleArea || []).includes(card) ? 'player' : 'ai'; _isFrag = !!_cardHasActivePassiveFlag(card, 'fragment', bs, _sd); } catch (_) {}
+  }
+  return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? (_isFrag ? 'fragment' : 'evo_shield') : 'shield');
 }
 // 消滅回避の前後の差から、代わりにトラッシュへ送られたカード（進化元・リンクカード・身代わりのデジモン・破棄したセキュリティ）を探す
 function _clashSnapshot(card, owner) {

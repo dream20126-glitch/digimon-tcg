@@ -2377,6 +2377,29 @@ export function fxBattleClashBegin(stageEl, atkEl, defEl, vsEl, winner, myIsAtk,
     const hitX = cx - dir * 30; // 衝撃が来る側
     const lbl = (t, c) => label(cx, cy - 110, t, c);
     switch (kind) {
+      // 'evo_shield': 「進化元から〜を破棄することで消滅しない」（ワーガルルモン：サジタリウスモード P-073 等。身代わりではない）:
+      // ① 破棄した進化元がカードの下から出てトラッシュへ飛ぶ ② バリアで消滅しない（'shield' と同じ）
+      case 'evo_shield': {
+        const im0 = area.querySelector('[id$="card-img"]');
+        const rr = (im0 || area).getBoundingClientRect();
+        const GW = (rr.width || 110) * 0.62, GH = (rr.height || 154) * 0.62;
+        const imgs = (subs && subs.length) ? subs.slice(0, 4) : [''];
+        const backUrl = (typeof window !== 'undefined' && window._cardBackUrl) || '';
+        lbl('進化元を破棄', '#a8ff4a');
+        imgs.forEach((im, i) => {
+          const nameOnly = typeof im === 'string' && im.indexOf('name:') === 0 ? im.slice(5) : null;
+          const src = nameOnly != null ? '' : (im || backUrl);
+          const gx = rr.left + rr.width / 2 - GW / 2 + (i - (imgs.length - 1) / 2) * (GW * 0.55);
+          const gy = rr.bottom - GH * 0.45;
+          const gEl = el('position:absolute;left:' + gx + 'px;top:' + gy + 'px;width:' + GW + 'px;height:' + GH + 'px;border-radius:8px;overflow:hidden;border:2px solid #a8ff4a;box-shadow:0 0 14px #a8ff4a;background:' + (src ? 'url(' + src + ') center/cover' : 'linear-gradient(160deg,#3a3a48,#16161e)') + ';z-index:2;opacity:0;transform:translateY(-30px);transition:transform 0.35s ease-out,opacity 0.25s;',
+            nameOnly != null ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;text-align:center;font-size:10px;font-weight:bold;color:#fff;">' + nameOnly + '</div>' : '');
+          setTimeout(() => { gEl.style.opacity = '1'; gEl.style.transform = 'translateY(0)'; }, 60 + i * 120);
+          setTimeout(() => { gEl.style.transition = ''; blowTo(gEl, dir, 'trash'); }, 650 + i * 200);
+        });
+        const shieldAt = 1500 + (imgs.length - 1) * 200;
+        setTimeout(() => { playOne(side, 'shield', area, dir); }, shieldAt);
+        return shieldAt + 1800;
+      }
       case 'trash': blowTo(area, dir, 'trash'); return 2000;
       case 'to_hand': case 'to_deck': case 'to_security': lbl(_CLASH_KW_LABEL[kind], '#4ad8ff'); blowTo(area, dir, kind); return 2000;
       case 'indomitable': {

@@ -5645,6 +5645,12 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   const _combatBackdrop = document.getElementById('_combat-backdrop');
   const _combatBackdropWasVisible = !!(_combatBackdrop && _combatBackdrop.style.display !== 'none');
   if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'none';
+  // こちらが選んでいる間は、相手の画面から届いた「相手：〇〇（相手が効果を確認中…）」の表示を隠す（手札を選ぶ画面と同じ）。
+  // 相手の効果でこちらのデジモンが消滅するときの【デコイ】の選択で、選んでいるのはこちらなのに「相手が効果を確認中」と重なっていた
+  const _tsWaitOvs = Array.from(document.body.children).filter(el => el && el.style && el.style.display !== 'none'
+    && (el.id === '_remote-effect-announce' || el.id === '_reaction-delegate-wait-overlay'
+      || (el.style.position === 'fixed' && (parseInt(el.style.zIndex, 10) || 0) < 60000 && /相手が効果を(確認|処理)中/.test(el.textContent || ''))));
+  _tsWaitOvs.forEach(el => { el.dataset.tsPrevDisplay = el.style.display || ''; el.style.display = 'none'; });
 
   // 何の対象を選ぶか（extraLabel の指定が無ければ、今処理している効果の種類から作る。「アクティブにならなくする」等）
   if (!extraLabel && (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _reactionRunDepth > 0 || _effectBodyDepth > 0)) { try { const _pl = _stepPurposeLabel(_curStepForLabel); if (_pl) extraLabel = '（' + _pl + '）'; } catch (_) {} }
@@ -5886,6 +5892,8 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       window._onlineSendCommand({ type: 'fx_effectClose' });
     }
     if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'block';
+    // 隠した相手の待ちの表示は、まだ残っていれば戻す（相手の処理が続いている）
+    _tsWaitOvs.forEach(el => { if (el.parentNode) el.style.display = el.dataset.tsPrevDisplay || ''; delete el.dataset.tsPrevDisplay; });
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
     if (stopBtn && stopBtn.parentNode) stopBtn.parentNode.removeChild(stopBtn);
     validIndices.forEach(idx => {

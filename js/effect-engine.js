@@ -15126,6 +15126,12 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, returnTo, callb
       } catch (_) { delete card._returningTo; if (bs) bs._leaveCause = _prevLeave; }
     }
     if (_hasCant()) { callback(true); return; }
+    // オンラインの相手のカード: 下の委譲（持ち主の端末）で「手札/デッキに戻るとき」も確認してもらう
+    if (_isOnline && side !== 'player' && _hasReturnReplaceSteps(card, returnTo)) {
+      card._delegateReturnTo = returnTo;
+      const _cbR = callback;
+      callback = (...a) => { delete card._delegateReturnTo; _cbR(...a); };
+    }
   }
   const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
   if (isOnline) {
@@ -15147,17 +15153,20 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, returnTo, callb
     let slotIdx = _area.indexOf(card);
     if (slotIdx === -1) slotIdx = _area.findIndex(c => c && c.cardNo === card.cardNo && c.name === card.name);
     if (slotIdx === -1 || typeof window._requestLeaveBattleDelegate !== 'function') { callback(false); return; }
+    // 手札/デッキに戻すときは、戻り先も送る（持ち主の端末で「手札/デッキに戻るとき」も確認する。メタルグレイモン：アルタウスモード
+    // P-072 の進化元「手札/デッキに戻るとき、〜することで戻らない」が、オンラインで相手に戻されたときに確認されなかった）
     window._requestLeaveBattleDelegate(slotIdx, (canceled) => {
       // 相手の端末で「離れるとき」により進化していれば、相手側に【進化時】の保留が残っている。こちらの効果が終わったら
       // 発揮してもらう（_flushRemoteNonTurn → _flushOppDeferredEvo。以前はバトルのときだけで、効果で消滅させようとした
       // ときはハイアンドロモンの【進化時】が保留のまま発揮されなかった）
       if (canceled && bs) { bs._oppDeferredEvoPending = true; _remoteNtpMaybe = true; }
       callback(!!canceled);
-    });
+    }, card._delegateReturnTo || null);
     return;
   }
   _tryCancelLeaveLocal(card, side, bs, ctxBase, callback);
 }
+if (typeof window !== 'undefined') window._tryCancelViaLeaveBattle = (card, side, bs, ctxBase, returnTo, cb) => tryCancelViaLeaveBattle(card, side, bs, ctxBase, returnTo, cb);
 // オンラインで相手から委譲された「離れるとき」の判定を、持ち主（この端末）側で行う入口（battle-online.js 用）
 if (typeof window !== 'undefined') window._tryCancelLeaveLocal = (card, side, bs, ctxBase, cb) => _tryCancelLeaveLocal(card, side, bs, ctxBase, cb);
 function _tryCancelLeaveLocal(card, side, bs, ctxBase, callback0) {

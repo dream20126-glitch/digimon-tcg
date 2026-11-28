@@ -1319,7 +1319,11 @@ function onRemoteCommand(cmd) {
         if (c || !cmd.withWBD || typeof window._runWhenBattleDestroyLocal !== 'function' || !bs.player.battleArea.includes(card)) { reply(c); return; }
         window._runWhenBattleDestroyLocal(card, (c2) => reply(c2));
       };
-      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, _afterLeave); }
+      try {
+        // 手札/デッキに戻されるとき（returnTo）: 「手札/デッキに戻るとき〜戻らない」（P-072 の進化元）から確認する
+        if ((cmd.returnTo === 'hand' || cmd.returnTo === 'deck') && typeof window._tryCancelViaLeaveBattle === 'function') window._tryCancelViaLeaveBattle(card, 'player', bs, ctx, cmd.returnTo, _afterLeave);
+        else window._tryCancelLeaveLocal(card, 'player', bs, ctx, _afterLeave);
+      }
       catch (_) { _restore(); reply(false); }
       break;
     }
@@ -3489,7 +3493,7 @@ window._requestWhenDestroyDelegate = (slotIdx, cause, cb) => {
   const c = cause ? { type: cause.type || 'effect', causerSide: cause.causerSide === 'player' ? 'ai' : cause.causerSide === 'ai' ? 'player' : null } : null;
   sendCommand({ type: 'fx_whenDestroyDelegate', slotIdx, cause: c });
 };
-window._requestLeaveBattleDelegate = (slotIdx, cb) => {
+window._requestLeaveBattleDelegate = (slotIdx, cb, returnTo) => {
   const waitOv = document.createElement('div');
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
@@ -3501,7 +3505,7 @@ window._requestLeaveBattleDelegate = (slotIdx, cb) => {
   // 離れる原因（効果かバトルか・誰の効果か）も送る。持ち主の端末の「相手の効果で離れるとき」（【守護】等）の判定に使う
   const _lc = bs._leaveCause || bs._lastDestroyCause || null;
   const cause = _lc ? { type: _lc.type || 'effect', causerSide: _lc.causerSide === 'player' ? 'ai' : _lc.causerSide === 'ai' ? 'player' : null } : null;
-  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle, cause, withWBD: !!(bs._leaveByBattle && bs._wbdDelegate) });
+  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle, cause, withWBD: !!(bs._leaveByBattle && bs._wbdDelegate), returnTo: returnTo || null });
 };
 window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);

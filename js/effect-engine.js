@@ -12976,7 +12976,8 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
   const _srcIsTamer = !!(sourceCard && String(sourceCard.type || '') === 'テイマー');
   const matchSubject = (subject, cardSide) => {
     if (!subject) return false;
-    if (_srcIsTamer && !/tamer/.test(String(subject))) return false;
+    // own_card / opp_card / both_card（「デジモン/テイマー」。エディタで両方を選んだ値）はテイマーの登場にも反応する
+    if (_srcIsTamer && !/tamer|_card$/.test(String(subject))) return false;
     switch (subject) {
       case 'other_own':
       case 'own':
@@ -13004,6 +13005,15 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       case 'both_other':
       case 'both_other_digimon':
         return triggerCode === 'on_attack' ? cardSide === sourceSide : true;
+      // 「（青の）自分のテイマーが登場したとき」（チビモン P-188 の進化元・P-226〜231 等）: 登場したのがテイマーのときだけ
+      // （以前は発動主体のテイマー向けの値を受け付けておらず、テイマーが登場しても何も起きなかった）
+      case 'own_tamer':
+      case 'other_own_tamer':
+        return _srcIsTamer && cardSide === sourceSide;
+      case 'opp_tamer':
+        return _srcIsTamer && cardSide !== sourceSide;
+      case 'both_tamer':
+        return _srcIsTamer;
       default: return false;
     }
   };
@@ -20606,6 +20616,9 @@ function executeRecipeStep(step, ctx, store, callback) {
   if (step.target === 'target_trigger_source') {
     // 発揮までに進化していれば、進化後のデジモン（同じ1体）を「そのデジモン」とする
     _tsSrc = _currentFormOf(ctx.block && ctx.block._eventSourceCard, ctx.bs);
+    // このカード自身のイベント（反応ではない。「このデジモンがバトルで消滅するとき、〜で消滅しない」ワーガルルモン：サジタリウスモード
+    // P-073 の進化元）では、発火元はこのデジモン自身（以前は発火元の記録が無く「発火元カードが見つかりません」で消滅していた）
+    if (!_tsSrc && step.action !== 'evolve' && ctx.card && !(ctx.block && ctx.block._eventSourceCard)) _tsSrc = ctx.card;
     // 発火元が場にいない（ピコデビモン P-238 の【消滅時】でトラッシュにいる）ときの進化の「そのデジモン」は、コストで選んだデジモン
     // （以前はトラッシュのピコデビモン自身を指し「進化させるデジモンがいません」になっていた）
     const _tsOnField = (c) => !!c && ['player', 'ai'].some((sd) => ctx.bs && ctx.bs[sd] && (ctx.bs[sd].battleArea || []).includes(c));

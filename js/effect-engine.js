@@ -4433,13 +4433,11 @@ function _runDecoy(destroyed, ownerKey, bs, baseCtx, cb) {
         || (el.style.position === 'fixed' && (parseInt(el.style.zIndex, 10) || 0) < 60000 && /相手が効果を(確認|処理)中/.test(el.textContent || ''))));
     waits.forEach(el => { el.dataset.dcPrevDisplay = el.style.display || ''; el.style.display = 'none'; });
     const restore = () => waits.forEach(el => { if (el.parentNode) el.style.display = el.dataset.dcPrevDisplay || ''; delete el.dataset.dcPrevDisplay; });
-    if (typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-      try { window._onlineSendCommand({ type: 'fx_targetSelectStart', label: '\n🛡【デコイ】を使うか確認中' }); } catch (_) {}
-    }
     showConfirmDialog(dc1, '【デコイ】このデジモンを消滅させることで、「' + destroyed.name + '」は消滅しない（身代わり）。【デコイ】を使いますか？', (ok) => {
       restore();
       if (typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-        try { window._onlineSendCommand({ type: 'fx_targetSelectEnd' }); } catch (_) {}
+        // 確認の画面は相手の画面にも「相手：〇〇（【デコイ】を使いますか？）」として出るので、答えたら閉じてもらう（残っていた）
+        try { window._onlineSendCommand({ type: 'fx_targetSelectEnd' }); window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
       }
       if (ok) useIdx(cands[0]); else done(false);
     });

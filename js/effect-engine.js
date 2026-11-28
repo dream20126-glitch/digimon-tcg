@@ -9847,7 +9847,10 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               // 「他の自分の〜」等、参照範囲に自身(card)が含まれてしまう自陣盤面全体系の参照では、
               // このgrant_keyword自体を持つcard自身を二重に数えないよう1体分除外する
               const selfInclusiveRefs = ['own_digimon', 'own_rest_digimon', 'own_active_digimon', 'own_battle_area', 'battle_area'];
-              if (selfInclusiveRefs.includes(refSource) && card && card.type === 'デジモン') {
+              // 「他の」が無い「自分の『ディアボロモン』1体ごとに」（P-016）は自身も数える
+              const _perTxt = String(step.display_text || card.effect || '');
+              const _saysOther = /他の[^。]*?ごとに/.test(_perTxt);
+              if (_saysOther && selfInclusiveRefs.includes(refSource) && card && card.type === 'デジモン') {
                 const selfConds = step.ref_state ? parseRecipeCondition(String(step.ref_state)) : null;
                 const selfMatchesState = !selfConds || checkConditions(selfConds, card, bs, side);
                 const selfMatchesFilter = !step.ref_filter || (typeof cardMatchesFilter !== 'function' || cardMatchesFilter(card, step.ref_filter));
@@ -10141,10 +10144,21 @@ function _applyPermanentEffectsImpl(bs, side, context) {
               // ライズグレイモン/メタルグレイモン等: 進化元として持つ間、条件成立でキーワード付与
               const kw = step.keyword || step.flag || '';
               const gv = value != null ? value : 1;
+              // 付ける先: 無指定・self はこのデジモン。own:all / target_other_own:all（他の自分のデジモン全て）は
+              // 対象の条件（filter。「このデジモンと同じ名称の」same_name_as_self はこのデジモンと比べる）に合うもの全て
+              // （クリサリモン P-045 の進化元で、他の同じ名称のデジモンではなくこのデジモンに【デコイ】が付いていた）
+              const _gkT = String(step.target || 'self');
+              const _gkAll = /^(own|target_other_own|other_own):all$/.exec(_gkT);
+              const _gkTargets = _gkAll
+                ? (bs[side].battleArea || []).filter(c => c && (_gkAll[1] === 'own' || c !== card) && (!step.filter || cardMatchesFilter(c, step.filter, bs, side, card)))
+                : [card];
+              _gkTargets.forEach((card) => {
               if (!card._permEffects) card._permEffects = {};
               if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
                 card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
-              } else if (kw === 'jamming')      { card._permEffects.jamming = true; }
+              } else if (kw === 'decoy')        { card._permEffects.decoy = true; }
+              else if (kw === 'scapegoat')      { card._permEffects.scapegoat = true; }
+              else if (kw === 'jamming')      { card._permEffects.jamming = true; }
               else if (kw === 'reboot')         { card._permEffects.reboot = true; }
               else if (kw === 'blocker')        { card._permEffects.blocker = true; }
               else if (kw === 'rush')           { card._permEffects.rush = true; }
@@ -10162,6 +10176,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
                 if (!card._evoGrantedKeywords) card._evoGrantedKeywords = new Set();
                 card._evoGrantedKeywords.add(kw);
               }
+              });
             }
           });
         });
@@ -10311,10 +10326,21 @@ function _applyPermanentEffectsImpl(bs, side, context) {
             } else if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
               const kw = step.keyword || step.flag || '';
               const gv = value != null ? value : 1;
+              // 付ける先: 無指定・self はこのデジモン。own:all / target_other_own:all（他の自分のデジモン全て）は
+              // 対象の条件（filter。「このデジモンと同じ名称の」same_name_as_self はこのデジモンと比べる）に合うもの全て
+              // （クリサリモン P-045 の進化元で、他の同じ名称のデジモンではなくこのデジモンに【デコイ】が付いていた）
+              const _gkT = String(step.target || 'self');
+              const _gkAll = /^(own|target_other_own|other_own):all$/.exec(_gkT);
+              const _gkTargets = _gkAll
+                ? (bs[side].battleArea || []).filter(c => c && (_gkAll[1] === 'own' || c !== card) && (!step.filter || cardMatchesFilter(c, step.filter, bs, side, card)))
+                : [card];
+              _gkTargets.forEach((card) => {
               if (!card._permEffects) card._permEffects = {};
               if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
                 card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
-              } else if (kw === 'jamming')      { card._permEffects.jamming = true; }
+              } else if (kw === 'decoy')        { card._permEffects.decoy = true; }
+              else if (kw === 'scapegoat')      { card._permEffects.scapegoat = true; }
+              else if (kw === 'jamming')      { card._permEffects.jamming = true; }
               else if (kw === 'reboot')         { card._permEffects.reboot = true; }
               else if (kw === 'blocker')        { card._permEffects.blocker = true; }
               else if (kw === 'rush')           { card._permEffects.rush = true; }
@@ -10330,6 +10356,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
                 if (!card._evoGrantedKeywords) card._evoGrantedKeywords = new Set();
                 card._evoGrantedKeywords.add(kw);
               }
+              });
             }
           });
         });
@@ -15396,7 +15423,9 @@ function _noteSecurityIncrease(ctx, owner) {
 function _selfDeckDiscardSteps(card) {
   const r = _parseCardRecipe(card);
   if (!r) return [];
-  const steps = _lookupTriggerSteps(r, 'when_evo_discard', card) || [];
+  // in_zone:'deck' のステップは場のスコープ（null）では除外されるので、デッキのスコープで探す
+  // （以前は場のスコープで探していて見つからず、P-017 でデッキから破棄されても発揮しなかった）
+  const steps = _withZoneScope('deck', () => _lookupTriggerSteps(r, 'when_evo_discard', card)) || [];
   return steps.filter((st) => {
     if (!st || typeof st !== 'object') return false;
     const tf = Array.isArray(st.trigger_from) ? st.trigger_from : (st.trigger_from ? [st.trigger_from] : []);
@@ -24756,10 +24785,25 @@ function executeRecipeStep(step, ctx, store, callback) {
         showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _uoValid, '「' + _uoCard.name + '」を進化元の下に置くデジモンを選んでください', '#00ff88', (sel) => _uoGo(sel));
         break;
       }
+      // トラッシュにあるこのカード自身を置く（ピコデビモン P-238「【消滅時】自分のトラッシュから、このカードを『ヴァンデモン』の
+      // 記述がある自分のデジモン1体の進化元の下に置くことで」）。以前は「このデジモンが場にいません」で止まり、置けず進化もできなかった
+      if (_pudFromZones.length === 1 && _pudFromZones[0] === 'self_card' && ctx.card && (player.trash || []).includes(ctx.card)) {
+        const _tcCard = ctx.card;
+        resolveDigimonThen((digi) => {
+          if (!digi) { ctx.addLog('💨 置き先のデジモンがいません'); callback(_COST_STEP_SET.has(step) ? false : undefined); return; }
+          placeUnderAndFinish(digi, _tcCard, () => {
+            const k = player.trash.indexOf(_tcCard);
+            if (k !== -1) player.trash.splice(k, 1);
+            _tcCard.buffs = []; _tcCard.dpModifier = 0; _tcCard._permEffects = {}; _tcCard.suspended = false;
+            if (_tcCard.baseDp != null) _tcCard.dp = _tcCard.baseDp;
+          });
+        }, _tcCard);
+        break;
+      }
       if (_pudFromZones.length === 1 && _pudFromZones[0] === 'self_card') {
         const _scCard = ctx.card;
         const _scArea = _scCard ? player.battleArea : null;
-        if (!_scCard || !_scArea || _scArea.indexOf(_scCard) === -1) { ctx.addLog('💨 このデジモンが場にいません'); callback(); break; }
+        if (!_scCard || !_scArea || _scArea.indexOf(_scCard) === -1) { ctx.addLog('💨 このデジモンが場にいません'); callback(_COST_STEP_SET.has(step) ? false : undefined); break; }
         resolveDigimonThen((digi) => {
           if (!digi) { ctx.addLog('💨 置き先のデジモンがいません'); callback(_COST_STEP_SET.has(step) ? false : undefined); return; }
           placeUnderAndFinish(digi, _scCard, () => {

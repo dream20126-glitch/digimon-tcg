@@ -64,7 +64,12 @@ export function cardHasName(card, reqName, exact) {
   if (String(reqName).includes(',')) {
     return String(reqName).split(',').map(s => s.trim()).filter(Boolean).some(n => cardHasName(card, n, exact));
   }
+  // 公式ルール 2-3-1-4「名称に記述されている『ACE』はそのカードの名称に含まれません」:
+  // ディアボロモンACE の名称は「ディアボロモン」（P-016「自分の『ディアボロモン』1体ごとに」で数える）。
+  // 参照する側の名称（このカードと同じ名称＝ACE のカードの名称）からも外す
+  const _noAce = (n) => String(n || '').replace(/ACE$/, '');
+  reqName = _noAce(reqName) || reqName;
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
-  if (test(String(card.name || ''))) return true;
+  if (test(String(card.name || '')) || test(_noAce(card.name))) return true;
   return cardAliasHasName(card, reqName, exact);
 }

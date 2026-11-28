@@ -1709,6 +1709,26 @@ function executeQueueEntry(entry, context, callback0) {
     return;
   }
 
+  // 発動の条件（trigger_conditions。「名称に『グレイモン』か『オメガモン』を含むこのデジモンが〜」）を満たさない、または
+  // コストを今は支払えない（「進化元からLvの同じカード2枚を破棄することで」で同じLvが2枚無い）ステップしか無い効果は、
+  // 確認・発動のポップアップを出さずに終わる（メタルグレイモン：アルタウスモード P-072。全効果共通）
+  if (!context.alreadyConfirmed && Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length > 0) {
+    let _allNg = false;
+    try {
+      _allNg = _recipeStepsForLookup.every((st) => {
+        if (!st) return true;
+        const tcNg = Array.isArray(st.trigger_conditions) && st.trigger_conditions.length > 0
+          && !checkStepTriggerConditions(st, { card, bs: ctx.bs, side: actualSide, block });
+        const costNg = Array.isArray(st.cost) && st.cost.length > 0 && _costStepsInfeasible(st.cost, card, ctx.bs, actualSide);
+        return tcNg || costNg;
+      });
+    } catch (_) { _allNg = false; }
+    if (_allNg) {
+      ctx.addLog && ctx.addLog('💨 「' + card.name + '」の効果は条件を満たさない（またはコストを支払えない）ため発動しない');
+      callback && callback();
+      return;
+    }
+  }
   // 強制効果 or 既に確認済み → 即実行
   if (context.alreadyConfirmed && block.isOptional) ctx._effectConfirmed = true;
   if (!block.isOptional || context.alreadyConfirmed) {
@@ -18330,7 +18350,16 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
       const conds = [];
       try { if (c.condition) conds.push(...parseRecipeCondition(c.condition)); } catch (_) {}
       const st = Array.isArray(carrier.stack) ? carrier.stack : [];
-      const n = conds.length > 0 ? st.filter(x => x && checkConditions(conds, x, bs, side)).length : st.length;
+      // 「Lvの同じカードN枚」（cond_lv_same）はカード1枚ごとの条件ではないので外し、同じLvが一番多い枚数で数える
+      const lvSame = conds.some(x => x && x.code === 'cond_lv_same');
+      const conds1 = lvSame ? conds.filter(x => x && x.code !== 'cond_lv_same') : conds;
+      const okCards = conds1.length > 0 ? st.filter(x => x && checkConditions(conds1, x, bs, side)) : st.filter(Boolean);
+      let n = okCards.length;
+      if (lvSame) {
+        const cnt = {};
+        okCards.forEach(x => { const l = parseInt(x.level || x.Lv || x.lv, 10); if (!isNaN(l)) cnt[l] = (cnt[l] || 0) + 1; });
+        n = Math.max(0, ...Object.values(cnt));
+      }
       return n < Math.max(1, parseInt(c.value, 10) || 1);
     }
     // 「自分の手札から『パルモン』1枚を登場させることで」で、手札/トラッシュに登場できるカードが無い

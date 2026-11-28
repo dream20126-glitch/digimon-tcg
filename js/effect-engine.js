@@ -3113,6 +3113,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 破棄確定後の共通後処理（演出 + ログ + オンライン同期）
       const finalizeDiscard = (discarded, tgt, onDone) => {
         if (discarded.length === 0) { onDone && onDone(false); return; }
+        // 「消滅するとき／離れるとき」の処理中（VS画面の中も。_fxMoveHold）でも、コストで進化元を破棄したら、いつもの進化元破棄の演出を
+        // 出す（「進化元から〜を破棄することで消滅しない」ワーガルルモン：サジタリウスモード P-073 等。そのあとはバリアの演出だけ）
+        const _edForceHit = !!(action._isCost && typeof window !== 'undefined' && window._fxMoveHold > 0 && typeof window._fxEffectHit === 'function');
+        const _edHitNow = _hitFxOn() || _edForceHit;
         const names = discarded.map(c => c.name || '???').join('、');
         ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
         // オンラインの相手にも演出＋実データ操作コマンドを送信（相手デジモン対象の
@@ -3123,7 +3127,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           // 上か下から順に消していて、選んだのと違うカードが残っていた（メタルガルルモン EX12-035 → グソクモン）
           const _bef = _edBefore.get(tgt) || [];
           const stackIdxs = discarded.map(c => _bef.indexOf(c));
-          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top', hitFx: _hitFxOn(),
+          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top', hitFx: _edHitNow,
             stackIdxs: stackIdxs.every(x => x >= 0) ? stackIdxs : null, cardNos: discarded.map(c => c.cardNo || '') });
           if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
         }
@@ -3131,7 +3135,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // （盤面は state_sync で同期。以前は相手の画面に何も出ていなかった）
         // 3枚以上は下の一覧の演出（_moveBatchIntro → fx_moveBatch）が相手の画面にも出るので、1枚ずつの演出は送らない
         else if (edOwner === player && discarded.length < 3 && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-          try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???'), hitFx: _hitFxOn() }); } catch (_) {}
+          try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???'), hitFx: _edHitNow }); } catch (_) {}
         }
         // カード移動演出（1枚ずつ順番に）
         let idx = 0;
@@ -3146,7 +3150,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           }
         }
         // 進化元が下から引き抜かれてトラッシュへ（両方の画面）
-        if (_hitFxOn()) { _effectHitSync(ctx, 'evo_discard', { card: discarded[0], holder: tgt, removed: discarded, remote: !!(ctx.bs && edOwner === ctx.bs.ai) }, () => onDone && onDone(true)); return; }
+        if (_edHitNow) {
+          // 処理中の止め（_fxMoveHold）は演出の開始の判定だけ外す（_effectHitSync が _hitFxOn を見るため）
+          const _edHeld = window._fxMoveHold || 0;
+          if (_edForceHit) window._fxMoveHold = 0;
+          try { _effectHitSync(ctx, 'evo_discard', { card: discarded[0], holder: tgt, removed: discarded, remote: !!(ctx.bs && edOwner === ctx.bs.ai) }, () => onDone && onDone(true)); }
+          finally { if (_edForceHit) window._fxMoveHold = (window._fxMoveHold || 0) + _edHeld; }
+          return;
+        }
         _moveBatchIntro(ctx, discarded, tgt.name + 'の進化元', 'トラッシュ', showNextDiscard, { noRemote: true });
       };
       // 破棄元と破棄したカード（破棄時点で一番下/一番上だったか）を「破棄されたとき」の判定用に記録する
@@ -4528,6 +4539,9 @@ function _ddEvoDiscardThenShield(plan, cur, gone, label, sub, cb) {
   const from = (own ? '' : '相手の') + '「' + (cur.name || '') + '」の進化元';
   const to = (own ? '' : '相手の') + 'トラッシュ';
   // 「消滅するとき」の処理中はトラッシュへの移動演出を止めている（_fxMoveHold）ので、この演出の間だけ外す
+  // コストの破棄で、いつもの進化元破棄の演出を出したカード（fxEffectHit が _fxHitRecent に記録）は、もう一度は動かさない（バリアだけ）
+  const _recent = (typeof window !== 'undefined' && Array.isArray(window._fxHitRecent)) ? window._fxHitRecent : [];
+  gone = gone.filter((c) => !_recent.some((e) => e && (e.card === c || (e.name && e.name === c.name))));
   const held = (typeof window !== 'undefined' && window._fxMoveHold) || 0;
   if (held) window._fxMoveHold = 0;
   let i = 0;

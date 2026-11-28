@@ -8818,17 +8818,34 @@ function _clashKindByDiff(snap, card) {
   if ((snap.field || []).some(c => c && c !== card && !(bs.player.battleArea || []).includes(c) && !(bs.ai.battleArea || []).includes(c))) return 'scapegoat';
   // 減った進化元がトラッシュではなくセキュリティへ行った（充填プラグインQ P-146「進化元から…セキュリティの下に置くことで消滅しない」）
   // なら、代わりのカードが弾き飛ぶのではなく光のバリア（消滅しない）
-  const _goneStack = (snap.stack || []).filter(c => c && !((card && card.stack) || []).includes(c));
+  const _goneStack = _stackGoneByNo(snap.stack, card && card.stack);
   if (_goneStack.length && _goneStack.every(c => (bs.player.security || []).includes(c) || (bs.ai.security || []).includes(c))) return 'shield';
   const ln = (card && Array.isArray(card.linkedCards)) ? card.linkedCards.length : 0;
   const sn = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
   // 進化元が減った: 【フラグメント】なら進化元が庇う演出、それ以外（「進化元からLvの同じカード2枚を破棄することで消滅しない」
   // ワーガルルモン：サジタリウスモード P-073 等）は、進化元を破棄してからバリアで消滅しない（身代わりではない）
   let _isFrag = false;
+  let _hitShown = false;
   if (sn < snap.stack.length) {
     try { const _sd = (bs.player.battleArea || []).includes(card) ? 'player' : 'ai'; _isFrag = !!_cardHasActivePassiveFlag(card, 'fragment', bs, _sd); } catch (_) {}
+    // コストで破棄したときに、いつもの進化元破棄の演出（fxEffectHit。相手の画面にも届く）を出し済みなら、決着はバリアだけ
+    try {
+      const _rec = (typeof window !== 'undefined' && Array.isArray(window._fxHitRecent)) ? window._fxHitRecent : [];
+      const _g = _stackGoneByNo(snap.stack, card && card.stack);
+      _hitShown = _g.length > 0 && _g.every(c => _rec.some(e => e && (e.card === c || (e.name && e.name === c.name))));
+    } catch (_) {}
   }
-  return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? (_isFrag ? 'fragment' : 'evo_shield') : 'shield');
+  return _clashKindByZone(card) || (ln < snap.link.length ? 'separate' : sn < snap.stack.length ? (_isFrag ? 'fragment' : _hitShown ? 'shield' : 'evo_shield') : 'shield');
+}
+// 回避の前後で減った進化元（カードNo・名前の数で比べる。オンラインでは相手の同期でカードが作り直されるので、同じカードかどうかでは
+// 比べられない。以前は残っているウォーグレイモンまで「破棄した」と見て演出に出していた）
+function _stackGoneByNo(before, after) {
+  const key = (c) => (c && (c.cardNo || '')) + '|' + (c && (c.name || ''));
+  const left = {};
+  (Array.isArray(after) ? after : []).forEach(c => { if (c) { const k = key(c); left[k] = (left[k] || 0) + 1; } });
+  const out = [];
+  (Array.isArray(before) ? before : []).forEach(c => { if (!c) return; const k = key(c); if (left[k] > 0) left[k]--; else out.push(c); });
+  return out;
 }
 // 消滅回避の前後の差から、代わりにトラッシュへ送られたカード（進化元・リンクカード・身代わりのデジモン・破棄したセキュリティ）を探す
 function _clashSnapshot(card, owner) {
@@ -8843,7 +8860,7 @@ function _clashSubCards(snap, card, owner) {
   if (!snap) return [];
   const out = [];
   const now = (arr) => Array.isArray(arr) ? arr : [];
-  snap.stack.forEach(c => { if (c && !now(card && card.stack).includes(c)) out.push(c); });
+  _stackGoneByNo(snap.stack, card && card.stack).forEach(c => out.push(c));
   snap.link.forEach(c => { if (c && !now(card && card.linkedCards).includes(c)) out.push(c); });
   snap.field.forEach(c => { if (c && c !== card && !now(owner && owner.battleArea).includes(c)) out.push(c); });
   if (snap.secTop && !now(owner && owner.security).includes(snap.secTop)) out.push(snap.secTop);

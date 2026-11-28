@@ -4424,7 +4424,10 @@ function _runDecoy(destroyed, ownerKey, bs, baseCtx, cb) {
     }, 'effect');
   };
   if (ownerKey !== 'player') { useIdx(cands[0]); return; }
-  showTargetSelection('player', cands, '【デコイ】「' + destroyed.name + '」の代わりに消滅させるデジモンを選んでください', '#ff8adf', useIdx, null, { stopLabel: '使わない' });
+  // 何を選ぶのかを見出しに出す（以前は「対象を選んでください」だけで、相手の効果の対象を選ばされているように見えた）。
+  // 相手の画面にも「【デコイ】…」と出る（fx_targetSelectStart の label）
+  showTargetSelection('player', cands, '【デコイ】「' + destroyed.name + '」の代わりに消滅させるデジモンを選んでください', '#ff8adf', useIdx,
+    '\n🛡【デコイ】「' + destroyed.name + '」の身代わりに消滅させるデジモン', { stopLabel: '使わない' });
 }
 
 // 相手の効果で自分のデジモンが消滅するとき（オンラインで相手の端末から依頼された）: こちらの端末で「消滅するとき」を発揮し、

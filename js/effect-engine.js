@@ -20451,7 +20451,7 @@ function executeRecipeStep(step, ctx, store, callback) {
   // アタックするデジモンが見つからず何も起きなかった）
   // 「〜を置くことで、置いたカードの【進化時】効果を発揮する」（negate の deny 無し＝発揮。パル P-147）の「そのカード」も
   // コストで置いたカードなので、ここでは解決しない（negate 側でコストのカード→直前のカードの順に見る）
-  const _deferSameForCost = (step.action === 'attack' && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)
+  const _deferSameForCost = ((step.action === 'attack' || step.action === 'evolve') && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)
     || (step.action === 'negate' && !step.deny)
     // 「アクティブにならない」は自分の処理で直前に選んだカード（テイマーも）に付ける。ここで opponent:1 に置き換えると、
     // 対象を選び直して別のデジモンに付いていた（ラジエルモン LM-042「【進化時】効果は発揮せず、アクティブにならない」）
@@ -20524,6 +20524,10 @@ function executeRecipeStep(step, ctx, store, callback) {
   if (step.target === 'target_trigger_source') {
     // 発揮までに進化していれば、進化後のデジモン（同じ1体）を「そのデジモン」とする
     _tsSrc = _currentFormOf(ctx.block && ctx.block._eventSourceCard, ctx.bs);
+    // 発火元が場にいない（ピコデビモン P-238 の【消滅時】でトラッシュにいる）ときの進化の「そのデジモン」は、コストで選んだデジモン
+    // （以前はトラッシュのピコデビモン自身を指し「進化させるデジモンがいません」になっていた）
+    const _tsOnField = (c) => !!c && ['player', 'ai'].some((sd) => ctx.bs && ctx.bs[sd] && (ctx.bs[sd].battleArea || []).includes(c));
+    if (step.action === 'evolve' && _tsSrc && !_tsOnField(_tsSrc)) _tsSrc = null;
     if (!_tsSrc && step.action === 'evolve') {
       if (Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) _tsDefer = true;
       else _tsSrc = (ctx.bs && ctx.bs._lastPickedCard) || null;
@@ -23088,10 +23092,35 @@ function executeRecipeStep(step, ctx, store, callback) {
           setTimeout(afterAnim, 300);
         }
       };
+      // トークンの登場でも「（他の）デジモンが（効果で）登場したとき」（on_play の反応。ディアボロモンACE P-114）を誘発させる
+      // （以前は when_summon だけで、P-114 の進化時で出したトークンに反応しなかった）。通常の登場（summon）と同じ流れ
+      const _tokenOnPlay = () => {
+        token._enteredByEffect = true; // トークンは効果でしか登場しない（cause:'effect' の判定）
+        if (ctx.bs && ctx.bs._pendingNonTurnPlayerBattleTrigger) {
+          const existing = ctx.bs._pendingNonTurnPlayerBattleTrigger;
+          ctx.bs._pendingNonTurnPlayerBattleTrigger = (proceed) => {
+            try { scanTriggers('on_play', token, ctx.side, ctx); } catch (_) {}
+            processQueue(ctx, () => existing(proceed));
+          };
+          callback();
+          return;
+        }
+        if (ctx.bs) {
+          if (!ctx.bs._pendingNonTurnPlayerReactions) ctx.bs._pendingNonTurnPlayerReactions = [];
+          ctx.bs._pendingNonTurnPlayerReactions.push((next) => {
+            try { scanTriggers('on_play', token, ctx.side, ctx); } catch (_) {}
+            processQueue(ctx, () => next());
+          });
+          callback();
+          if (typeof window !== 'undefined' && window._drainNonTurnPlayerReactionQueue) window._drainNonTurnPlayerReactionQueue();
+          return;
+        }
+        try { scanTriggers('on_play', token, ctx.side, ctx); processQueue(ctx, () => callback()); } catch (_) { callback(); }
+      };
       _playToken(() => {
         try {
-          fireWhenSummonTriggers(token, ctx.side, ctx.bs, ctx, () => callback());
-        } catch (_) { callback(); }
+          fireWhenSummonTriggers(token, ctx.side, ctx.bs, ctx, () => _tokenOnPlay());
+        } catch (_) { _tokenOnPlay(); }
       });
       break;
     }
